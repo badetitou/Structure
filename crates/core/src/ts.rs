@@ -14,8 +14,10 @@ use crate::ir::{Edge, EdgeKind, Graph, Language, Range, Symbol, SymbolKind};
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FileSymbols {
     pub symbols: Vec<Symbol>,
-    /// (local name, module specifier)
-    pub imports: Vec<(String, String)>,
+    /// (local name, imported name, module specifier)
+    pub imports: Vec<(String, String, String)>,
+    /// Top-level `type X = ...` names (not symbols; skipped as Uses targets).
+    pub type_aliases: Vec<String>,
     /// (from id, type name)
     pub uses: Vec<(String, String)>,
     /// (from id, supertype name, Extends | Implements); needed to type the
@@ -56,6 +58,28 @@ const IGNORED_TYPES: &[&str] = &[
     "Boolean",
     "RegExp",
     "Error",
+    "HTMLElement",
+    "HTMLInputElement",
+    "HTMLDivElement",
+    "HTMLFormElement",
+    "Element",
+    "Node",
+    "Event",
+    "MouseEvent",
+    "KeyboardEvent",
+    "File",
+    "Blob",
+    "FormData",
+    "Window",
+    "Document",
+    "WeakMap",
+    "WeakSet",
+    "Uint8Array",
+    "JSON",
+    "Console",
+    "URL",
+    "Response",
+    "Request",
 ];
 
 fn text<'a>(n: Node, src: &'a str) -> &'a str {
@@ -144,6 +168,7 @@ struct Ctx<'a> {
     src: &'a str,
     package: Option<String>,
     out: FileSymbols,
+    seen_ids: HashSet<String>,
 }
 
 struct NewSymbol<'n> {
@@ -158,6 +183,10 @@ struct NewSymbol<'n> {
 
 impl Ctx<'_> {
     fn push(&mut self, s: NewSymbol) {
+        // Ids must be unique (get/set pairs, overloads, declaration merging).
+        if !self.seen_ids.insert(s.id.clone()) {
+            return;
+        }
         self.out.symbols.push(Symbol {
             id: s.id,
             kind: s.kind,
@@ -241,6 +270,11 @@ impl Ctx<'_> {
                 }
             }
             "import_statement" => self.import(node),
+            "type_alias_declaration" => {
+                if let Some(name) = node.child_by_field_name("name") {
+                    self.out.type_aliases.push(text(name, self.src).to_string());
+                }
+            }
             _ => {}
         }
     }
@@ -260,28 +294,28 @@ impl Ctx<'_> {
             let mut c2 = clause.walk();
             for part in clause.named_children(&mut c2) {
                 match part.kind() {
-                    "identifier" => self
-                        .out
-                        .imports
-                        .push((text(part, self.src).to_string(), spec.clone())),
+                    "identifier" => {
+                        let n = text(part, self.src).to_string();
+                        self.out.imports.push((n.clone(), n, spec.clone()));
+                    }
                     "namespace_import" => {
                         let mut c3 = part.walk();
                         if let Some(id) = part.named_children(&mut c3).next() {
-                            self.out
-                                .imports
-                                .push((text(id, self.src).to_string(), spec.clone()));
+                            let n = text(id, self.src).to_string();
+                            self.out.imports.push((n, "*".to_string(), spec.clone()));
                         }
                     }
                     "named_imports" => {
                         let mut c3 = part.walk();
                         for sp in part.named_children(&mut c3) {
-                            let local = sp
-                                .child_by_field_name("alias")
-                                .or_else(|| sp.child_by_field_name("name"));
-                            if let Some(l) = local {
-                                self.out
-                                    .imports
-                                    .push((text(l, self.src).to_string(), spec.clone()));
+                            let imported = sp.child_by_field_name("name");
+                            let local = sp.child_by_field_name("alias").or(imported);
+                            if let (Some(l), Some(i)) = (local, imported) {
+                                self.out.imports.push((
+                                    text(l, self.src).to_string(),
+                                    text(i, self.src).to_string(),
+                                    spec.clone(),
+                                ));
                             }
                         }
                     }
@@ -427,6 +461,13 @@ impl Ctx<'_> {
                             }
                         }
                     }
+                    if let Some(b) = m.child_by_field_name("body") {
+                        let mut names = Vec::new();
+                        collect_inject(b, self.src, &mut names);
+                        for n in names {
+                            self.out.uses.push((class_id.to_string(), n));
+                        }
+                    }
                 }
                 "public_field_definition" => {
                     let mut c2 = m.walk();
@@ -486,6 +527,7 @@ pub fn parse_source(file: &str, src: &str, tsx: bool) -> anyhow::Result<FileSymb
             Some(dir.to_string())
         },
         out: FileSymbols::default(),
+        seen_ids: HashSet::new(),
     };
     let root = tree.root_node();
     let mut c = root.walk();
@@ -512,12 +554,13 @@ fn normalize(dir: &str, spec: &str) -> Option<String> {
 struct Resolver<'a> {
     ids: &'a HashSet<&'a str>,
     files: &'a HashSet<&'a str>,
-    imports: &'a HashMap<String, Vec<(String, String)>>,
+    aliases: &'a HashSet<String>,
+    imports: &'a HashMap<String, Vec<(String, String, String)>>,
 }
 
 enum Resolved {
     Project(String),
-    External,
+    External(String),
     /// Relative import that does not resolve to a project symbol (barrels...).
     Unknown,
 }
@@ -528,16 +571,25 @@ impl Resolver<'_> {
         if self.ids.contains(local.as_str()) {
             return Resolved::Project(local);
         }
-        let spec = self
+        if self.aliases.contains(&local) {
+            return Resolved::Unknown;
+        }
+        let imp = self
             .imports
             .get(file)
-            .and_then(|v| v.iter().find(|(l, _)| l == name))
-            .map(|(_, s)| s.as_str());
-        match spec {
-            Some(s) if s.starts_with("./") || s.starts_with("../") => {
+            .and_then(|v| v.iter().find(|(l, _, _)| l == name))
+            .map(|(_, i, s)| (i.as_str(), s.as_str()));
+        match imp {
+            Some((orig, s)) if s.starts_with("./") || s.starts_with("../") => {
+                let s = s
+                    .strip_suffix(".js")
+                    .or_else(|| s.strip_suffix(".jsx"))
+                    .or_else(|| s.strip_suffix(".mjs"))
+                    .unwrap_or(s);
                 let Some(base) = normalize(dir_of(file), s) else {
                     return Resolved::Unknown;
                 };
+                let name = orig;
                 for cand in [
                     format!("{base}.ts"),
                     format!("{base}.tsx"),
@@ -545,13 +597,17 @@ impl Resolver<'_> {
                     format!("{base}/index.tsx"),
                 ] {
                     let id = format!("{cand}#{name}");
+                    if self.aliases.contains(&id) {
+                        return Resolved::Unknown;
+                    }
                     if self.files.contains(cand.as_str()) && self.ids.contains(id.as_str()) {
                         return Resolved::Project(id);
                     }
                 }
                 Resolved::Unknown
             }
-            _ => Resolved::External,
+            Some((orig, _)) => Resolved::External(orig.to_string()),
+            None => Resolved::External(name.to_string()),
         }
     }
 }
@@ -562,7 +618,8 @@ pub fn parse_project(root: &Path) -> anyhow::Result<Graph> {
     let walker = ignore::WalkBuilder::new(root)
         .filter_entry(|e| {
             let n = e.file_name().to_string_lossy();
-            !(e.file_type().is_some_and(|t| t.is_dir())
+            !(e.depth() > 0
+                && e.file_type().is_some_and(|t| t.is_dir())
                 && matches!(n.as_ref(), "node_modules" | "dist" | ".angular" | ".git"))
         })
         .build();
@@ -605,13 +662,18 @@ pub fn parse_project(root: &Path) -> anyhow::Result<Graph> {
         .flat_map(|(_, f)| f.symbols.iter().map(|s| s.id.as_str()))
         .collect();
     let files: HashSet<&str> = parsed.iter().map(|(r, _)| r.as_str()).collect();
-    let imports: HashMap<String, Vec<(String, String)>> = parsed
+    let aliases: HashSet<String> = parsed
+        .iter()
+        .flat_map(|(r, f)| f.type_aliases.iter().map(move |a| format!("{r}#{a}")))
+        .collect();
+    let imports: HashMap<String, Vec<(String, String, String)>> = parsed
         .iter()
         .map(|(r, f)| (r.clone(), f.imports.clone()))
         .collect();
     let resolver = Resolver {
         ids: &ids,
         files: &files,
+        aliases: &aliases,
         imports: &imports,
     };
 
@@ -635,16 +697,19 @@ pub fn parse_project(root: &Path) -> anyhow::Result<Graph> {
         for (from, name) in &f.uses {
             match resolver.resolve(rel, name) {
                 Resolved::Project(to) => add(from, to, EdgeKind::Uses),
-                Resolved::External => add(from, format!("ext:{name}"), EdgeKind::Uses),
+                Resolved::External(n) => add(from, format!("ext:{n}"), EdgeKind::Uses),
                 Resolved::Unknown => {}
             }
         }
     }
 
+    let mut symbols: Vec<Symbol> = parsed.into_iter().flat_map(|(_, f)| f.symbols).collect();
+    symbols.sort_by(|a, b| a.id.cmp(&b.id));
+    edges.sort_by(|a, b| (&a.from, &a.to, a.kind as u8).cmp(&(&b.from, &b.to, b.kind as u8)));
     Ok(Graph {
         root: root.to_string_lossy().into_owned(),
         language: Language::TypeScript,
-        symbols: parsed.into_iter().flat_map(|(_, f)| f.symbols).collect(),
+        symbols,
         edges,
     })
 }
@@ -685,7 +750,11 @@ mod tests {
         );
         assert_eq!(
             f.imports,
-            vec![("Component".to_string(), "@angular/core".to_string())]
+            vec![(
+                "Component".to_string(),
+                "Component".to_string(),
+                "@angular/core".to_string()
+            )]
         );
     }
 
@@ -725,6 +794,45 @@ mod tests {
                 .contains(&("r.ts#Impl".into(), "Parent".into(), EdgeKind::Extends))
         );
         assert_eq!(find(&f, "r.ts#E").kind, SymbolKind::Enum);
+    }
+
+    #[test]
+    fn export_default_abstract_and_decorator_before_export() {
+        let f = parse_source(
+            "d.ts",
+            "@Injectable()\nexport abstract class Base {}\nexport default class Def {\n  get x() { return 1; }\n  set x(v) {}\n  m() { const h = inject(HttpClient); }\n  constructor() { inject(Foo); }\n}\ntype Alias = string;\n",
+            false,
+        )
+        .unwrap();
+        assert_eq!(find(&f, "d.ts#Base").annotations, vec!["Injectable"]);
+        let d = find(&f, "d.ts#Def");
+        assert_eq!(
+            (
+                d.range.start_line,
+                d.range.start_col,
+                d.range.end_line,
+                d.range.end_col
+            ),
+            (2, 15, 7, 1)
+        );
+        let m = find(&f, "d.ts#Def.m");
+        assert_eq!(
+            (m.range.start_line, m.range.start_col, m.range.end_line),
+            (5, 2, 5)
+        );
+        assert_eq!(f.symbols.iter().filter(|s| s.id == "d.ts#Def.x").count(), 1);
+        let used: Vec<&str> = f.uses.iter().map(|(_, t)| t.as_str()).collect();
+        assert!(used.contains(&"HttpClient") && used.contains(&"Foo"));
+        assert_eq!(f.type_aliases, vec!["Alias"]);
+    }
+
+    #[test]
+    fn aliased_import_recorded() {
+        let f = parse_source("a.ts", "import { Foo as Bar } from './foo';", false).unwrap();
+        assert_eq!(
+            f.imports,
+            vec![("Bar".into(), "Foo".into(), "./foo".into())]
+        );
     }
 
     #[test]
