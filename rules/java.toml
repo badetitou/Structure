@@ -1,0 +1,80 @@
+# Java classification rules. First matching rule wins (file order).
+# Matchers within a rule are ANDed; each matcher is "any of" its list.
+
+# --- Stripes ---
+[[rule]]
+layer = "entry"
+any_supertype = ["ActionBean"]
+
+[[rule]]
+layer = "entry"
+name_suffix = ["ActionBean"]
+
+# --- Spring ---
+[[rule]]
+layer = "entry"
+any_annotation = ["RestController", "Controller"]
+
+[[rule]]
+layer = "business"
+any_annotation = ["Service"]
+
+[[rule]]
+layer = "persistence"
+any_annotation = ["Repository"]
+
+[[rule]]
+layer = "model"
+any_annotation = ["Entity", "Embeddable"]
+
+[[rule]]
+layer = "util"
+any_annotation = ["Configuration", "Component"]
+
+# --- MyBatis ---
+[[rule]]
+layer = "persistence"
+any_annotation = ["Mapper"]
+
+[[rule]]
+layer = "persistence"
+kind = ["interface"]
+name_suffix = ["Mapper"]
+
+# --- JPA / Spring Data ---
+[[rule]]
+layer = "persistence"
+any_supertype = ["JpaRepository", "CrudRepository", "PagingAndSortingRepository", "ListCrudRepository"]
+
+# --- Package conventions ---
+[[rule]]
+layer = "model"
+package_contains = [".domain.", ".model.", ".dto."]
+
+[[rule]]
+layer = "entry"
+package_contains = [".web.", ".controller.", ".controllers."]
+
+[[rule]]
+layer = "business"
+package_contains = [".service.", ".services."]
+
+[[rule]]
+layer = "persistence"
+package_contains = [".mapper.", ".repository.", ".dao."]
+
+# --- Sinks: classes talking to a database API ---
+[[rule]]
+layer = "persistence"
+uses = ["JdbcTemplate", "EntityManager", "SqlSession", "SqlSessionTemplate"]
+
+[domain]
+strategy = "name_root"
+strip_suffixes = ["ActionBean", "ServiceImpl", "Service", "Mapper", "Repository", "Dao", "DAO", "Controller", "Component"]
+fallback = "misc"
+
+[domain.aliases]
+catalog = ["category", "product", "item"]
+order = ["lineitem", "sequence"]
+account = ["account"]
+cart = ["cart", "cartitem"]
