@@ -1,7 +1,9 @@
 # Structure desktop app (Tauri 2)
 
-Skeleton with MOCKED commands (`analyze`, `impact` return `docs/samples/*.json`).
-To go real, edit only `src-tauri/src/commands.rs`: replace the `mock::*` calls.
+Commands `analyze` / `impact` call `structure_core::pipeline` (see
+`src-tauri/src/commands.rs`); analyses are cached per canonical path in managed
+state. Pipeline warnings are emitted as `analysis-progress` steps prefixed
+`warning: `. In a plain browser the UI falls back to `docs/samples/*.json`.
 
 Prerequisites: Rust toolchain, `cargo install tauri-cli --version "^2"`, Node 20+,
 platform webview deps (macOS: none extra).

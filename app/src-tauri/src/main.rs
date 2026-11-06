@@ -6,6 +6,7 @@ mod commands;
 fn main() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(commands::Cache::default())
         .invoke_handler(tauri::generate_handler![
             commands::analyze,
             commands::impact

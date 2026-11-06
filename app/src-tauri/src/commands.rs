@@ -1,27 +1,16 @@
-//! Tauri commands. To go real: replace the `mock::*` calls below with calls
-//! into `structure_core` (keep them inside `spawn_blocking`).
+//! Tauri commands: thin wrappers over `structure_core::pipeline`.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use structure_core::model::{Impact, Matrix, Progress};
-use tauri::{AppHandle, Emitter};
+use structure_core::pipeline::{self, Analysis, Options};
+use tauri::{AppHandle, Emitter, Manager};
 
-#[tauri::command]
-pub async fn analyze(app: AppHandle, path: String) -> Result<Matrix, String> {
-    tauri::async_runtime::spawn_blocking(move || mock::analyze(&app, &path))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub async fn impact(
-    app: AppHandle,
-    path: String,
-    base: Option<String>,
-    head: Option<String>,
-) -> Result<Impact, String> {
-    tauri::async_runtime::spawn_blocking(move || mock::impact(&app, &path, base, head))
-        .await
-        .map_err(|e| e.to_string())?
-}
+/// Cached analyses keyed by canonical project path.
+#[derive(Default)]
+pub struct Cache(pub Mutex<HashMap<String, Analysis>>);
 
 fn emit_progress(app: &AppHandle, step: &str, pct: u8) {
     let _ = app.emit(
@@ -33,53 +22,86 @@ fn emit_progress(app: &AppHandle, step: &str, pct: u8) {
     );
 }
 
-/// Mocked backend: returns the sample files from `docs/samples`.
-mod mock {
+fn canonical(path: &str) -> Result<(PathBuf, String), String> {
+    let p = Path::new(path)
+        .canonicalize()
+        .map_err(|e| format!("cannot open {path}: {e}"))?;
+    let key = p.to_string_lossy().into_owned();
+    Ok((p, key))
+}
+
+/// Analyze, emit progress and warnings, and cache the result.
+fn run_analyze(app: &AppHandle, path: &Path, key: &str) -> Result<Matrix, String> {
+    let a = pipeline::analyze(path, &Options::default(), &|p| {
+        emit_progress(app, &p.step, p.pct)
+    })
+    .map_err(|e| format!("{e:#}"))?;
+    for w in &a.warnings {
+        emit_progress(app, &format!("warning: {w}"), 100);
+    }
+    let matrix = a.matrix.clone();
+    app.state::<Cache>()
+        .0
+        .lock()
+        .map_err(|_| "internal error: analysis cache poisoned".to_string())?
+        .insert(key.to_string(), a);
+    Ok(matrix)
+}
+
+#[tauri::command]
+pub async fn analyze(app: AppHandle, path: String) -> Result<Matrix, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (p, key) = canonical(&path)?;
+        run_analyze(&app, &p, &key)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn impact(
+    app: AppHandle,
+    path: String,
+    base: Option<String>,
+    head: Option<String>,
+) -> Result<Impact, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (p, key) = canonical(&path)?;
+        let cached = app
+            .state::<Cache>()
+            .0
+            .lock()
+            .map_err(|_| "internal error: analysis cache poisoned".to_string())?
+            .contains_key(&key);
+        if !cached {
+            run_analyze(&app, &p, &key)?;
+        }
+        emit_progress(&app, "computing impact", 50);
+        let result = {
+            let state = app.state::<Cache>();
+            let guard = state
+                .0
+                .lock()
+                .map_err(|_| "internal error: analysis cache poisoned".to_string())?;
+            let a = guard
+                .get(&key)
+                .ok_or_else(|| "analysis missing from cache".to_string())?;
+            pipeline::impact(&p, a, base.as_deref(), head.as_deref())
+                .map_err(|e| format!("{e:#}"))?
+        };
+        emit_progress(&app, "done", 100);
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
     use super::*;
-    use std::{thread::sleep, time::Duration};
 
-    const MATRIX: &str = include_str!("../../../docs/samples/matrix.json");
-    const IMPACT: &str = include_str!("../../../docs/samples/impact.json");
-
-    pub fn analyze(app: &AppHandle, _path: &str) -> Result<Matrix, String> {
-        for (step, pct) in [
-            ("indexing", 10),
-            ("parsing", 40),
-            ("linking", 65),
-            ("classifying", 85),
-            ("building matrix", 100),
-        ] {
-            emit_progress(app, step, pct);
-            sleep(Duration::from_millis(350));
-        }
-        serde_json::from_str(MATRIX).map_err(|e| e.to_string())
-    }
-
-    pub fn impact(
-        app: &AppHandle,
-        _path: &str,
-        _base: Option<String>,
-        _head: Option<String>,
-    ) -> Result<Impact, String> {
-        for (step, pct) in [
-            ("diffing", 20),
-            ("analyzing", 60),
-            ("computing impact", 100),
-        ] {
-            emit_progress(app, step, pct);
-            sleep(Duration::from_millis(200));
-        }
-        serde_json::from_str(IMPACT).map_err(|e| e.to_string())
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn samples_parse() {
-            assert!(serde_json::from_str::<Matrix>(MATRIX).is_ok());
-            assert!(serde_json::from_str::<Impact>(IMPACT).is_ok());
-        }
+    #[test]
+    fn canonical_reports_missing_path() {
+        assert!(canonical("/definitely/not/here").is_err());
     }
 }
