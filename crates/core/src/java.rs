@@ -477,6 +477,9 @@ pub fn parse_project(root: &Path) -> Result<Graph> {
             }
             let n = e.file_name().to_string_lossy();
             let is_dir = e.file_type().is_some_and(|t| t.is_dir());
+            if is_dir && n == ".gradle" {
+                return false;
+            }
             if !(is_dir && matches!(n.as_ref(), "target" | "build" | "node_modules")) {
                 return true;
             }
@@ -562,6 +565,21 @@ pub fn parse_project(root: &Path) -> Result<Graph> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gradle_dir_is_not_parsed() {
+        let dir =
+            std::env::temp_dir().join(format!("structure-gradle-parse-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src/main/java")).unwrap();
+        std::fs::create_dir_all(dir.join(".gradle/src/main/java")).unwrap();
+        std::fs::write(dir.join("src/main/java/A.java"), "class A {}").unwrap();
+        std::fs::write(dir.join(".gradle/src/main/java/B.java"), "class B {}").unwrap();
+        let g = parse_project(&dir).unwrap();
+        let dbg = format!("{g:?}");
+        assert!(dbg.contains("A.java"), "{dbg}");
+        assert!(!dbg.contains("B.java"), "{dbg}");
+    }
 
     const SRC: &str = r#"package com.acme.shop;
 

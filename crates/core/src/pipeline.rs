@@ -49,13 +49,18 @@ pub struct Analysis {
 
 pub fn detect_language(root: &Path) -> anyhow::Result<Language> {
     let has = |n: &str| root.join(n).is_file();
-    if has("pom.xml") || has("build.gradle") || has("build.gradle.kts") {
+    if has("pom.xml")
+        || has("build.gradle")
+        || has("build.gradle.kts")
+        || has("settings.gradle")
+        || has("settings.gradle.kts")
+    {
         Ok(Language::Java)
     } else if has("tsconfig.json") || has("package.json") {
         Ok(Language::TypeScript)
     } else {
         bail!(
-            "cannot detect language in {}: expected pom.xml/build.gradle (Java) or tsconfig.json/package.json (TypeScript)",
+            "cannot detect language in {}: expected pom.xml/build.gradle/build.gradle.kts/settings.gradle/settings.gradle.kts (Java) or tsconfig.json/package.json (TypeScript)",
             root.display()
         )
     }
@@ -138,7 +143,7 @@ fn newer_sources(root: &Path, lang: Language, index: &Path) -> usize {
         .filter_entry(|e| {
             !matches!(
                 e.file_name().to_str(),
-                Some("node_modules" | "target" | "build" | "dist" | ".git")
+                Some("node_modules" | "target" | "build" | "dist" | ".git" | ".gradle")
             )
         })
         .build()
@@ -345,6 +350,31 @@ mod tests {
             .unwrap()
             .set_modified(t)
             .unwrap();
+    }
+
+    #[test]
+    fn gradle_settings_detected_as_java() {
+        for f in ["settings.gradle", "settings.gradle.kts"] {
+            let dir =
+                std::env::temp_dir().join(format!("structure-detect-{}-{f}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join(f), "").unwrap();
+            assert!(matches!(detect_language(&dir).unwrap(), Language::Java));
+        }
+    }
+
+    #[test]
+    fn gradle_dir_not_counted_as_stale() {
+        let dir =
+            std::env::temp_dir().join(format!("structure-gradle-stale-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".gradle/x")).unwrap();
+        let t0 = SystemTime::now() - Duration::from_secs(100);
+        let index = dir.join("index.scip");
+        touch(&index, t0);
+        touch(&dir.join(".gradle/x/A.java"), t0 + Duration::from_secs(50));
+        assert_eq!(newer_sources(&dir, Language::Java, &index), 0);
     }
 
     #[test]
