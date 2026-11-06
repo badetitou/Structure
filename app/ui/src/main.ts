@@ -3,6 +3,7 @@ import * as api from "./api";
 import type { Cell, Impact, Matrix } from "./api";
 import { CHANGED, DEFAULT_FILL, impactCellPaint } from "./cellstate";
 import { reach } from "./graph";
+import { analyzeAndRecord, loadRecent, removeRecent, saveRecent } from "./recent";
 
 const root = document.getElementById("app") as HTMLElement;
 const SVG = "http://www.w3.org/2000/svg";
@@ -47,6 +48,34 @@ function home(error?: string) {
     analyzeBtn.disabled = true;
     void runAnalysis();
   };
+  const recentBox = h("div", { className: "recent" });
+  const recents = loadRecent();
+  if (recents.length) {
+    recentBox.append(h("h3", { textContent: "Recent projects" }));
+    for (const r of recents) {
+      const open = h(
+        "button",
+        { className: "recent-open", title: r.path },
+        h("strong", { textContent: r.name }),
+        h("span", { className: "muted recent-path", textContent: r.path }),
+        h("span", { className: "muted", textContent: new Date(r.lastOpened).toLocaleString() }),
+      );
+      open.onclick = () => {
+        projectPath = r.path;
+        void runAnalysis();
+      };
+      const del = h("button", {
+        className: "recent-del",
+        textContent: "×",
+        title: "Remove from recent projects",
+      });
+      del.onclick = () => {
+        saveRecent(removeRecent(loadRecent(), r.path));
+        home(error);
+      };
+      recentBox.append(h("div", { className: "recent-row" }, open, del));
+    }
+  }
   show(
     h(
       "div",
@@ -62,6 +91,7 @@ function home(error?: string) {
       hint,
       analyzeBtn,
       h("div", { className: "error", textContent: error ?? "" }),
+      recentBox,
     ),
   );
 }
@@ -81,10 +111,12 @@ async function runAnalysis() {
     ),
   );
   try {
-    const m = await api.analyze(projectPath, (p) => {
-      label.textContent = `${p.step} (${p.pct}%)`;
-      fill.style.width = `${p.pct}%`;
-    });
+    const m = await analyzeAndRecord(projectPath, (path) =>
+      api.analyze(path, (p) => {
+        label.textContent = `${p.step} (${p.pct}%)`;
+        fill.style.width = `${p.pct}%`;
+      }),
+    );
     matrixView(m);
   } catch (e) {
     home(`Analysis failed: ${String(e)}`);

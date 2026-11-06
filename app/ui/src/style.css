@@ -21,3 +21,8 @@ text { font-size: 11px; }
 .brand h1 { margin: 0; font-size: 32px; }
 .logo-lg { width: 72px; height: 72px; }
 .logo-sm { width: 28px; height: 28px; }
+.recent { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.recent h3 { margin: 0; }
+.recent-row { display: flex; gap: 6px; }
+.recent-open { flex: 1; display: flex; gap: 10px; align-items: baseline; text-align: left; overflow: hidden; }
+.recent-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
