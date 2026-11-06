@@ -436,8 +436,10 @@ fn snapshot_bounded(root: &Path, rev: &str, max: usize) -> anyhow::Result<PathBu
     let dir = snaps.join(&sha);
     let dir_str = dir.to_string_lossy().into_owned();
 
-    let valid =
-        dir.is_dir() && impact::git(&dir, &["rev-parse", "HEAD"]).is_ok_and(|h| h.trim() == sha);
+    let valid = dir.join(".git").exists()
+        && impact::git(&dir, &["rev-parse", "--show-toplevel"])
+            .is_ok_and(|t| Path::new(t.trim()).canonicalize().ok() == dir.canonicalize().ok())
+        && impact::git(&dir, &["rev-parse", "HEAD"]).is_ok_and(|h| h.trim() == sha);
     if !valid {
         let _ = impact::git(root, &["worktree", "remove", "--force", &dir_str]);
         let _ = std::fs::remove_dir_all(&dir);
@@ -495,6 +497,16 @@ pub fn impact_at(
         let analysis = analyze(root, opts, progress)?;
         return impact(root, &analysis, base, None);
     };
+    let base_sha = match base {
+        Some(b) => Some(
+            impact::git(root, &["rev-parse", "--verify", &format!("{b}^{{commit}}")])
+                .with_context(|| format!("unknown revision: {b}"))?
+                .trim()
+                .to_string(),
+        ),
+        None => None,
+    };
+    let base = base_sha.as_deref();
     let snap = snapshot(root, h)?;
     let analysis = analyze(&snap, opts, progress)?;
     let mut changes = impact::changed_lines(&snap, base, head)?;
@@ -525,7 +537,7 @@ mod tests {
             .unwrap();
     }
 
-    fn git_ok(dir: &Path, args: &[&str]) -> Option<String> {
+    fn git_ok(dir: &Path, args: &[&str]) -> String {
         let cfg = [
             "-c",
             "user.name=t",
@@ -535,32 +547,32 @@ mod tests {
             "commit.gpgsign=false",
         ];
         let all: Vec<&str> = cfg.iter().chain(args.iter()).copied().collect();
-        impact::git(dir, &all).ok()
+        impact::git(dir, &all).unwrap()
     }
 
     /// Repo with a Java project in `app/`. c0: class A (line 1); c1 adds class B
     /// (line 2); c2 prepends a comment line, so B moves to line 3.
-    fn temp_repo(tag: &str) -> Option<(PathBuf, String, String)> {
+    fn temp_repo(tag: &str) -> (PathBuf, String, String) {
         let dir = std::env::temp_dir().join(format!("structure-snap-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("app/src")).ok()?;
-        git_ok(&dir, &["init", "-q"])?;
-        std::fs::write(dir.join("app/pom.xml"), "<project/>").ok()?;
+        std::fs::create_dir_all(dir.join("app/src")).unwrap();
+        git_ok(&dir, &["init", "-q"]);
+        std::fs::write(dir.join("app/pom.xml"), "<project/>").unwrap();
         let f = dir.join("app/src/A.java");
-        std::fs::write(&f, "class A { void a() {} }\n").ok()?;
-        git_ok(&dir, &["add", "."])?;
-        git_ok(&dir, &["commit", "-q", "-m", "c0"])?;
-        std::fs::write(&f, "class A { void a() {} }\nclass B { void b() {} }\n").ok()?;
-        git_ok(&dir, &["commit", "-q", "-am", "c1"])?;
-        let c1 = git_ok(&dir, &["rev-parse", "HEAD"])?.trim().to_string();
+        std::fs::write(&f, "class A { void a() {} }\n").unwrap();
+        git_ok(&dir, &["add", "."]);
+        git_ok(&dir, &["commit", "-q", "-m", "c0"]);
+        std::fs::write(&f, "class A { void a() {} }\nclass B { void b() {} }\n").unwrap();
+        git_ok(&dir, &["commit", "-q", "-am", "c1"]);
+        let c1 = git_ok(&dir, &["rev-parse", "HEAD"]).trim().to_string();
         std::fs::write(
             &f,
             "// h\nclass A { void a() {} }\nclass B { void b() {} }\n",
         )
-        .ok()?;
-        git_ok(&dir, &["commit", "-q", "-am", "c2"])?;
-        let c2 = git_ok(&dir, &["rev-parse", "HEAD"])?.trim().to_string();
-        Some((dir, c1, c2))
+        .unwrap();
+        git_ok(&dir, &["commit", "-q", "-am", "c2"]);
+        let c2 = git_ok(&dir, &["rev-parse", "HEAD"]).trim().to_string();
+        (dir, c1, c2)
     }
 
     fn no_scip() -> Options {
@@ -572,9 +584,7 @@ mod tests {
 
     #[test]
     fn snapshot_created_reused_and_invalid_rev() {
-        let Some((repo, c1, _)) = temp_repo("reuse") else {
-            return;
-        };
+        let (repo, c1, _) = temp_repo("reuse");
         let root = repo.join("app");
         let before = git_ok(&repo, &["status", "--porcelain"]);
         let head = git_ok(&repo, &["rev-parse", "HEAD"]);
@@ -596,10 +606,20 @@ mod tests {
     }
 
     #[test]
+    fn broken_snapshot_at_users_head_is_recreated() {
+        let (repo, _, c2) = temp_repo("broken");
+        let root = repo.join("app");
+        let a = snapshot(&root, &c2).unwrap();
+        let top = a.parent().unwrap().to_path_buf();
+        std::fs::remove_file(top.join(".git")).unwrap();
+        let b = snapshot(&root, &c2).unwrap();
+        assert!(top.join(".git").exists() && b.join("src/A.java").is_file());
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
     fn snapshots_pruned_to_bound() {
-        let Some((repo, c1, c2)) = temp_repo("prune") else {
-            return;
-        };
+        let (repo, c1, c2) = temp_repo("prune");
         let root = repo.join("app");
         let s1 = snapshot_bounded(&root, &c1, 1).unwrap();
         let s2 = snapshot_bounded(&root, &c2, 1).unwrap();
@@ -610,15 +630,16 @@ mod tests {
 
     #[test]
     fn impact_at_uses_that_commits_lines() {
-        let Some((repo, c1, c2)) = temp_repo("impact") else {
-            return;
-        };
+        let (repo, c1, c2) = temp_repo("impact");
         let root = repo.join("app");
         // Line 2 is class B in c1 but class A in the working tree (c2).
         let base = format!("{c1}^");
         let imp = impact_at(&root, Some(&base), Some(&c1), &no_scip(), &|_| {}).unwrap();
         assert_eq!(imp.changed_symbols, vec!["B".to_string()], "{imp:?}");
         assert!(imp.warnings.iter().all(|w| !w.contains("checked out")));
+        // Relative base resolves in the user's repo, not the snapshot's HEAD.
+        let imp = impact_at(&root, Some("HEAD~2"), Some(&c1), &no_scip(), &|_| {}).unwrap();
+        assert_eq!(imp.changed_symbols, vec!["B".to_string()], "{imp:?}");
         // c2 only touches the new comment line: no symbol changed.
         let imp = impact_at(&root, Some(&c1), Some(&c2), &no_scip(), &|_| {}).unwrap();
         assert!(imp.changed_symbols.is_empty(), "{imp:?}");
