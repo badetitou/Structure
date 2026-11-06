@@ -177,6 +177,23 @@ fn spawn_line_reader<R: std::io::Read + Send + 'static>(
     })
 }
 
+const DRAIN_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Feeds pending lines to `f` until the channel closes or `grace` elapses in total.
+fn drain_grace(
+    rx: &std::sync::mpsc::Receiver<String>,
+    grace: std::time::Duration,
+    f: &mut dyn FnMut(&str),
+) {
+    let end = Instant::now() + grace;
+    while let Some(left) = end.checked_duration_since(Instant::now()) {
+        match rx.recv_timeout(left) {
+            Ok(raw) => f(&raw),
+            Err(_) => break,
+        }
+    }
+}
+
 fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result<(), String> {
     use std::collections::VecDeque;
     use std::process::Stdio;
@@ -191,12 +208,11 @@ fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result
         .spawn()
         .map_err(|e| format!("cannot start {:?}: {e}", cmd.get_program()))?;
     let (tx, rx) = channel::<String>();
-    let mut readers = Vec::new();
     if let Some(s) = child.stdout.take() {
-        readers.push(spawn_line_reader(s, tx.clone()));
+        spawn_line_reader(s, tx.clone());
     }
     if let Some(s) = child.stderr.take() {
-        readers.push(spawn_line_reader(s, tx.clone()));
+        spawn_line_reader(s, tx.clone());
     }
     drop(tx);
     let mut tail: VecDeque<String> = VecDeque::new();
@@ -250,14 +266,19 @@ fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result
             progress(p, format!("{last_line} · {elapsed}s"));
         }
     };
+    // Do not join the readers: a forked daemon may keep the pipes open forever.
+    drain_grace(&rx, DRAIN_GRACE, &mut |raw| {
+        keep(raw);
+        if let Some(c) = clean_line(raw) {
+            last_line = c;
+        }
+    });
     if status.success() {
+        progress(
+            pct.last.max(INDEX_PCT_START),
+            format!("{last_line} · {}s", started.elapsed().as_secs()),
+        );
         return Ok(());
-    }
-    for r in readers {
-        let _ = r.join();
-    }
-    for raw in rx.try_iter() {
-        keep(&raw);
     }
     Err(format!(
         "{} ({status}); for Java also check ~/.m2/settings.xml",
@@ -576,6 +597,20 @@ pub fn impact(
 mod tests {
     use super::*;
     use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn drain_grace_returns_when_sender_stays_open() {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        tx.send("a\n".into()).unwrap();
+        let mut got = Vec::new();
+        let t = Instant::now();
+        drain_grace(&rx, Duration::from_millis(100), &mut |l| {
+            got.push(l.to_string())
+        });
+        assert_eq!(got, ["a\n"]);
+        assert!(t.elapsed() < Duration::from_secs(5));
+        drop(tx);
+    }
 
     #[test]
     fn clean_line_filters_and_caps() {
