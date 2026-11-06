@@ -38,6 +38,16 @@
     panel.collapsed = !panel.collapsed;
     onsave();
   }
+  // Write the clamped width back when the window or the other panel changes.
+  $effect(() => {
+    const w = fit(panel.width);
+    if (w !== panel.width) panel.width = w;
+  });
+
+  // Ends an in-progress drag (listeners, body classes); also run on unmount.
+  let endDrag: (() => void) | null = null;
+  $effect(() => () => endDrag?.());
+
   function onPointerDown(e: PointerEvent) {
     if ((e.target as Element).closest("button") || panel.collapsed || e.button !== 0) return;
     e.preventDefault();
@@ -47,18 +57,32 @@
     const x0 = e.clientX;
     const w0 = fit(panel.width);
     document.body.classList.add("select-none", "cursor-col-resize");
+    let pending: number | null = null;
+    let frame = 0;
+    const flush = () => {
+      frame = 0;
+      if (pending !== null) panel.width = fit(pending);
+    };
     const move = (m: PointerEvent) => {
       const dx = m.clientX - x0;
-      panel.width = fit(side === "left" ? w0 + dx : w0 - dx);
+      pending = side === "left" ? w0 + dx : w0 - dx;
+      if (!frame) frame = requestAnimationFrame(flush);
     };
-    const end = () => {
+    const stop = () => {
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", end);
       handle.removeEventListener("pointercancel", end);
       handle.removeEventListener("lostpointercapture", end);
+      if (frame) cancelAnimationFrame(frame);
       document.body.classList.remove("select-none", "cursor-col-resize");
+      endDrag = null;
+    };
+    const end = () => {
+      stop();
+      if (pending !== null) panel.width = fit(pending);
       onsave();
     };
+    endDrag = stop;
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", end);
     handle.addEventListener("pointercancel", end);
@@ -69,13 +93,12 @@
 <svelte:window bind:innerWidth={vw} />
 
 {#snippet handle()}
-  <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="relative w-[5px] flex-none touch-none bg-secondary select-none hover:bg-input {panel.collapsed
       ? 'cursor-default'
       : 'cursor-col-resize'}"
     onpointerdown={onPointerDown}
-    onclick={() => panel.collapsed && toggle()}
     ondblclick={() => toggle()}
   >
     <Button

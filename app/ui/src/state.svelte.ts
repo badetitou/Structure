@@ -55,11 +55,17 @@ export class AppState {
     const req = this.loadReq;
     this.project = path;
     this.phase = "loading";
-    const m = await analyzeAndRecord(path, (p) =>
-      api.analyze(p, (pr) => {
-        if (req === this.loadReq) this.progress = pr;
-      }),
-    );
+    let m: Matrix;
+    try {
+      m = await analyzeAndRecord(path, (p) =>
+        api.analyze(p, (pr) => {
+          if (req === this.loadReq) this.progress = pr;
+        }),
+      );
+    } catch (e) {
+      if (req !== this.loadReq) return; // superseded: not this load's failure to report
+      throw e;
+    }
     if (req !== this.loadReq) return;
     this.work = m;
     this.phase = "ready";
@@ -131,9 +137,9 @@ export class AppState {
 
   /** Diff of two refs (null = HEAD / working tree); shows the commit snapshot when there is one. */
   async runImpact(base: string | null, head: string | null): Promise<void> {
+    const req = this.guard.begin();
     this.impactError = "";
     this.impactBusy = true;
-    const req = this.guard.begin();
     try {
       const res = await api.impact(this.project, base, head);
       if (!this.guard.isCurrent(req)) return; // superseded or cleared meanwhile
@@ -141,13 +147,15 @@ export class AppState {
     } catch (e) {
       if (this.guard.isCurrent(req)) this.impactError = `Impact failed: ${String(e)}`;
     } finally {
-      this.impactBusy = false;
+      if (this.guard.isCurrent(req)) this.impactBusy = false;
     }
   }
 
   clearImpact() {
     this.guard.invalidate();
     this.historySel = null;
+    this.impactError = "";
+    this.impactBusy = false;
     this.setImpact(null);
   }
 
