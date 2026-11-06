@@ -11,7 +11,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::analyze,
             commands::impact,
-            commands::history
+            commands::history,
+            commands::cell_symbols
         ])
         .run(tauri::generate_context!());
     if let Err(e) = result {

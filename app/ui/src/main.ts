@@ -15,6 +15,9 @@ import { layoutLanes } from "./lanes";
 import { DENSE_STEP, PITCH, layout } from "./layout";
 import type { Mode } from "./layout";
 import { loadMode, saveMode } from "./mode";
+import { PAGE, appendPage, hasMore } from "./cellsymbols";
+import type { SymbolList } from "./cellsymbols";
+import { symbolName } from "./symbolname";
 import { fit, oneToOne, panBy, resize as resizeVb, isFit, toUser, viewBoxAttr, zoomAtClamped } from "./viewport";
 import type { ViewBox } from "./viewport";
 import { analyzeAndRecord, loadRecent, removeRecent, saveRecent } from "./recent";
@@ -257,12 +260,34 @@ function matrixView(workMatrix: Matrix) {
   let vm: ViewMatrix = aggregate(m, flatColumns(m.domains));
   // Rebuilt from `vm` by build().
   let cellById = new Map<string, ViewCell>();
-  let symName = new Map<string, string>();
-  const indexSymbols = () => {
-    symName = new Map<string, string>();
-    for (const c of m.cells) for (const sy of c.symbols) symName.set(sy.id, sy.name);
-  };
-  indexSymbols();
+  // Symbols of the selected cell: fetched on click, a page at a time.
+  let symList: SymbolList | null = null;
+  let symReq = 0;
+  /** Commit whose snapshot `m` is, null for the working tree. */
+  const shownHead = () => (m === workMatrix ? null : (impact?.head ?? null));
+  async function loadSymbols(cell: ViewCell | undefined, more: boolean) {
+    if (!cell) {
+      symList = null;
+      symReq++;
+      return;
+    }
+    const req = ++symReq;
+    const base: SymbolList =
+      more && symList?.cell === cell.id
+        ? { ...symList, loading: true }
+        : { cell: cell.id, total: cell.size, items: [], loading: true };
+    symList = base;
+    renderPanel();
+    try {
+      const page = await api.cellSymbols(projectPath, shownHead(), cell.members, base.items.length, PAGE);
+      if (req !== symReq) return;
+      symList = appendPage(base, page);
+    } catch (e) {
+      if (req !== symReq) return;
+      symList = { ...base, loading: false, error: String(e) };
+    }
+    renderPanel();
+  }
   /** Show the matrix `impact` carries (snapshot) or the working-tree one. */
   function showMatrixFor(imp: Impact | null) {
     const next = shownMatrix(workMatrix, imp);
@@ -271,8 +296,8 @@ function matrixView(workMatrix: Matrix) {
     // The domain tree can differ between commits: start from its default expansion.
     tree = treeOf(m);
     expanded = tree ? initialExpanded(tree) : new Set<string>();
-    indexSymbols();
     selected = null;
+    void loadSymbols(undefined, false);
     build();
   }
   let mode: Mode = loadMode();
@@ -519,6 +544,7 @@ function matrixView(workMatrix: Matrix) {
       r.addEventListener("click", () => {
         selected = c.id;
         paint();
+        void loadSymbols(c, false);
         renderPanel();
       });
       body.append(g);
@@ -529,6 +555,7 @@ function matrixView(workMatrix: Matrix) {
   // Expand/collapse changes the cell ids: drop the selection and hover.
   function rebuild() {
     selected = null;
+    void loadSymbols(undefined, false);
     hovered = null;
     build(false);
     renderPanel();
@@ -707,21 +734,29 @@ function matrixView(workMatrix: Matrix) {
     if (impact) {
       nodes.push(
         h("h3", { textContent: `Changed symbols (${impact.changed_symbols.length})` }),
-        symbolList(impact.changed_symbols.map((id) => ({ name: symName.get(id) ?? id, sub: id }))),
+        symbolList(impact.changed_symbols.map((id) => ({ name: symbolName(id), sub: id }))),
         h("h3", { textContent: `Impacted symbols (${impact.impacted_symbols.length})` }),
         symbolList(
           [...impact.impacted_symbols]
             .sort((a, b) => a.distance - b.distance)
-            .map((x) => ({ name: symName.get(x.id) ?? x.id, sub: `distance ${x.distance} · ${x.id}` })),
+            .map((x) => ({ name: symbolName(x.id), sub: `distance ${x.distance} · ${x.id}` })),
         ),
       );
     }
     const c = selected ? cellById.get(selected) : undefined;
     if (c) {
+      const l = symList?.cell === c.id ? symList : null;
       nodes.push(
-        h("h3", { textContent: `${c.layer}/${c.label} — ${c.symbols.length} symbols` }),
-        symbolList(c.symbols.map((x) => ({ name: x.name, sub: x.file }))),
+        h("h3", { textContent: `${c.layer}/${c.label} — ${c.size} symbols` }),
       );
+      if (l && l.items.length > 0) nodes.push(symbolList(l.items.map((x) => ({ name: x.name, sub: x.file }))));
+      if (l?.error) nodes.push(h("div", { className: "muted", textContent: `Cannot list symbols: ${l.error}` }));
+      else if (!l || l.loading) nodes.push(h("div", { className: "muted", textContent: "Loading..." }));
+      else if (hasMore(l)) {
+        const btn = h("button", { textContent: `Show more (${l.items.length} / ${l.total})` });
+        btn.onclick = () => void loadSymbols(c, true);
+        nodes.push(btn);
+      }
     } else if (!impact) {
       nodes.push(h("div", { className: "muted", textContent: "Click a cell to list its symbols." }));
     }

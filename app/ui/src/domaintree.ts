@@ -94,6 +94,8 @@ export function flatColumns(domains: string[]): Column[] {
 export interface ViewCell extends Cell {
   /** Column label (equals `domain` for leaf columns). */
   label: string;
+  /** Ids of the matrix cells merged into this one. */
+  members: string[];
 }
 export interface ViewMatrix {
   columns: Column[];
@@ -103,12 +105,11 @@ export interface ViewMatrix {
   cellMap: Map<string, string>;
 }
 
-/** Aggregate a matrix onto columns: sizes summed, symbols united, edges re-mapped. */
+/** Aggregate a matrix onto columns: sizes summed, members listed, edges re-mapped. */
 export function aggregate(m: Matrix, cols: Column[]): ViewMatrix {
   const colOf = new Map<string, Column>();
   for (const c of cols) for (const d of c.domains) colOf.set(d, c);
   const cells = new Map<string, ViewCell>();
-  const seen = new Map<string, Set<string>>();
   const cellMap = new Map<string, string>();
   for (const c of m.cells) {
     const col = colOf.get(c.domain);
@@ -117,17 +118,11 @@ export function aggregate(m: Matrix, cols: Column[]): ViewMatrix {
     cellMap.set(c.id, id);
     let v = cells.get(id);
     if (!v) {
-      v = { id, layer: c.layer, domain: col.key, label: col.label, size: 0, symbols: [] };
+      v = { id, layer: c.layer, domain: col.key, label: col.label, size: 0, members: [] };
       cells.set(id, v);
-      seen.set(id, new Set());
     }
     v.size += c.size;
-    const ids = seen.get(id);
-    for (const sy of c.symbols) {
-      if (ids?.has(sy.id)) continue;
-      ids?.add(sy.id);
-      v.symbols.push(sy);
-    }
+    v.members.push(c.id);
   }
   const edges = new Map<string, CellEdge>();
   for (const e of m.edges) {

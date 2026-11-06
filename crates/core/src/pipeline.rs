@@ -852,6 +852,97 @@ fn prune_snapshots(root: &Path, snaps: &Path, max: usize, keep: &str) {
     let _ = impact::git(root, &["worktree", "prune"]);
 }
 
+/// Full SHA (or tree id) of `base`; a root commit's diff base is the empty tree.
+pub fn resolve_base(root: &Path, base: &str) -> anyhow::Result<String> {
+    let resolve = |kind: &str| {
+        impact::git(
+            root,
+            &[
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                &format!("{base}^{{{kind}}}"),
+            ],
+        )
+    };
+    let sha = resolve("commit")
+        .or_else(|_| resolve("tree"))
+        .with_context(|| format!("unknown revision: {base}"))?;
+    Ok(sha.trim().to_string())
+}
+
+/// Snapshot of `head` (see [`snapshot`]) and its analysis. A commit never
+/// changes, so callers may cache the result per (project, head).
+pub fn analyze_snapshot(
+    root: &Path,
+    head: &str,
+    opts: &Options,
+    progress: &dyn Fn(Progress),
+) -> anyhow::Result<(PathBuf, Analysis)> {
+    let snap = snapshot(root, head)?;
+    let analysis = analyze(&snap, opts, progress)?;
+    Ok((snap, analysis))
+}
+
+/// Impact of `base..head` on the analysis of `head`'s snapshot `snap`; the
+/// result carries that analysis' matrix.
+pub fn impact_in_snapshot(
+    snap: &Path,
+    analysis: &Analysis,
+    base_sha: Option<&str>,
+    head: &str,
+) -> anyhow::Result<Impact> {
+    let mut changes = impact::changed_lines(snap, base_sha, Some(head))?;
+    changes.retain(|c| c.file != "index.scip");
+    let mut result = impact::compute(
+        &analysis.graph,
+        &analysis.classification,
+        &changes,
+        base_sha.unwrap_or("HEAD"),
+        Some(head),
+    );
+    result.warnings = analysis.warnings.clone();
+    result.matrix = Some(analysis.matrix.clone());
+    Ok(result)
+}
+
+/// Identifies the state of the working tree: HEAD, `git status` and the size
+/// and mtime of every listed file. Equal fingerprints mean a cached working-tree
+/// analysis is still valid.
+pub fn worktree_fingerprint(root: &Path) -> anyhow::Result<String> {
+    let head = impact::git(root, &["rev-parse", "HEAD"]).unwrap_or_default();
+    let top = impact::git(root, &["rev-parse", "--show-toplevel"])?;
+    let top = Path::new(top.trim());
+    // Paths are relative to the repository root; untracked files one by one.
+    let status = impact::git(
+        root,
+        &[
+            "status",
+            "--porcelain",
+            "-z",
+            "--no-renames",
+            "-uall",
+            "--",
+            ".",
+        ],
+    )?;
+    let mut fp = format!("{}\n", head.trim());
+    for entry in status.split('\0').filter(|e| e.len() > 3) {
+        let path = entry.get(3..).unwrap_or("");
+        let meta = std::fs::metadata(top.join(path)).ok();
+        let (len, mtime) = meta.map_or((0, 0), |m| {
+            let t = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos());
+            (m.len(), t)
+        });
+        fp.push_str(&format!("{entry}\t{len}\t{mtime}\n"));
+    }
+    Ok(fp)
+}
+
 /// Impact of `base..head`. With a `head`, the commit is analysed exactly in
 /// its snapshot; without, the working tree is used as in [`impact`].
 pub fn impact_at(
@@ -868,42 +959,9 @@ pub fn impact_at(
         let analysis = analyze(root, opts, progress)?;
         return impact(root, &analysis, base, None);
     };
-    let base_sha = match base {
-        Some(b) => {
-            // A root commit's diff base is the empty tree, which is not a commit.
-            let resolve = |kind: &str| {
-                impact::git(
-                    root,
-                    &[
-                        "rev-parse",
-                        "--verify",
-                        "--end-of-options",
-                        &format!("{b}^{{{kind}}}"),
-                    ],
-                )
-            };
-            let sha = resolve("commit")
-                .or_else(|_| resolve("tree"))
-                .with_context(|| format!("unknown revision: {b}"))?;
-            Some(sha.trim().to_string())
-        }
-        None => None,
-    };
-    let base = base_sha.as_deref();
-    let snap = snapshot(root, h)?;
-    let analysis = analyze(&snap, opts, progress)?;
-    let mut changes = impact::changed_lines(&snap, base, head)?;
-    changes.retain(|c| c.file != "index.scip");
-    let mut result = impact::compute(
-        &analysis.graph,
-        &analysis.classification,
-        &changes,
-        base.unwrap_or("HEAD"),
-        head,
-    );
-    result.warnings = analysis.warnings;
-    result.matrix = Some(analysis.matrix);
-    Ok(result)
+    let base_sha = base.map(|b| resolve_base(root, b)).transpose()?;
+    let (snap, analysis) = analyze_snapshot(root, h, opts, progress)?;
+    impact_in_snapshot(&snap, &analysis, base_sha.as_deref(), h)
 }
 
 #[cfg(test)]
@@ -1200,6 +1258,20 @@ mod tests {
         // c2 only touches the new comment line: no symbol changed.
         let imp = impact_at(&root, Some(&c1), Some(&c2), &no_scip(), &|_| {}).unwrap();
         assert!(imp.changed_symbols.is_empty(), "{imp:?}");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn worktree_fingerprint_tracks_edits() {
+        let (repo, _, _) = temp_repo("fingerprint");
+        let root = repo.join("app");
+        let clean = worktree_fingerprint(&root).unwrap();
+        assert_eq!(clean, worktree_fingerprint(&root).unwrap());
+        std::fs::write(root.join("New.java"), "class N {}\n").unwrap();
+        let dirty = worktree_fingerprint(&root).unwrap();
+        assert_ne!(clean, dirty);
+        std::fs::write(root.join("New.java"), "class N { int x; }\n").unwrap();
+        assert_ne!(dirty, worktree_fingerprint(&root).unwrap());
         let _ = std::fs::remove_dir_all(&repo);
     }
 
