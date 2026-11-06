@@ -1,0 +1,41 @@
+{
+  "base": "HEAD",
+  "head": null,
+  "changed_files": [
+    "src/main/java/org/mybatis/jpetstore/mapper/AccountMapper.java"
+  ],
+  "changed_symbols": [
+    "org.mybatis.jpetstore.mapper.AccountMapper"
+  ],
+  "changed_cells": [
+    "persistence:account"
+  ],
+  "impacted_cells": [
+    {
+      "id": "business:account",
+      "distance": 1
+    },
+    {
+      "id": "entry:account",
+      "distance": 2
+    },
+    {
+      "id": "entry:order",
+      "distance": 2
+    }
+  ],
+  "impacted_symbols": [
+    {
+      "id": "org.mybatis.jpetstore.service.AccountService",
+      "distance": 1
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.actions.AccountActionBean",
+      "distance": 2
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.actions.OrderActionBean",
+      "distance": 2
+    }
+  ]
+}
