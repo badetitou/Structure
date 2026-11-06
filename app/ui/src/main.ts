@@ -3,6 +3,8 @@ import * as api from "./api";
 import type { Cell, Impact, Matrix } from "./api";
 import { CHANGED, DEFAULT_FILL, impactCellPaint } from "./cellstate";
 import { reach } from "./graph";
+import { clickCommit, isSelected, relativeDate, selectionDiff } from "./history";
+import type { Selection } from "./history";
 import { analyzeAndRecord, loadRecent, removeRecent, saveRecent } from "./recent";
 
 const root = document.getElementById("app") as HTMLElement;
@@ -173,7 +175,15 @@ function matrixView(m: Matrix) {
   legend.innerHTML =
     `<span style="background:${FWD}"></span>reaches (forward)` +
     `<span style="background:${BWD}"></span>reached by (backward)`;
-  const toolbar = h("div", { className: "toolbar" }, baseIn, headIn, showBtn, clearBtn, msg, legend);
+  const advanced = h(
+    "details",
+    { className: "advanced" },
+    h("summary", { textContent: "Advanced" }),
+    baseIn,
+    headIn,
+    showBtn,
+  );
+  const toolbar = h("div", { className: "toolbar" }, advanced, clearBtn, msg, legend);
   // Analysis and impact warnings (e.g. indexing failed → tree-sitter only).
   const warnBox = h("div", { className: "warnings" });
   const showWarnings = (ws: string[]) => {
@@ -278,7 +288,9 @@ function matrixView(m: Matrix) {
   }
 
   const panel = h("aside");
-  const main = h("div", { className: "main" }, svg as unknown as Node, panel);
+  const sidebar = h("nav", { className: "history" });
+  sidebar.hidden = true;
+  const main = h("div", { className: "main" }, sidebar, svg as unknown as Node, panel);
   show(header, toolbar, warnBox, main);
 
   function paint() {
@@ -368,11 +380,63 @@ function matrixView(m: Matrix) {
     panel.replaceChildren(...nodes);
   }
 
-  showBtn.onclick = async () => {
+  // History sidebar: hidden when unavailable (not a git repo, error).
+  let hist: api.History | null = null;
+  let histSel: Selection | null = null;
+  const pick = (sel: Selection) => {
+    if (!hist) return;
+    const d = selectionDiff(hist.commits, sel);
+    if (!d) return;
+    histSel = sel;
+    renderHistory();
+    void runImpact(d.base, d.head);
+  };
+  function renderHistory() {
+    if (!hist) return;
+    const rows: Node[] = [];
+    if (hist.dirty) {
+      const r = h(
+        "div",
+        { className: "commit" + (histSel?.kind === "worktree" ? " sel" : "") },
+        h("div", { className: "subj", textContent: "Working tree" }),
+        h("div", { className: "meta", textContent: "uncommitted changes" }),
+      );
+      r.onclick = () => pick({ kind: "worktree" });
+      rows.push(r);
+    }
+    hist.commits.forEach((c, i) => {
+      const subj = h("div", { className: "subj" }, h("code", { textContent: c.short }), ` ${c.subject}`);
+      subj.title = c.subject;
+      const meta = h("div", { className: "meta" }, `${c.author} · ${relativeDate(c.date)}`);
+      for (const ref of c.refs) meta.append(h("span", { className: "badge", textContent: ref }));
+      const r = h("div", { className: "commit" + (isSelected(histSel, i) ? " sel" : "") }, subj, meta);
+      r.onclick = (ev) => pick(clickCommit(histSel, i, ev.shiftKey));
+      rows.push(r);
+    });
+    sidebar.replaceChildren(h("h3", { textContent: "History" }), ...rows);
+    sidebar.hidden = false;
+  }
+  api
+    .history(projectPath)
+    .then((r) => {
+      hist = r;
+      renderHistory();
+    })
+    .catch(() => {
+      sidebar.hidden = true;
+    });
+
+  showBtn.onclick = () => {
+    // A typed diff is not a sidebar selection.
+    histSel = null;
+    renderHistory();
+    void runImpact(baseIn.value.trim() || null, headIn.value.trim() || null);
+  };
+  async function runImpact(base: string | null, head: string | null) {
     msg.textContent = "";
     showBtn.disabled = true;
     try {
-      impact = await api.impact(projectPath, baseIn.value.trim() || null, headIn.value.trim() || null);
+      impact = await api.impact(projectPath, base, head);
       showWarnings(impact.warnings ?? m.warnings ?? []);
       clearBtn.disabled = false;
       hovered = null;
@@ -383,9 +447,11 @@ function matrixView(m: Matrix) {
     } finally {
       showBtn.disabled = false;
     }
-  };
+  }
   clearBtn.onclick = () => {
     impact = null;
+    histSel = null;
+    renderHistory();
     showWarnings(m.warnings ?? []);
     clearBtn.disabled = true;
     paint();
