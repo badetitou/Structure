@@ -46,6 +46,21 @@ pub struct Placement {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Classification {
     pub placements: BTreeMap<String, Placement>,
+    /// Module tree, present when domains come from modules (see `Strategy::Auto`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_tree: Option<Vec<DomainNode>>,
+}
+
+/// Node of the module tree: a leaf is one matrix domain.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DomainNode {
+    pub label: String,
+    /// Matrix domain, on leaves only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    /// Number of classes below this node.
+    pub size: usize,
+    pub children: Vec<DomainNode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -61,6 +76,9 @@ pub struct Matrix {
     /// stale index...). Omitted from JSON when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    /// Module tree whose leaves are `domains`; omitted when domains are name roots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_tree: Option<Vec<DomainNode>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -176,6 +194,9 @@ mod tests {
     #[test]
     fn matrix_sample_roundtrips() {
         roundtrip::<Matrix>(MATRIX);
+        let m: Matrix = serde_json::from_str(MATRIX).unwrap();
+        assert!(m.domain_tree.is_none());
+        roundtrip::<Matrix>(include_str!("../../../docs/samples/matrix-modules.json"));
     }
 
     #[test]
