@@ -13,3 +13,5 @@ serde_json = "1"
 anyhow = "1"
 toml = "0.8"
 clap = { version = "4", features = ["derive"] }
+scip = "0.5"
+protobuf = "3"
