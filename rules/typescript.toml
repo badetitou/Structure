@@ -63,7 +63,7 @@ layer = "model"
 path_contains = [".model.ts", ".entity.ts", ".dto.ts"]
 
 [domain]
-strategy = "path_segment"
+strategy = "auto"
 after = "src/app/"
 skip_segments = ["features", "feature", "shared", "core", "modules", "pages"]
 strip_suffixes = ["Component", "Service", "Store", "State", "Guard", "Interceptor", "Controller", "Module"]
