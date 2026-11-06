@@ -1,9 +1,9 @@
 ---
 id: 8
 title: Rules classify Spring/DGS domain and core packages in realworld-java
-status: todo
+status: done
 parent: 1
-branch: null
+branch: 8-realworld-rules
 remote: null
 created: 2026-11-06
 ---
