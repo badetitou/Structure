@@ -9,7 +9,7 @@ Prerequisites: Rust (stable), Node 20+, JDK + Maven (for Java indexing),
 `cargo install tauri-cli --version "^2"`. Optional: `scip-java` or Coursier
 (`cs`) for Java, `npx` for TypeScript (indexers are run automatically).
 
-Fixtures and indexes (scripts live on the `fixtures-indexers` branch):
+Fixtures and indexes (already present in `fixtures/` on this machine):
 
 ```
 scripts/fetch-fixtures.sh      # clones jpetstore-6 and angular-realworld into fixtures/
@@ -51,3 +51,7 @@ fixture or its `index.scip` is missing; they never run indexers).
 - Impact follows reverse edges only; no dynamic dispatch/reflection/DI wiring beyond SCIP.
 - Language detected from `pom.xml`/`build.gradle*` (Java) or `tsconfig.json`/`package.json` (TS); no mixed projects.
 - Indexing can take minutes the first time (Maven build / npm install).
+- scip-java runs the project's Maven build. A `~/.m2/settings.xml` pointing to
+  an unreachable private repository makes it hang (the app gives up after
+  10 min and falls back to tree-sitter). `scripts/index-fixtures.sh` avoids it
+  for jpetstore through `.mvn/maven.config` (Central only, tests skipped).

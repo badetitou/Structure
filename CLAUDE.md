@@ -15,11 +15,20 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 ## Map
 
 - `Cargo.toml` — virtual workspace (edition 2024); `app/` (Tauri) is excluded.
-- `crates/core` — lib `structure-core`: `ir` (Graph/Symbol/Edge), `model`
-  (Layer/Matrix/Impact/Progress), plus stubs filled by later tasks: `scip`,
-  `java`, `ts`, `classify`, `matrix`, `impact`, `link`, `pipeline`.
-- `crates/cli` — bin `structure` (clap). Keep `main` thin; logic goes in core.
-- `docs/api.md` — Tauri API contract; `docs/samples/*.json` — sample outputs.
+- `crates/core` — lib `structure-core`:
+  - `ir` (Graph/Symbol/Edge), `model` (Layer/Matrix/Impact/Progress) — contracts.
+  - `java`, `ts` — tree-sitter frontends (symbols, ranges, annotations, supertype
+    and `Uses` edges; `ext:<Name>` = external type).
+  - `scip` — reads `index.scip`; `link` — joins SCIP occurrences to tree-sitter
+    symbols → `Call`/`Uses`/`Implements` edges.
+  - `classify` + `rules/*.toml` — declarative layer/domain rules.
+  - `matrix` — quotient graph; `impact` — git diff → changed/impacted cells.
+  - `pipeline` — detect language, run/reuse indexer, analyze, impact.
+- `crates/cli` — bin `structure` (`analyze`, `impact`). Keep `main` thin.
+- `app/` — Tauri 2 app: `src-tauri` (commands over `pipeline`), `ui` (Vite + TS,
+  vitest). See `app/README.md`.
+- `docs/` — `plan.md`, `api.md` (Tauri API contract), `samples/*.json`.
+- `scripts/` — fetch and index fixtures; `tests/golden/` — expected classifications.
 - `fixtures/` (gitignored) — sample projects. Tests needing them read env
   `STRUCTURE_FIXTURES` (default `<workspace>/fixtures`) and skip when absent.
 
