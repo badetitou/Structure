@@ -12,6 +12,11 @@ use tauri::{AppHandle, Emitter, Manager};
 #[derive(Default)]
 pub struct Cache(pub Mutex<HashMap<String, Analysis>>);
 
+/// Serialises snapshot analyses: concurrent checkouts/indexing of the same
+/// snapshot would race.
+#[derive(Default)]
+pub struct SnapshotLock(pub Mutex<()>);
+
 fn emit_progress(app: &AppHandle, step: &str, pct: u8) {
     emit_progress_event(
         app,
@@ -85,6 +90,11 @@ pub async fn impact(
             // cache here).
             emit_progress(&app, &format!("checking out {}", short_rev(h)), 2);
             let opts = Options::default();
+            let state = app.state::<SnapshotLock>();
+            let _guard = state
+                .0
+                .lock()
+                .map_err(|_| "internal error: snapshot lock poisoned".to_string())?;
             let result = pipeline::impact_at(&p, base.as_deref(), Some(h), &opts, &|pr| {
                 emit_progress_event(&app, pr)
             })

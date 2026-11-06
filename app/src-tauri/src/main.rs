@@ -7,6 +7,7 @@ fn main() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::Cache::default())
+        .manage(commands::SnapshotLock::default())
         .invoke_handler(tauri::generate_handler![
             commands::analyze,
             commands::impact,

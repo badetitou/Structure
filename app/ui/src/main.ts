@@ -1,4 +1,4 @@
-import { shownMatrix } from "./matrixsel";
+import { RequestGuard, shownMatrix } from "./matrixsel";
 import "./style.css";
 import * as api from "./api";
 import type { Impact, Matrix } from "./api";
@@ -511,11 +511,15 @@ function matrixView(workMatrix: Matrix) {
     renderHistory();
     void runImpact(baseIn.value.trim() || null, headIn.value.trim() || null);
   };
+  const guard = new RequestGuard();
   async function runImpact(base: string | null, head: string | null) {
     msg.textContent = "";
     showBtn.disabled = true;
+    const req = guard.begin();
     try {
-      impact = await api.impact(projectPath, base, head);
+      const res = await api.impact(projectPath, base, head);
+      if (!guard.isCurrent(req)) return; // superseded or cleared meanwhile
+      impact = res;
       showMatrixFor(impact);
       showWarnings(impact.warnings ?? m.warnings ?? []);
       clearBtn.disabled = false;
@@ -523,12 +527,13 @@ function matrixView(workMatrix: Matrix) {
       paint();
       renderPanel();
     } catch (e) {
-      msg.textContent = `Impact failed: ${String(e)}`;
+      if (guard.isCurrent(req)) msg.textContent = `Impact failed: ${String(e)}`;
     } finally {
       showBtn.disabled = false;
     }
   }
   clearBtn.onclick = () => {
+    guard.invalidate();
     impact = null;
     histSel = null;
     renderHistory();

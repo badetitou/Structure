@@ -757,20 +757,24 @@ pub fn impact_at(
         return impact(root, &analysis, base, None);
     };
     let base_sha = match base {
-        Some(b) => Some(
-            impact::git(
-                root,
-                &[
-                    "rev-parse",
-                    "--verify",
-                    "--end-of-options",
-                    &format!("{b}^{{commit}}"),
-                ],
-            )
-            .with_context(|| format!("unknown revision: {b}"))?
-            .trim()
-            .to_string(),
-        ),
+        Some(b) => {
+            // A root commit's diff base is the empty tree, which is not a commit.
+            let resolve = |kind: &str| {
+                impact::git(
+                    root,
+                    &[
+                        "rev-parse",
+                        "--verify",
+                        "--end-of-options",
+                        &format!("{b}^{{{kind}}}"),
+                    ],
+                )
+            };
+            let sha = resolve("commit")
+                .or_else(|_| resolve("tree"))
+                .with_context(|| format!("unknown revision: {b}"))?;
+            Some(sha.trim().to_string())
+        }
         None => None,
     };
     let base = base_sha.as_deref();
@@ -1045,6 +1049,19 @@ mod tests {
         // c2 only touches the new comment line: no symbol changed.
         let imp = impact_at(&root, Some(&c1), Some(&c2), &no_scip(), &|_| {}).unwrap();
         assert!(imp.changed_symbols.is_empty(), "{imp:?}");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn impact_at_root_commit_with_empty_tree_base() {
+        let (repo, _, _) = temp_repo("root");
+        let root = repo.join("app");
+        let c0 = git_ok(&repo, &["rev-list", "--max-parents=0", "HEAD"])
+            .trim()
+            .to_string();
+        let empty = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+        let imp = impact_at(&root, Some(empty), Some(&c0), &no_scip(), &|_| {}).unwrap();
+        assert_eq!(imp.changed_symbols, vec!["A".to_string()], "{imp:?}");
         let _ = std::fs::remove_dir_all(&repo);
     }
 
