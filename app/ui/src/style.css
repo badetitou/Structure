@@ -13,7 +13,7 @@ header h1 { font-size: 18px; margin: 0; }
 .main .view { flex: 1; min-width: 0; overflow: hidden; display: flex; }
 .main .view svg { flex: 1; min-width: 0; height: 100%; cursor: grab; touch-action: none; user-select: none; }
 .main .view svg.panning, .main .view svg.panning * { cursor: grabbing !important; }
-aside { width: 340px; flex: none; border-left: 1px solid #ddd; background: #fff; padding: 10px 14px; overflow: auto; font-size: 13px; }
+aside { box-sizing: border-box; width: 340px; flex: none; border-left: 1px solid #ddd; background: #fff; padding: 10px 14px; overflow: auto; font-size: 13px; }
 .handle { position: relative; flex: none; width: 5px; cursor: col-resize; background: #e4e4e4; touch-action: none; user-select: none; }
 .handle:hover { background: #bbb; }
 .handle.is-collapsed { cursor: default; }
@@ -29,7 +29,7 @@ aside li small { color: #777; display: block; word-break: break-all; }
 text { font-size: 11px; }
 .advanced { display: flex; gap: 8px; align-items: center; }
 .advanced[open] { flex-wrap: wrap; }
-.history { width: 260px; flex: none; border-right: 1px solid #ddd; background: #fff; overflow: auto; font-size: 12px; }
+.history { box-sizing: border-box; width: 260px; flex: none; border-right: 1px solid #ddd; background: #fff; overflow: auto; font-size: 12px; }
 .history h3 { margin: 8px 10px; font-size: 14px; }
 .commit { display: flex; align-items: center; gap: 6px; height: 40px; box-sizing: border-box; padding: 0 10px 0 6px; cursor: pointer; user-select: none; overflow: hidden; }
 .commit .graph { flex: none; display: block; }
