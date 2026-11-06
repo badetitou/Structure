@@ -18,7 +18,8 @@ invoke<History>("history", { path: string, limit: number | null });
   otherwise `base..head` (`head = null` means working tree). Impact cell ids
   and symbol ids refer to the ids in the `Matrix` from `analyze`.
 - `history(path, limit)`: up to `limit` (default 200) commits reachable from
-  HEAD, newest first. `dirty` = the working tree has changes under the
+  HEAD in topological order (`git log --topo-order`: children before parents,
+  each merged line of history contiguous), newest first. `dirty` = the working tree has changes under the
   project root that `impact(path, null, null)` would show (tracked edits and
   non-ignored untracked files; `index.scip` ignored). Pass `commit.base` / `commit.id` as `impact(path, base, head)` to
   show one commit's diff (`base` is the first parent, or the empty tree for a

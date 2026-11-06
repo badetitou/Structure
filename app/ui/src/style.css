@@ -20,7 +20,10 @@ text { font-size: 11px; }
 .advanced[open] { flex-wrap: wrap; }
 .history { width: 260px; flex: none; border-right: 1px solid #ddd; background: #fff; overflow: auto; font-size: 12px; }
 .history h3 { margin: 8px 10px; font-size: 14px; }
-.commit { padding: 6px 10px; border-bottom: 1px solid #eee; cursor: pointer; user-select: none; }
+.commit { display: flex; align-items: center; gap: 6px; height: 40px; box-sizing: border-box; padding: 0 10px 0 6px; cursor: pointer; user-select: none; overflow: hidden; }
+.commit .graph { flex: none; display: block; }
+.commit .ctext { flex: 1; min-width: 0; }
+.commit .meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .commit:hover { background: #f5f5f5; }
 .commit.sel { background: #e0ecff; }
 .commit .subj { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

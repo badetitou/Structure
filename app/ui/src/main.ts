@@ -5,6 +5,8 @@ import { CHANGED, DEFAULT_FILL, impactCellPaint } from "./cellstate";
 import { reach } from "./graph";
 import { clickCommit, isSelected, relativeDate, selectionDiff } from "./history";
 import type { Selection } from "./history";
+import { rowSvg } from "./graphsvg";
+import { layoutLanes } from "./lanes";
 import { analyzeAndRecord, loadRecent, removeRecent, saveRecent } from "./recent";
 
 const root = document.getElementById("app") as HTMLElement;
@@ -394,12 +396,22 @@ function matrixView(m: Matrix) {
   function renderHistory() {
     if (!hist) return;
     const rows: Node[] = [];
+    const layout = layoutLanes(hist.commits);
+    const headColor = layout.rows[0]?.color;
     if (hist.dirty) {
       const r = h(
         "div",
         { className: "commit" + (histSel?.kind === "worktree" ? " sel" : "") },
-        h("div", { className: "subj", textContent: "Working tree" }),
-        h("div", { className: "meta", textContent: "uncommitted changes" }),
+        rowSvg(layout.rows[0] ? { ...layout.rows[0], top: [], through: [], bottom: [] } : null, layout.width, {
+          hollow: true,
+          lineBelow: headColor,
+        }),
+        h(
+          "div",
+          { className: "ctext" },
+          h("div", { className: "subj", textContent: "Working tree" }),
+          h("div", { className: "meta", textContent: "uncommitted changes" }),
+        ),
       );
       r.onclick = () => pick({ kind: "worktree" });
       rows.push(r);
@@ -409,7 +421,15 @@ function matrixView(m: Matrix) {
       subj.title = c.subject;
       const meta = h("div", { className: "meta" }, `${c.author} · ${relativeDate(c.date)}`);
       for (const ref of c.refs) meta.append(h("span", { className: "badge", textContent: ref }));
-      const r = h("div", { className: "commit" + (isSelected(histSel, i) ? " sel" : "") }, subj, meta);
+      const g = rowSvg(layout.rows[i], layout.width, {
+        lineAbove: i === 0 && hist?.dirty ? headColor : undefined,
+      });
+      const r = h(
+        "div",
+        { className: "commit" + (isSelected(histSel, i) ? " sel" : "") },
+        g,
+        h("div", { className: "ctext" }, subj, meta),
+      );
       r.onclick = (ev) => pick(clickCommit(histSel, i, ev.shiftKey));
       rows.push(r);
     });

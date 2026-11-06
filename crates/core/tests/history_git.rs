@@ -117,3 +117,34 @@ fn root_merge_dirty_and_odd_subject() {
     std::fs::write(d.join("a.txt"), "changed\n").unwrap();
     assert!(history(&d, 5).unwrap().dirty);
 }
+
+#[test]
+fn topo_order_keeps_branches_contiguous() {
+    let d = temp_repo("topo");
+    let commit = |file: &str, msg: &str| {
+        std::fs::write(d.join(file), msg).unwrap();
+        git(&d, &["add", "."]);
+        git(&d, &["commit", "-qm", msg]);
+    };
+    commit("r.txt", "root");
+    git(&d, &["checkout", "-q", "-b", "side"]);
+    commit("s1.txt", "side1");
+    git(&d, &["checkout", "-q", "main"]);
+    commit("m1.txt", "main1");
+    git(&d, &["checkout", "-q", "side"]);
+    commit("s2.txt", "side2");
+    git(&d, &["checkout", "-q", "main"]);
+    commit("m2.txt", "main2");
+    git(&d, &["merge", "-q", "--no-ff", "-m", "merge", "side"]);
+
+    let h = history(&d, 50).unwrap();
+    let subjects: Vec<&str> = h.commits.iter().map(|c| c.subject.as_str()).collect();
+    assert_eq!(subjects.len(), 6);
+    assert_eq!(subjects[0], "merge");
+    assert_eq!(subjects[5], "root");
+    // Each merged line of history is contiguous, between the merge and the fork point.
+    let middle = &subjects[1..5];
+    let main_first = middle == ["main2", "main1", "side2", "side1"];
+    let side_first = middle == ["side2", "side1", "main2", "main1"];
+    assert!(main_first || side_first, "{subjects:?}");
+}
