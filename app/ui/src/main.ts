@@ -1,5 +1,4 @@
 import { RequestGuard, shownMatrix } from "./matrixsel";
-import "./style.css";
 import { COLLAPSED_WIDTH, clampWidth, loadPanels, savePanels } from "./panels";
 import type { PanelsState } from "./panels";
 import * as api from "./api";
@@ -20,9 +19,12 @@ import type { SymbolList } from "./cellsymbols";
 import { symbolName } from "./symbolname";
 import { fit, oneToOne, panBy, resize as resizeVb, isFit, toUser, viewBoxAttr, zoomAtClamped } from "./viewport";
 import type { ViewBox } from "./viewport";
-import { analyzeAndRecord, loadRecent, removeRecent, saveRecent } from "./recent";
+import { analyzeAndRecord } from "./recent";
+import { setSvgAttr } from "./svgattr";
 
-const root = document.getElementById("app") as HTMLElement;
+// Container and exit callback provided by the Svelte shell (App.svelte).
+let root: HTMLElement;
+let goHome: (error?: string) => void = () => {};
 const SVG = "http://www.w3.org/2000/svg";
 
 function h<K extends keyof HTMLElementTagNameMap>(
@@ -125,7 +127,7 @@ function s<K extends keyof SVGElementTagNameMap>(
   attrs: Record<string, string | number> = {},
 ): SVGElementTagNameMap[K] {
   const el = document.createElementNS(SVG, tag);
-  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+  for (const [k, v] of Object.entries(attrs)) setSvgAttr(el, k, v);
   return el;
 }
 function show(...nodes: Node[]) {
@@ -134,73 +136,12 @@ function show(...nodes: Node[]) {
 
 let projectPath = "";
 
-// ---- 1. Home ----
-function home(error?: string) {
-  const pathLabel = h("div", { className: "muted" }, projectPath || "No project selected");
-  const hint = h("div", { className: "muted" }, "Supported: Java and TypeScript projects.");
-  const analyzeBtn = h("button", { textContent: "Analyze", disabled: !projectPath });
-  const openBtn = h("button", { textContent: "Open project…" });
-  openBtn.onclick = async () => {
-    const p = await api.pickFolder();
-    if (p) {
-      projectPath = p;
-      home();
-    }
-  };
-  analyzeBtn.onclick = () => {
-    analyzeBtn.disabled = true;
-    void runAnalysis();
-  };
-  const recentBox = h("div", { className: "recent" });
-  const recents = loadRecent();
-  if (recents.length) {
-    recentBox.append(h("h3", { textContent: "Recent projects" }));
-    for (const r of recents) {
-      const open = h(
-        "button",
-        { className: "recent-open", title: r.path },
-        h("strong", { textContent: r.name }),
-        h("span", { className: "muted recent-path", textContent: r.path }),
-        h("span", { className: "muted", textContent: new Date(r.lastOpened).toLocaleString() }),
-      );
-      open.onclick = () => {
-        projectPath = r.path;
-        void runAnalysis();
-      };
-      const del = h("button", {
-        className: "recent-del",
-        textContent: "×",
-        title: "Remove from recent projects",
-      });
-      del.onclick = () => {
-        saveRecent(removeRecent(loadRecent(), r.path));
-        home(error);
-      };
-      recentBox.append(h("div", { className: "recent-row" }, open, del));
-    }
-  }
-  show(
-    h(
-      "div",
-      { className: "center" },
-      h(
-        "div",
-        { className: "brand" },
-        h("img", { src: "/logo.svg", alt: "", className: "logo-lg" }),
-        h("h1", { textContent: "Structure" }),
-      ),
-      openBtn,
-      pathLabel,
-      hint,
-      analyzeBtn,
-      h("div", { className: "error", textContent: error ?? "" }),
-      recentBox,
-    ),
-  );
-}
-
 // ---- 2. Progress ----
-async function runAnalysis() {
+/** Entry point for the shell: shows progress then the matrix inside `host`; `onExit` returns to the home screen. */
+export async function runAnalysis(path: string, host: HTMLElement, onExit: (error?: string) => void) {
+  root = host;
+  goHome = onExit;
+  projectPath = path;
   const label = h("div", { textContent: "starting…" });
   const fill = h("div");
   fill.style.width = "0%";
@@ -225,13 +166,13 @@ async function runAnalysis() {
     );
     matrixView(m);
   } catch (e) {
-    home(`Analysis failed: ${String(e)}`);
+    goHome(`Analysis failed: ${String(e)}`);
   }
 }
 
 // ---- 3. Matrix view ----
-const FWD = "#16a34a";
-const BWD = "#2563eb";
+const FWD = "var(--fwd)";
+const BWD = "var(--bwd)";
 /** Cell stroke width [unselected, selected] per mode. */
 const STROKE_NORMAL = [1, 3] as const;
 const STROKE_DENSE = [0.5, 2] as const;
@@ -315,7 +256,7 @@ function matrixView(workMatrix: Matrix) {
     }),
   );
   const back = h("button", { textContent: "Close project" });
-  back.onclick = () => home();
+  back.onclick = () => goHome();
   header.append(back);
 
   // Toolbar
@@ -420,7 +361,7 @@ function matrixView(workMatrix: Matrix) {
       applyView();
     }
     const defs = s("defs");
-    for (const [id, color] of [["a-def", "#999"], ["a-fwd", FWD], ["a-bwd", BWD], ["a-imp", CHANGED]]) {
+    for (const [id, color] of [["a-def", "var(--edge)"], ["a-fwd", FWD], ["a-bwd", BWD], ["a-imp", CHANGED]]) {
       const mk = s("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto" });
       mk.append(s("path", { d: "M0,0 L10,5 L0,10 z", fill: color }));
       defs.append(mk);
@@ -437,7 +378,7 @@ function matrixView(workMatrix: Matrix) {
       const w = b.span * pitch;
       const g = s("g");
       g.style.cursor = "pointer";
-      const r = s("rect", { x: x + 1, y: b.depth * bandH + 1, width: w - 2, height: bandH - 2, rx: 3, fill: "#e2e8f0", stroke: "#94a3b8" });
+      const r = s("rect", { x: x + 1, y: b.depth * bandH + 1, width: w - 2, height: bandH - 2, rx: 3, fill: "var(--band-fill)", stroke: "var(--band-stroke)" });
       const t = s("text", { x: x + w / 2, y: b.depth * bandH + bandH / 2 + 4, "text-anchor": "middle", "font-weight": "bold", ...fs });
       t.textContent = fitText(`\u25be ${b.label}`, w - 6, lay.detailed ? 8 : 6);
       t.style.pointerEvents = "none";
@@ -481,8 +422,8 @@ function matrixView(workMatrix: Matrix) {
       if (t.id) continue;
       body.append(
         lay.detailed
-          ? s("rect", { x: t.x, y: t.y, width: t.w, height: t.h, fill: "none", stroke: "#ddd", "stroke-dasharray": "3 3", opacity: 0.6 })
-          : s("rect", { x: t.x + 0.5, y: t.y + 0.5, width: t.w - 1, height: t.h - 1, fill: "#eef0f3" }),
+          ? s("rect", { x: t.x, y: t.y, width: t.w, height: t.h, fill: "none", stroke: "var(--border)", "stroke-dasharray": "3 3", opacity: 0.6 })
+          : s("rect", { x: t.x + 0.5, y: t.y + 0.5, width: t.w - 1, height: t.h - 1, fill: "var(--tile)" }),
       );
     }
 
@@ -518,8 +459,8 @@ function matrixView(workMatrix: Matrix) {
       if (!t) continue;
       const g = s("g");
       const r = lay.detailed
-        ? s("rect", { x: t.x, y: t.y, width: t.w, height: t.h, rx: 3, stroke: "#333", "stroke-width": 1 })
-        : s("rect", { x: t.x + 0.5, y: t.y + 0.5, width: t.w - 1, height: t.h - 1, stroke: "#333" });
+        ? s("rect", { x: t.x, y: t.y, width: t.w, height: t.h, rx: 3, stroke: "var(--cell-stroke)", "stroke-width": 1 })
+        : s("rect", { x: t.x + 0.5, y: t.y + 0.5, width: t.w - 1, height: t.h - 1, stroke: "var(--cell-stroke)" });
       r.style.cursor = "pointer";
       const label = `${c.layer}/${c.label} (${c.size})`;
       if (lay.detailed) {
@@ -676,15 +617,15 @@ function matrixView(workMatrix: Matrix) {
       let fill = DEFAULT_FILL;
       let opacity = 1;
       if (hovered) {
-        if (id === hovered) fill = "#facc15";
-        else if (fwd.has(id) && bwd.has(id)) fill = "#a855f7";
+        if (id === hovered) fill = "var(--hover)";
+        else if (fwd.has(id) && bwd.has(id)) fill = "var(--both)";
         else if (fwd.has(id)) fill = FWD;
         else if (bwd.has(id)) fill = BWD;
         else opacity = 0.25;
       } else if (impact) {
         ({ fill, opacity } = impactCellPaint(id, changed, impactById));
       }
-      r.setAttribute("fill", fill);
+      setSvgAttr(r, "fill", fill);
       r.setAttribute("opacity", String(opacity));
       const [base, sel] = mode === "dense" ? STROKE_DENSE : STROKE_NORMAL;
       r.setAttribute("stroke-width", String(id === selected ? sel : base));
@@ -694,7 +635,7 @@ function matrixView(workMatrix: Matrix) {
     const selG = selected ? cellEls.get(selected)?.parentNode : null;
     if (selG && body.lastChild !== (selG as Node)) body.append(selG);
     for (const { e, el } of edgeEls) {
-      let color = "#999";
+      let color = "var(--edge)";
       let marker = "a-def";
       let opacity = 0.5;
       if (hovered) {
@@ -717,7 +658,7 @@ function matrixView(workMatrix: Matrix) {
           opacity = 0.9;
         } else opacity = 0.12;
       }
-      el.setAttribute("stroke", color);
+      setSvgAttr(el, "stroke", color);
       el.setAttribute("stroke-width", String(Math.max(1, 1 + Math.log(e.weight))));
       el.setAttribute("opacity", String(opacity));
       el.setAttribute("marker-end", `url(#${marker})`);
@@ -870,5 +811,3 @@ function matrixView(workMatrix: Matrix) {
   paint();
   renderPanel();
 }
-
-home();

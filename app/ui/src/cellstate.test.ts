@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import { CHANGED, DEFAULT_FILL, impactCellPaint, impactColor } from "./cellstate";
 
 describe("impactColor", () => {
-  const lightness = (s: string) => Number(/(\d+(?:\.\d+)?)%\)$/.exec(s)?.[1]);
-  it("gets lighter with distance and saturates", () => {
-    expect(lightness(impactColor(1))).toBeLessThan(lightness(impactColor(2)));
-    expect(lightness(impactColor(5))).toBe(lightness(impactColor(50)));
+  it("steps through the token ramp with distance and saturates", () => {
+    expect(impactColor(1)).toBe("var(--impact-1)");
+    expect(impactColor(2)).toBe("var(--impact-2)");
+    expect(impactColor(5)).toBe("var(--impact-5)");
+    expect(impactColor(50)).toBe("var(--impact-5)");
+    expect(impactColor(0)).toBe("var(--impact-1)");
+    expect(impactColor(Number.NaN)).toBe("var(--impact-5)");
+    expect(impactColor(Number.POSITIVE_INFINITY)).toBe("var(--impact-5)");
   });
 });
 

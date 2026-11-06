@@ -1,52 +1,53 @@
-body { margin: 0; font-family: system-ui, sans-serif; color: #222; background: #fafafa; }
-button, input { font: inherit; padding: 4px 10px; }
 .center { max-width: 560px; margin: 80px auto; display: flex; flex-direction: column; gap: 14px; }
-.muted { color: #777; }
+.muted { color: var(--muted-foreground); }
 .small { font-size: 12px; min-height: 1em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar { width: 100%; height: 14px; background: #e5e5e5; border-radius: 7px; overflow: hidden; }
-.bar > div { height: 100%; background: #3b82f6; transition: width 0.2s; }
-.error { color: #b91c1c; }
-header { display: flex; gap: 16px; align-items: center; padding: 10px 16px; border-bottom: 1px solid #ddd; background: #fff; }
+.bar { width: 100%; height: 14px; background: var(--muted); border-radius: 7px; overflow: hidden; }
+.bar > div { height: 100%; background: var(--ring); transition: width 0.2s; }
+.error { color: var(--destructive); }
+header { display: flex; gap: 16px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--card); }
 header h1 { font-size: 18px; margin: 0; }
-.toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 16px; border-bottom: 1px solid #ddd; background: #fff; }
-.main { display: flex; height: calc(100vh - 100px); }
+.toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--card); white-space: nowrap; overflow-x: auto; }
+.legacy { display: flex; flex-direction: column; height: calc(100vh - var(--app-header-h)); }
+.main { display: flex; flex: 1; min-height: 0; }
+.legacy > :not(.main) { flex: none; }
 .main .view { flex: 1; min-width: 0; overflow: hidden; display: flex; }
+/* Still-vanilla analysis screen (#38): Tailwind preflight resets, restored here. */
+.legacy button, .legacy input { font: inherit; padding: 4px 10px; color: inherit; background: var(--card); border: 1px solid var(--input); border-radius: var(--radius-sm); }
+.legacy button:disabled { opacity: 0.5; }
+.legacy button:not(:disabled):hover { background: var(--accent); }
+.legacy .chevron { padding: 0; }
+.legacy aside ul { list-style: disc; }
+.legacy h2, .legacy h3, .legacy strong { font-weight: 600; }
+.legacy h2 { font-size: 1.5em; margin: 0.83em 0; }
+svg text { fill: var(--foreground); }
 .main .view svg { flex: 1; min-width: 0; height: 100%; cursor: grab; touch-action: none; user-select: none; }
 .main .view svg.panning, .main .view svg.panning * { cursor: grabbing !important; }
-aside { box-sizing: border-box; width: 340px; flex: none; border-left: 1px solid #ddd; background: #fff; padding: 10px 14px; overflow: auto; font-size: 13px; }
-.handle { position: relative; flex: none; width: 5px; cursor: col-resize; background: #e4e4e4; touch-action: none; user-select: none; }
-.handle:hover { background: #bbb; }
+aside { box-sizing: border-box; width: 340px; flex: none; border-left: 1px solid var(--border); background: var(--card); padding: 10px 14px; overflow: auto; font-size: 13px; }
+.handle { position: relative; flex: none; width: 5px; cursor: col-resize; background: var(--secondary); touch-action: none; user-select: none; }
+.handle:hover { background: var(--input); }
 .handle.is-collapsed { cursor: default; }
 .history[hidden] + .handle { display: none; }
-.chevron { position: absolute; top: 8px; left: -7px; width: 18px; height: 18px; padding: 0; line-height: 1; font-size: 14px; cursor: pointer; border: 1px solid #ccc; border-radius: 9px; background: #fff; z-index: 1; }
+.chevron { position: absolute; top: 8px; left: -7px; width: 18px; height: 18px; padding: 0; line-height: 1; font-size: 14px; cursor: pointer; border: 1px solid var(--input); border-radius: 9px; background: var(--card); z-index: 1; }
 .collapsed { overflow: hidden; padding: 0; }
 .collapsed > * { display: none; }
 body.resizing { user-select: none; cursor: col-resize; }
 aside h3 { margin: 12px 0 4px; font-size: 14px; }
 aside ul { margin: 0; padding-left: 16px; }
-aside li small { color: #777; display: block; word-break: break-all; }
+aside li small { color: var(--muted-foreground); display: block; word-break: break-all; }
 .legend span { display: inline-block; width: 10px; height: 10px; margin: 0 4px 0 10px; }
 text { font-size: 11px; }
 .advanced { display: flex; gap: 8px; align-items: center; }
 .advanced[open] { flex-wrap: wrap; }
-.history { box-sizing: border-box; width: 260px; flex: none; border-right: 1px solid #ddd; background: #fff; overflow: auto; font-size: 12px; }
+.history { box-sizing: border-box; width: 260px; flex: none; border-right: 1px solid var(--border); background: var(--card); overflow: auto; font-size: 12px; }
 .history h3 { margin: 8px 10px; font-size: 14px; }
 .commit { display: flex; align-items: center; gap: 6px; height: 40px; box-sizing: border-box; padding: 0 10px 0 6px; cursor: pointer; user-select: none; overflow: hidden; }
 .commit .graph { flex: none; display: block; }
 .commit .ctext { flex: 1; min-width: 0; }
 .commit .meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.commit:hover { background: #f5f5f5; }
-.commit.sel { background: #e0ecff; }
+.commit:hover { background: var(--muted); }
+.commit.sel { background: var(--accent); }
 .commit .subj { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.commit .meta { color: #777; margin-top: 2px; }
-.badge { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; background: #e5e7eb; color: #374151; font-size: 10px; }
-.warnings { padding: 6px 16px; background: #fef3c7; color: #92400e; border-bottom: 1px solid #fcd34d; font-size: 13px; }
-.brand { display: flex; align-items: center; gap: 16px; }
-.brand h1 { margin: 0; font-size: 32px; }
-.logo-lg { width: 72px; height: 72px; }
+.commit .meta { color: var(--muted-foreground); margin-top: 2px; }
+.badge { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; background: var(--secondary); color: var(--secondary-foreground); font-size: 10px; }
+.warnings { padding: 6px 16px; background: var(--warn-bg); color: var(--warn-fg); border-bottom: 1px solid var(--warn-border); font-size: 13px; }
 .logo-sm { width: 28px; height: 28px; }
-.recent { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
-.recent h3 { margin: 0; }
-.recent-row { display: flex; gap: 6px; }
-.recent-open { flex: 1; display: flex; gap: 10px; align-items: baseline; text-align: left; overflow: hidden; }
-.recent-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
