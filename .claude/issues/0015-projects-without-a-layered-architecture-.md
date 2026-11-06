@@ -1,7 +1,7 @@
 ---
 id: 15
 title: Projects without a layered architecture still get a readable structure
-status: in-progress
+status: done
 parent: null
 branch: null
 remote: null

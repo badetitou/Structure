@@ -1,7 +1,7 @@
 ---
 id: 16
 title: Fragmented name-root domains fall back to package domains with a domain tree
-status: in-review
+status: done
 parent: 15
 branch: 16-module-domains
 remote: null

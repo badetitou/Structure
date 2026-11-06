@@ -1,7 +1,7 @@
 ---
 id: 17
 title: Matrix columns collapse and expand along the domain tree
-status: in-review
+status: done
 parent: 15
 branch: 17-collapsible-domains
 remote: null
