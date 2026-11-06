@@ -1,5 +1,7 @@
 import { RequestGuard, shownMatrix } from "./matrixsel";
 import "./style.css";
+import { COLLAPSED_WIDTH, clampWidth, loadPanels, savePanels } from "./panels";
+import type { PanelsState } from "./panels";
 import * as api from "./api";
 import type { Impact, Matrix } from "./api";
 import { aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded } from "./domaintree";
@@ -28,6 +30,48 @@ function h<K extends keyof HTMLElementTagNameMap>(
   const el = Object.assign(document.createElement(tag), props);
   el.append(...children);
   return el;
+}
+/** Drag handle + chevron on the inner edge of a side panel: resize, collapse (chevron or dblclick). */
+function sideHandle(el: HTMLElement, side: "left" | "right", st: PanelsState): HTMLElement {
+  const state = st[side];
+  const chevron = h("button", { className: "chevron", type: "button" });
+  const handle = h("div", { className: `handle ${side}` }, chevron);
+  const apply = () => {
+    el.classList.toggle("collapsed", state.collapsed);
+    el.style.width = `${state.collapsed ? COLLAPSED_WIDTH : state.width}px`;
+    handle.classList.toggle("is-collapsed", state.collapsed);
+    chevron.textContent = state.collapsed === (side === "left") ? "›" : "‹";
+    chevron.title = state.collapsed ? "Expand panel" : "Collapse panel";
+  };
+  const toggle = () => {
+    state.collapsed = !state.collapsed;
+    apply();
+    savePanels(st);
+  };
+  chevron.onclick = toggle;
+  chevron.ondblclick = (e) => e.stopPropagation();
+  handle.ondblclick = toggle;
+  handle.onpointerdown = (e) => {
+    if (e.target === chevron || state.collapsed || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    handle.setPointerCapture(e.pointerId);
+    const x0 = e.clientX;
+    const w0 = state.width;
+    document.body.classList.add("resizing");
+    handle.onpointermove = (m) => {
+      const dx = m.clientX - x0;
+      state.width = clampWidth(side === "left" ? w0 + dx : w0 - dx, w0);
+      apply();
+    };
+    handle.onpointerup = handle.onpointercancel = () => {
+      handle.onpointermove = handle.onpointerup = handle.onpointercancel = null;
+      document.body.classList.remove("resizing");
+      savePanels(st);
+    };
+  };
+  apply();
+  return handle;
 }
 function s<K extends keyof SVGElementTagNameMap>(
   tag: K,
@@ -456,7 +500,16 @@ function matrixView(workMatrix: Matrix) {
   const sidebar = h("nav", { className: "history" });
   sidebar.hidden = true;
   const view = h("div", { className: "view" }, svg as unknown as Node);
-  const main = h("div", { className: "main" }, sidebar, view, panel);
+  const panels = loadPanels();
+  const main = h(
+    "div",
+    { className: "main" },
+    sidebar,
+    sideHandle(sidebar, "left", panels),
+    view,
+    sideHandle(panel, "right", panels),
+    panel,
+  );
   show(header, toolbar, warnBox, main);
   build();
 
