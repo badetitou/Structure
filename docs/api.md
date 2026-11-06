@@ -28,6 +28,10 @@ invoke<History>("history", { path: string, limit: number | null });
 ## Event
 
 `analysis-progress`, payload `Progress`, emitted during `analyze`/`impact`.
+While the SCIP indexer runs (Maven/Gradle can take minutes), `step` stays
+`indexing` and events arrive about every second with `pct` in 5..34 (never
+decreasing) and `detail` = latest build output line plus elapsed time
+(e.g. `[INFO] Building foo 1.0 [3/12] · 42s`). `detail` is omitted otherwise.
 
 ## Types
 
@@ -81,7 +85,7 @@ interface Commit {
   refs: string[];     // branches/tags pointing at it
 }
 
-interface Progress { step: string; pct: number } // pct 0..100
+interface Progress { step: string; pct: number; detail?: string } // pct 0..100
 ```
 
 Granularity: symbol ids in `Matrix.cells[].symbols` and in `Impact` are class-level (top-level symbol) ids.
