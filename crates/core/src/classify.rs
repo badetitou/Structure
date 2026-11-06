@@ -1016,6 +1016,31 @@ aliases = { billing = ["invoices"] }
             java("Clock", SymbolKind::Class, &format!("{base}.core.service")),
             java("Encoder", SymbolKind::Class, &format!("{base}.core")),
             java("Score", SymbolKind::Enum, &format!("{base}.core.user")),
+            java(
+                "FooException",
+                SymbolKind::Class,
+                &format!("{base}.core.exception"),
+            ),
+            java(
+                "StringUtils",
+                SymbolKind::Class,
+                &format!("{base}.core.util"),
+            ),
+            java(
+                "StringUtil",
+                SymbolKind::Class,
+                &format!("{base}.core.util"),
+            ),
+            java("CoreConfig", SymbolKind::Class, &format!("{base}.core")),
+            java(
+                "CoreConfiguration",
+                SymbolKind::Class,
+                &format!("{base}.core"),
+            ),
+            ann(
+                java("UserMutation", SymbolKind::Class, "io.spring.graphql"),
+                &["DgsComponent"],
+            ),
         ];
         let c = classify(&graph(Language::Java, syms, vec![]), &rs);
         let l = |id: &str| c.placements[id].layer;
@@ -1032,6 +1057,16 @@ aliases = { billing = ["invoices"] }
         assert_eq!(l("io.acme.core.service.Clock"), Layer::Business);
         assert_eq!(l("io.acme.core.Encoder"), Layer::Model);
         assert_eq!(l("io.acme.core.user.Score"), Layer::Unknown);
+        for n in [
+            "exception.FooException",
+            "util.StringUtils",
+            "util.StringUtil",
+            "CoreConfig",
+            "CoreConfiguration",
+        ] {
+            assert_eq!(l(&format!("io.acme.core.{n}")), Layer::Util, "{n}");
+        }
+        assert_eq!(l("io.spring.graphql.UserMutation"), Layer::Entry);
     }
 
     #[test]
@@ -1097,6 +1132,21 @@ aliases = { billing = ["invoices"] }
         // opt-in: default spec leaves plurals and prefixes alone
         let s = java("MyBatisUsers", SymbolKind::Class, "x");
         assert_eq!(domain_of(&DomainSpec::default(), &s), "mybatisusers");
+    }
+
+    #[test]
+    fn user_domain_spec_without_new_fields_parses() {
+        let rs = RuleSet::from_toml_str(
+            "[domain]\nstrategy = \"name_root\"\nstrip_suffixes = [\"Service\"]\n",
+        )
+        .unwrap();
+        let spec = rs.domain.unwrap();
+        assert!(!spec.singularize);
+        assert!(spec.strip_prefixes.is_empty());
+        assert_eq!(
+            domain_of(&spec, &java("Users", SymbolKind::Class, "x")),
+            "users"
+        );
     }
 
     #[test]

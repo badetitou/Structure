@@ -85,6 +85,13 @@ package_contains = [".mapper.", ".repository.", ".dao."]
 layer = "util"
 any_annotation = ["Component"]
 
+# Technical classes in a `core` package are not domain model; first match wins,
+# so this must stay above the model rule below.
+[[rule]]
+layer = "util"
+package_contains = [".core."]
+name_suffix = ["Exception", "Utils", "Util", "Configuration", "Config"]
+
 # Plain classes in a `core` package (hexagonal / DDD core) are the domain model.
 # Last package rule: role packages (`core.service` stays business) and annotations win.
 [[rule]]
