@@ -1,30 +1,25 @@
 <script lang="ts">
-  import { tick } from "svelte";
   import { ModeWatcher } from "mode-watcher";
   import Home from "./Home.svelte";
   import ThemeSwitch from "./ThemeSwitch.svelte";
-  import { runAnalysis } from "./main";
+  import AnalysisScreen from "$lib/components/AnalysisScreen.svelte";
 
   let screen = $state<"home" | "analysis">("home");
   let path = $state(""); // lives here so it survives Home remounts
   let error = $state("");
   let starting = false;
-  let host: HTMLElement | undefined = $state();
 
   function backHome(err = "") {
     error = err;
     starting = false;
     screen = "home";
   }
-  async function start(p: string) {
+  function start(p: string) {
     if (starting) return;
     starting = true;
     path = p;
     error = "";
     screen = "analysis";
-    await tick(); // the host container is mounted after this
-    if (host) void runAnalysis(p, host, backHome);
-    else backHome("Could not open the analysis view.");
   }
 </script>
 
@@ -36,5 +31,5 @@
 {#if screen === "home"}
   <Home bind:path onPick={() => (error = "")} {error} onAnalyze={start} />
 {:else}
-  <div class="legacy" bind:this={host}></div>
+  <AnalysisScreen {path} onExit={backHome} />
 {/if}
