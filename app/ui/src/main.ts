@@ -34,9 +34,13 @@ function h<K extends keyof HTMLElementTagNameMap>(
 /** Drag handle + chevron on the inner edge of a side panel: resize, collapse (chevron or dblclick). */
 function sideHandle(el: HTMLElement, side: "left" | "right", st: PanelsState): HTMLElement {
   const state = st[side];
+  const other = st[side === "left" ? "right" : "left"];
+  const otherWidth = () => (other.collapsed ? COLLAPSED_WIDTH : other.width);
+  const fit = (w: number) => clampWidth(w, w, window.innerWidth, otherWidth());
   const chevron = h("button", { className: "chevron", type: "button" });
   const handle = h("div", { className: `handle ${side}` }, chevron);
   const apply = () => {
+    state.width = fit(state.width);
     el.classList.toggle("collapsed", state.collapsed);
     el.style.width = `${state.collapsed ? COLLAPSED_WIDTH : state.width}px`;
     handle.classList.toggle("is-collapsed", state.collapsed);
@@ -61,7 +65,7 @@ function sideHandle(el: HTMLElement, side: "left" | "right", st: PanelsState): H
     document.body.classList.add("resizing");
     handle.onpointermove = (m) => {
       const dx = m.clientX - x0;
-      state.width = clampWidth(side === "left" ? w0 + dx : w0 - dx, w0);
+      state.width = fit(side === "left" ? w0 + dx : w0 - dx);
       apply();
     };
     handle.onpointerup = handle.onpointercancel = () => {
@@ -70,6 +74,11 @@ function sideHandle(el: HTMLElement, side: "left" | "right", st: PanelsState): H
       savePanels(st);
     };
   };
+  const onResize = () => {
+    if (!handle.isConnected) window.removeEventListener("resize", onResize);
+    else apply();
+  };
+  window.addEventListener("resize", onResize);
   apply();
   return handle;
 }
