@@ -9,13 +9,17 @@
     path = $bindable(""),
     error = "",
     onAnalyze,
-  }: { path?: string; error?: string; onAnalyze: (path: string) => void } = $props();
+    onPick,
+  }: { path?: string; error?: string; onAnalyze: (path: string) => void; onPick?: () => void } = $props();
 
   let recents = $state(loadRecent());
 
   async function pick() {
     const p = await api.pickFolder();
-    if (p) path = p;
+    if (p) {
+      path = p;
+      onPick?.();
+    }
   }
   function forget(p: string) {
     saveRecent(removeRecent(loadRecent(), p));

@@ -5,7 +5,11 @@ describe("impactColor", () => {
   it("steps through the token ramp with distance and saturates", () => {
     expect(impactColor(1)).toBe("var(--impact-1)");
     expect(impactColor(2)).toBe("var(--impact-2)");
-    expect(impactColor(5)).toBe(impactColor(50));
+    expect(impactColor(5)).toBe("var(--impact-5)");
+    expect(impactColor(50)).toBe("var(--impact-5)");
+    expect(impactColor(0)).toBe("var(--impact-1)");
+    expect(impactColor(Number.NaN)).toBe("var(--impact-5)");
+    expect(impactColor(Number.POSITIVE_INFINITY)).toBe("var(--impact-5)");
   });
 });
 

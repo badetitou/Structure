@@ -8,13 +8,17 @@
   let screen = $state<"home" | "analysis">("home");
   let path = $state(""); // lives here so it survives Home remounts
   let error = $state("");
+  let starting = false;
   let host: HTMLElement | undefined = $state();
 
   function backHome(err = "") {
     error = err;
+    starting = false;
     screen = "home";
   }
   async function start(p: string) {
+    if (starting) return;
+    starting = true;
     path = p;
     error = "";
     screen = "analysis";
@@ -25,12 +29,12 @@
 </script>
 
 <ModeWatcher />
-<div class="flex items-center justify-between border-b bg-card px-4" style="height: var(--app-header-h, 49px)">
+<div class="flex items-center justify-between border-b bg-card px-4" style="height: var(--app-header-h)">
   <span class="flex items-center gap-2 font-semibold"><img src="/logo.svg" alt="" class="size-7" /> Structure</span>
   <ThemeSwitch />
 </div>
 {#if screen === "home"}
-  <Home bind:path {error} onAnalyze={start} />
+  <Home bind:path onPick={() => (error = "")} {error} onAnalyze={start} />
 {:else}
   <div class="legacy" bind:this={host}></div>
 {/if}
