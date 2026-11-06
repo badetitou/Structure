@@ -7,6 +7,7 @@
 /* The single theme file: shadcn base variables + application tokens.
    Colour literals live here and nowhere else. mode-watcher toggles `.dark` on <html>. */
 :root {
+  color-scheme: light;
   --radius: 0.5rem;
   --app-header-h: 49px;
   --background: oklch(0.985 0 0);
@@ -62,6 +63,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(0.17 0.01 260);
   --foreground: oklch(0.93 0.01 260);
   --card: oklch(0.21 0.015 260);
