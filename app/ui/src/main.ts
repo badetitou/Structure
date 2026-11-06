@@ -1,12 +1,14 @@
 import "./style.css";
 import * as api from "./api";
-import type { Cell, Impact, Matrix } from "./api";
+import type { Impact, Matrix } from "./api";
 import { CHANGED, DEFAULT_FILL, impactCellPaint } from "./cellstate";
 import { reach } from "./graph";
 import { clickCommit, isSelected, relativeDate, selectionDiff } from "./history";
 import type { Selection } from "./history";
 import { rowSvg } from "./graphsvg";
 import { layoutLanes } from "./lanes";
+import { layout, loadMode, saveMode } from "./layout";
+import type { Mode } from "./layout";
 import { analyzeAndRecord, loadRecent, removeRecent, saveRecent } from "./recent";
 
 const root = document.getElementById("app") as HTMLElement;
@@ -128,9 +130,6 @@ async function runAnalysis() {
 }
 
 // ---- 3. Matrix view ----
-const PITCH = 140;
-const MARGIN_L = 110;
-const MARGIN_T = 40;
 const FWD = "#16a34a";
 const BWD = "#2563eb";
 
@@ -142,14 +141,7 @@ function matrixView(m: Matrix) {
   const cellById = new Map(m.cells.map((c) => [c.id, c]));
   const symName = new Map<string, string>();
   for (const c of m.cells) for (const sy of c.symbols) symName.set(sy.id, sy.name);
-  const maxSize = Math.max(1, ...m.cells.map((c) => c.size));
-  const col = (d: string) => m.domains.indexOf(d);
-  const row = (l: Cell["layer"]) => m.layers.indexOf(l);
-  const center = (c: Cell): [number, number] => [
-    MARGIN_L + col(c.domain) * PITCH + PITCH / 2,
-    MARGIN_T + row(c.layer) * PITCH + PITCH / 2,
-  ];
-  const sideOf = (c: Cell) => 20 + (PITCH - 50) * Math.sqrt(c.size / maxSize);
+  let mode: Mode = loadMode();
 
   // Header
   const st = m.stats;
@@ -171,6 +163,7 @@ function matrixView(m: Matrix) {
   const baseIn = h("input", { placeholder: "base (empty = HEAD)" });
   const headIn = h("input", { placeholder: "head (empty = working tree)" });
   const showBtn = h("button", { textContent: "Show impact" });
+  const denseBtn = h("button", { className: "toggle" });
   const clearBtn = h("button", { textContent: "Clear", disabled: true });
   const msg = h("span", { className: "error" });
   const legend = h("span", { className: "legend muted" });
@@ -185,7 +178,7 @@ function matrixView(m: Matrix) {
     headIn,
     showBtn,
   );
-  const toolbar = h("div", { className: "toolbar" }, advanced, clearBtn, msg, legend);
+  const toolbar = h("div", { className: "toolbar" }, advanced, denseBtn, clearBtn, msg, legend);
   // Analysis and impact warnings (e.g. indexing failed → tree-sitter only).
   const warnBox = h("div", { className: "warnings" });
   const showWarnings = (ws: string[]) => {
@@ -195,105 +188,127 @@ function matrixView(m: Matrix) {
   showWarnings(m.warnings ?? []);
 
   // SVG
-  const width = MARGIN_L + m.domains.length * PITCH + 20;
-  const height = MARGIN_T + m.layers.length * PITCH + 20;
-  const svg = s("svg", { viewBox: `0 0 ${width} ${height}` });
-  const defs = s("defs");
-  for (const [id, color] of [["a-def", "#999"], ["a-fwd", FWD], ["a-bwd", BWD], ["a-imp", CHANGED]]) {
-    const mk = s("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto" });
-    mk.append(s("path", { d: "M0,0 L10,5 L0,10 z", fill: color }));
-    defs.append(mk);
-  }
-  svg.append(defs);
+  const svg = s("svg");
+  const cellEls = new Map<string, SVGRectElement>();
+  let edgeEls: { e: Matrix["edges"][number]; el: SVGPathElement }[] = [];
 
-  m.domains.forEach((d, i) => {
-    const t = s("text", { x: MARGIN_L + i * PITCH + PITCH / 2, y: 24, "text-anchor": "middle", "font-weight": "bold" });
-    t.textContent = d;
-    svg.append(t);
-  });
-  m.layers.forEach((l, i) => {
-    const t = s("text", { x: 8, y: MARGIN_T + i * PITCH + PITCH / 2, "font-weight": "bold" });
-    t.textContent = l;
-    svg.append(t);
-  });
-  // Empty slots
-  for (const l of m.layers)
-    for (const d of m.domains) {
-      if (cellById.has(`${l}:${d}`)) continue;
+  function build() {
+    const lay = layout(mode, m.layers, m.domains, m.cells);
+    svg.replaceChildren();
+    cellEls.clear();
+    edgeEls = [];
+    denseBtn.textContent = mode === "dense" ? "Dense: on" : "Dense: off";
+    svg.setAttribute("viewBox", `0 0 ${lay.width} ${lay.height}`);
+    const defs = s("defs");
+    for (const [id, color] of [["a-def", "#999"], ["a-fwd", FWD], ["a-bwd", BWD], ["a-imp", CHANGED]]) {
+      const mk = s("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto" });
+      mk.append(s("path", { d: "M0,0 L10,5 L0,10 z", fill: color }));
+      defs.append(mk);
+    }
+    svg.append(defs);
+
+    const fs: Record<string, number> = lay.detailed ? {} : { "font-size": 10 };
+    for (const l of lay.domainLabels) {
+      const t = s("text", { x: l.x, y: l.y, "font-weight": "bold", ...fs });
+      if (lay.rotateDomains) t.setAttribute("transform", `rotate(-90 ${l.x} ${l.y})`);
+      else t.setAttribute("text-anchor", "middle");
+      t.textContent = l.text;
+      svg.append(t);
+    }
+    for (const l of lay.layerLabels) {
+      const t = s("text", { x: l.x, y: l.y, "font-weight": "bold", ...fs });
+      t.textContent = l.text;
+      svg.append(t);
+    }
+    const tileById = new Map(lay.tiles.flatMap((t) => (t.id ? [[t.id, t] as const] : [])));
+    // Empty slots
+    for (const t of lay.tiles) {
+      if (t.id) continue;
       svg.append(
-        s("rect", {
-          x: MARGIN_L + col(d) * PITCH + 20,
-          y: MARGIN_T + row(l) * PITCH + 20,
-          width: PITCH - 40,
-          height: PITCH - 40,
-          fill: "none",
-          stroke: "#ddd",
-          "stroke-dasharray": "3 3",
-          opacity: 0.6,
-        }),
+        lay.detailed
+          ? s("rect", { x: t.x, y: t.y, width: t.w, height: t.h, fill: "none", stroke: "#ddd", "stroke-dasharray": "3 3", opacity: 0.6 })
+          : s("rect", { x: t.x + 0.5, y: t.y + 0.5, width: t.w - 1, height: t.h - 1, fill: "#eef0f3" }),
       );
     }
 
-  // Edges (under cells)
-  const edgeEls: { e: Matrix["edges"][number]; el: SVGPathElement }[] = [];
-  for (const e of m.edges) {
-    const a = cellById.get(e.from);
-    const b = cellById.get(e.to);
-    if (!a || !b) continue;
-    const [x1, y1] = center(a);
-    const [x2, y2] = center(b);
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const len = Math.hypot(dx, dy) || 1;
-    // Stop at the square border (approx.) so arrowheads stay visible.
-    const trim = (c: Cell) => sideOf(c) / 2 + 2;
-    const sx = x1 + (dx / len) * trim(a);
-    const sy = y1 + (dy / len) * trim(a);
-    const ex = x2 - (dx / len) * trim(b);
-    const ey = y2 - (dy / len) * trim(b);
-    const bend = 0.15 * len;
-    const cx = (sx + ex) / 2 - (dy / len) * bend;
-    const cy = (sy + ey) / 2 + (dx / len) * bend;
-    const el = s("path", { d: `M${sx},${sy} Q${cx},${cy} ${ex},${ey}`, fill: "none" });
-    el.style.pointerEvents = "none";
-    svg.append(el);
-    edgeEls.push({ e, el });
-  }
+    // Edges (under cells), normal mode only
+    for (const e of lay.detailed ? m.edges : []) {
+      const a = tileById.get(e.from);
+      const b = tileById.get(e.to);
+      if (!a || !b) continue;
+      const x1 = a.x + a.w / 2;
+      const y1 = a.y + a.h / 2;
+      const x2 = b.x + b.w / 2;
+      const y2 = b.y + b.h / 2;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      // Stop at the square border (approx.) so arrowheads stay visible.
+      const sx = x1 + (dx / len) * (a.w / 2 + 2);
+      const sy = y1 + (dy / len) * (a.w / 2 + 2);
+      const ex = x2 - (dx / len) * (b.w / 2 + 2);
+      const ey = y2 - (dy / len) * (b.w / 2 + 2);
+      const bend = 0.15 * len;
+      const cx = (sx + ex) / 2 - (dy / len) * bend;
+      const cy = (sy + ey) / 2 + (dx / len) * bend;
+      const el = s("path", { d: `M${sx},${sy} Q${cx},${cy} ${ex},${ey}`, fill: "none" });
+      el.style.pointerEvents = "none";
+      svg.append(el);
+      edgeEls.push({ e, el });
+    }
 
-  // Cells
-  const cellEls = new Map<string, SVGRectElement>();
-  for (const c of m.cells) {
-    const [cx, cy] = center(c);
-    const side = sideOf(c);
-    const g = s("g");
-    const r = s("rect", { x: cx - side / 2, y: cy - side / 2, width: side, height: side, rx: 3, stroke: "#333", "stroke-width": 1 });
-    r.style.cursor = "pointer";
-    const t = s("text", { x: cx, y: cy + side / 2 + 13, "text-anchor": "middle" });
-    t.textContent = `${c.layer}/${c.domain} (${c.size})`;
-    t.style.pointerEvents = "none";
-    g.append(r, t);
-    r.addEventListener("mouseenter", () => {
-      hovered = c.id;
-      paint();
-    });
-    r.addEventListener("mouseleave", () => {
-      hovered = null;
-      paint();
-    });
-    r.addEventListener("click", () => {
-      selected = c.id;
-      paint();
-      renderPanel();
-    });
-    svg.append(g);
-    cellEls.set(c.id, r);
+    // Cells
+    for (const c of m.cells) {
+      const t = tileById.get(c.id);
+      if (!t) continue;
+      const g = s("g");
+      const r = lay.detailed
+        ? s("rect", { x: t.x, y: t.y, width: t.w, height: t.h, rx: 3, stroke: "#333", "stroke-width": 1 })
+        : s("rect", { x: t.x + 0.5, y: t.y + 0.5, width: t.w - 1, height: t.h - 1, stroke: "#333", "stroke-width": 1 });
+      r.style.cursor = "pointer";
+      const label = `${c.layer}/${c.domain} (${c.size})`;
+      if (lay.detailed) {
+        const tx = s("text", { x: t.x + t.w / 2, y: t.y + t.h + 13, "text-anchor": "middle" });
+        tx.textContent = label;
+        tx.style.pointerEvents = "none";
+        g.append(r, tx);
+      } else {
+        g.append(r);
+      }
+      const tip = s("title");
+      tip.textContent = label;
+      r.append(tip);
+      r.addEventListener("mouseenter", () => {
+        hovered = c.id;
+        paint();
+      });
+      r.addEventListener("mouseleave", () => {
+        hovered = null;
+        paint();
+      });
+      r.addEventListener("click", () => {
+        selected = c.id;
+        paint();
+        renderPanel();
+      });
+      svg.append(g);
+      cellEls.set(c.id, r);
+    }
+    paint();
   }
+  denseBtn.onclick = () => {
+    mode = mode === "dense" ? "normal" : "dense";
+    saveMode(mode);
+    hovered = null;
+    build();
+  };
 
   const panel = h("aside");
   const sidebar = h("nav", { className: "history" });
   sidebar.hidden = true;
   const main = h("div", { className: "main" }, sidebar, svg as unknown as Node, panel);
   show(header, toolbar, warnBox, main);
+  build();
 
   function paint() {
     const impactById = new Map(impact?.impacted_cells.map((x) => [x.id, x.distance]));
