@@ -24,8 +24,10 @@ fn run(name: &str, parse: fn(&std::path::Path) -> anyhow::Result<Graph>) -> Opti
     let index = scip::load(&idx_path).expect("load scip");
     let t = Instant::now();
     let (g, st) = link(g, &index);
-    let defs = st.mapped_symbols + st.unmapped_definitions;
-    let ratio = st.mapped_symbols as f64 / defs.max(1) as f64;
+    // Share of the SCIP definitions in parsed files that land on an ir symbol,
+    // directly or through an enclosing one.
+    let resolved = st.mapped_symbols + st.lifted_symbols;
+    let ratio = resolved as f64 / (resolved + st.unmapped_definitions).max(1) as f64;
     eprintln!("{name}: {st:?} ratio={ratio:.3} in {:?}", t.elapsed());
     assert!(ratio > 0.8, "{name}: mapping ratio {ratio:.3} too low");
     Some(g)

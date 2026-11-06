@@ -273,6 +273,8 @@ impl Ctx<'_> {
             "type_alias_declaration" => {
                 if let Some(name) = node.child_by_field_name("name") {
                     self.out.type_aliases.push(text(name, self.src).to_string());
+                    // A named type shape: modelled like an interface.
+                    self.simple(SymbolKind::Interface, node, name);
                 }
             }
             _ => {}

@@ -192,6 +192,20 @@ pub fn simple_name(symbol: &str) -> Option<String> {
         .filter(|n| !n.is_empty())
 }
 
+/// The symbol with its last descriptor removed (`a/B#m().` → `a/B#`), or
+/// `None` when nothing meaningful is left (local symbol, package only).
+pub fn parent_symbol(symbol: &str) -> Option<String> {
+    if is_local(symbol) {
+        return None;
+    }
+    let mut parsed = scip::symbol::parse_symbol(symbol).ok()?;
+    parsed.descriptors.pop();
+    if parsed.descriptors.is_empty() {
+        return None;
+    }
+    Some(scip::symbol::format_symbol(parsed))
+}
+
 /// Name of the type descriptor directly enclosing the last descriptor.
 pub fn owner_type_name(symbol: &str) -> Option<String> {
     let parsed = descriptors(symbol)?;
