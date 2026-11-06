@@ -35,7 +35,7 @@ uses = ["HttpClient"]
 [[rule]]
 layer = "state"
 any_annotation = ["Injectable"]
-name_contains = ["Store", "State"]
+name_suffix = ["Store", "State", "StoreService", "StateService"]
 
 [[rule]]
 layer = "state"

@@ -29,11 +29,23 @@ any_annotation = ["Entity", "Embeddable"]
 
 [[rule]]
 layer = "util"
-any_annotation = ["Configuration", "Component"]
+any_annotation = ["Configuration"]
+
+# Web configuration/listeners must not fall into the `.web.` catch-all below.
+[[rule]]
+layer = "util"
+package_contains = [".web.configuration.", ".web.config.", ".configuration.", ".config."]
 
 # --- MyBatis ---
+# @Mapper on an interface is MyBatis; on a class it is a MapStruct converter.
 [[rule]]
 layer = "persistence"
+kind = ["interface"]
+any_annotation = ["Mapper"]
+
+[[rule]]
+layer = "util"
+kind = ["class"]
 any_annotation = ["Mapper"]
 
 [[rule]]
@@ -62,6 +74,10 @@ package_contains = [".service.", ".services."]
 [[rule]]
 layer = "persistence"
 package_contains = [".mapper.", ".repository.", ".dao."]
+
+[[rule]]
+layer = "util"
+any_annotation = ["Component"]
 
 # --- Sinks: classes talking to a database API ---
 [[rule]]

@@ -174,8 +174,12 @@ fn is_dto_method(class: &str, m: &Symbol) -> bool {
         return true;
     }
     let n = m.name.as_str();
-    ["get", "set", "is"].iter().any(|p| n.starts_with(p))
-        || matches!(n, "equals" | "hashCode" | "toString")
+    let accessor = ["get", "set", "is"].iter().any(|p| {
+        n.strip_prefix(p)
+            .and_then(|rest| rest.chars().next())
+            .is_some_and(|c| c.is_uppercase())
+    });
+    accessor || matches!(n, "equals" | "hashCode" | "toString")
 }
 
 fn is_dto(f: &Facts) -> bool {
@@ -628,5 +632,304 @@ aliases = { order = ["LineItem"] }
                 .rules
                 .is_empty()
         );
+    }
+
+    fn ann(mut s: Symbol, anns: &[&str]) -> Symbol {
+        s.annotations = anns.iter().map(|a| a.to_string()).collect();
+        s
+    }
+
+    fn one(rules: &str, s: Symbol) -> Placement {
+        let id = s.id.clone();
+        let g = graph(Language::Java, vec![s], vec![]);
+        classify(&g, &RuleSet::from_toml_str(rules).unwrap()).placements[&id].clone()
+    }
+
+    #[test]
+    fn jpetstore_spring_mvc() {
+        let base = "org.mybatis.jpetstore";
+        let mut syms = vec![];
+        for n in ["Account", "Cart", "Catalog", "Order", "Root"] {
+            syms.push(ann(
+                java(
+                    &format!("{n}Controller"),
+                    SymbolKind::Class,
+                    &format!("{base}.web.controllers"),
+                ),
+                &["Controller", "RequestMapping"],
+            ));
+        }
+        for n in ["Account", "Catalog", "Order"] {
+            syms.push(ann(
+                java(
+                    &format!("{n}Service"),
+                    SymbolKind::Class,
+                    &format!("{base}.service"),
+                ),
+                &["Service"],
+            ));
+        }
+        for n in [
+            "Account", "Category", "Item", "LineItem", "Order", "Product", "Sequence",
+        ] {
+            syms.push(java(
+                &format!("{n}Mapper"),
+                SymbolKind::Interface,
+                &format!("{base}.mapper"),
+            ));
+        }
+        for n in [
+            "Account", "Cart", "CartItem", "Category", "Item", "LineItem", "Order", "Product",
+            "Sequence",
+        ] {
+            syms.push(java(n, SymbolKind::Class, &format!("{base}.domain")));
+        }
+        let mut l = ann(
+            java(
+                "StaxFactoryInitializationListener",
+                SymbolKind::Class,
+                &format!("{base}.web.configuration"),
+            ),
+            &["WebListener"],
+        );
+        l.supertypes = vec!["ServletContextListener".into()];
+        syms.push(l);
+        let c = classify(
+            &graph(Language::Java, syms, vec![]),
+            &RuleSet::builtin(Language::Java).unwrap(),
+        );
+        let id = |sub: &str, n: &str| format!("{base}.{sub}.{n}");
+        for (n, d) in [
+            ("Account", "account"),
+            ("Cart", "cart"),
+            ("Catalog", "catalog"),
+            ("Order", "order"),
+        ] {
+            assert_eq!(
+                p(&c, &id("web.controllers", &format!("{n}Controller"))),
+                (Layer::Entry, d.into())
+            );
+        }
+        assert_eq!(
+            p(&c, &id("web.controllers", "RootController")).0,
+            Layer::Entry
+        );
+        assert_eq!(
+            p(&c, &id("service", "OrderService")),
+            (Layer::Business, "order".into())
+        );
+        assert_eq!(
+            p(&c, &id("service", "AccountService")),
+            (Layer::Business, "account".into())
+        );
+        assert_eq!(
+            p(&c, &id("mapper", "SequenceMapper")),
+            (Layer::Persistence, "order".into())
+        );
+        assert_eq!(
+            p(&c, &id("mapper", "ProductMapper")),
+            (Layer::Persistence, "catalog".into())
+        );
+        assert_eq!(
+            p(&c, &id("domain", "CartItem")),
+            (Layer::Model, "cart".into())
+        );
+        assert_eq!(
+            p(&c, &id("domain", "LineItem")),
+            (Layer::Model, "order".into())
+        );
+        assert_eq!(
+            p(&c, &id("domain", "Item")),
+            (Layer::Model, "catalog".into())
+        );
+        assert_eq!(
+            p(
+                &c,
+                &id("web.configuration", "StaxFactoryInitializationListener")
+            )
+            .0,
+            Layer::Util
+        );
+    }
+
+    #[test]
+    fn mapper_annotation_and_component_ordering() {
+        let rs = RuleSet::builtin(Language::Java).unwrap();
+        let g = graph(
+            Language::Java,
+            vec![
+                ann(java("AMapper", SymbolKind::Interface, "x"), &["Mapper"]),
+                ann(java("Convert", SymbolKind::Class, "x"), &["Mapper"]),
+                ann(
+                    java("Helper", SymbolKind::Class, "x.service"),
+                    &["Component"],
+                ),
+                ann(java("Helper2", SymbolKind::Class, "x"), &["Component"]),
+            ],
+            vec![],
+        );
+        let c = classify(&g, &rs);
+        assert_eq!(c.placements["x.AMapper"].layer, Layer::Persistence);
+        assert_eq!(c.placements["x.Convert"].layer, Layer::Util);
+        assert_eq!(c.placements["x.service.Helper"].layer, Layer::Business);
+        assert_eq!(c.placements["x.Helper2"].layer, Layer::Util);
+    }
+
+    #[test]
+    fn typescript_word_boundaries_nest_pipes() {
+        let ts = |name: &str, file: &str, kind, anns: &[&str]| {
+            ann(sym(&format!("{file}#{name}"), kind, name, file, None), anns)
+        };
+        let syms = vec![
+            ts(
+                "StatementService",
+                "src/app/a/statement.service.ts",
+                SymbolKind::Class,
+                &["Injectable"],
+            ),
+            ts(
+                "RestoreService",
+                "src/app/a/restore.service.ts",
+                SymbolKind::Class,
+                &["Injectable"],
+            ),
+            ts(
+                "AppStore",
+                "src/app/a/app.store.ts",
+                SymbolKind::Class,
+                &["Injectable"],
+            ),
+            ts(
+                "UsersController",
+                "src/users/users.controller.ts",
+                SymbolKind::Class,
+                &["Controller"],
+            ),
+            ts(
+                "UserEntity",
+                "src/users/user.entity.ts",
+                SymbolKind::Class,
+                &["Entity"],
+            ),
+            ts(
+                "MoneyPipe",
+                "src/app/a/money.pipe.ts",
+                SymbolKind::Class,
+                &["Pipe"],
+            ),
+            ts(
+                "HighlightDirective",
+                "src/app/a/h.directive.ts",
+                SymbolKind::Class,
+                &["Directive"],
+            ),
+        ];
+        let ids: Vec<String> = syms.iter().map(|s| s.id.clone()).collect();
+        let g = graph(Language::TypeScript, syms, vec![]);
+        let c = classify(&g, &RuleSet::builtin(Language::TypeScript).unwrap());
+        let layers: Vec<Layer> = ids.iter().map(|i| c.placements[i].layer).collect();
+        assert_eq!(
+            layers,
+            [
+                Layer::Business,
+                Layer::Business,
+                Layer::State,
+                Layer::Entry,
+                Layer::Model,
+                Layer::Util,
+                Layer::Util
+            ]
+        );
+        // no `src/app/` in path: name_root fallback
+        assert_eq!(c.placements[&ids[3]].domain, "users");
+    }
+
+    #[test]
+    fn matchers_and_semantics() {
+        let rs = r#"
+[[rule]]
+layer = "ui"
+name_prefix = ["Pre"]
+[[rule]]
+layer = "state"
+name_contains = ["Mid"]
+kind = ["enum"]
+[[rule]]
+layer = "util"
+any_supertype = ["Base"]
+name_suffix = ["Impl"]
+"#;
+        assert_eq!(
+            one(rs, java("PreThing", SymbolKind::Class, "x")).layer,
+            Layer::Ui
+        );
+        assert_eq!(
+            one(rs, java("AMidB", SymbolKind::Enum, "x")).layer,
+            Layer::State
+        );
+        // kind mismatch: no match -> unknown (enum with no methods would be Enum, not DTO)
+        assert_eq!(
+            one(rs, java("AMidB", SymbolKind::Class, "x")).layer,
+            Layer::Model
+        );
+        let mut q = java("FooImpl", SymbolKind::Class, "x");
+        q.supertypes = vec!["com.acme.Base".into()];
+        assert_eq!(one(rs, q).layer, Layer::Util);
+        // AND: supertype ok, suffix missing
+        let mut q = java("Foo", SymbolKind::Interface, "x");
+        q.supertypes = vec!["Base".into()];
+        assert_eq!(one(rs, q).layer, Layer::Unknown);
+    }
+
+    #[test]
+    fn package_segment_strategy() {
+        let rs = r#"
+[[rule]]
+layer = "business"
+[domain]
+strategy = "package_segment"
+after = "com.acme."
+skip_segments = ["Shared"]
+fallback = "misc"
+aliases = { billing = ["invoices"] }
+"#;
+        assert_eq!(
+            one(
+                rs,
+                java("A", SymbolKind::Class, "com.acme.shared.invoices.impl")
+            )
+            .domain,
+            "billing"
+        );
+        assert_eq!(
+            one(rs, java("Zed", SymbolKind::Class, "com.acme.core")).domain,
+            "core"
+        );
+        // `after` absent from the package: falls back to the name root
+        assert_eq!(
+            one(rs, java("Zed", SymbolKind::Class, "other.pkg")).domain,
+            "zed"
+        );
+        // no package at all
+        let s = sym("Q", SymbolKind::Class, "", "Q.java", None);
+        assert_eq!(one(rs, s).domain, "misc");
+    }
+
+    #[test]
+    fn dto_edge_cases() {
+        let rs = RuleSet::default();
+        let g = |kind, methods: &[&str]| {
+            let c = java("T", kind, "x");
+            let mut v: Vec<Symbol> = methods.iter().map(|m| method(&c, m)).collect();
+            v.push(c);
+            classify(&graph(Language::Java, v, vec![]), &rs).placements["x.T"].layer
+        };
+        assert_eq!(g(SymbolKind::Class, &["getA", "setA", "isB"]), Layer::Model);
+        assert_eq!(g(SymbolKind::Interface, &[]), Layer::Unknown);
+        assert_eq!(g(SymbolKind::Enum, &[]), Layer::Unknown);
+        assert_eq!(g(SymbolKind::Class, &["getA", "settle"]), Layer::Unknown);
+        assert_eq!(g(SymbolKind::Class, &["issue"]), Layer::Unknown);
+        assert_eq!(g(SymbolKind::Class, &["setup"]), Layer::Unknown);
+        assert_eq!(g(SymbolKind::Class, &["compute"]), Layer::Unknown);
     }
 }
