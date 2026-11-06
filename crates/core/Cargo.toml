@@ -11,6 +11,6 @@ serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 tree-sitter.workspace = true
-tree-sitter-java = "0.23.5"
+tree-sitter-java.workspace = true
 rayon.workspace = true
 ignore.workspace = true

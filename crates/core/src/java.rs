@@ -135,6 +135,19 @@ fn arity(params: Option<Node>) -> usize {
     })
 }
 
+/// Names of the type parameters declared on a class/method/constructor node.
+fn type_params_of(n: Node, src: &str) -> Vec<String> {
+    let Some(tp) = n.child_by_field_name("type_parameters") else {
+        return Vec::new();
+    };
+    let mut cur = tp.walk();
+    tp.named_children(&mut cur)
+        .filter(|c| c.kind() == "type_parameter")
+        .filter_map(|c| c.named_child(0))
+        .map(|c| text(c, src).to_string())
+        .collect()
+}
+
 struct Ctx<'a> {
     file: &'a str,
     src: &'a str,
@@ -166,7 +179,7 @@ impl Ctx<'_> {
         self.out.symbols.len() - 1
     }
 
-    fn type_decl(&mut self, node: Node, container: Option<&str>) {
+    fn type_decl(&mut self, node: Node, container: Option<&str>, outer_tp: &[String]) {
         let kind = match node.kind() {
             "class_declaration" | "record_declaration" => SymbolKind::Class,
             "interface_declaration" | "annotation_type_declaration" => SymbolKind::Interface,
@@ -196,21 +209,65 @@ impl Ctx<'_> {
         }
         self.out.symbols[idx].supertypes = supers;
 
+        let mut tp = outer_tp.to_vec();
+        tp.extend(type_params_of(node, self.src));
+
+        let mut rec_arity = 0;
+        if node.kind() == "record_declaration"
+            && let Some(params) = node.child_by_field_name("parameters")
+        {
+            let mut c2 = params.walk();
+            for p in params.named_children(&mut c2) {
+                if !matches!(p.kind(), "formal_parameter" | "spread_parameter") {
+                    continue;
+                }
+                rec_arity += 1;
+                let name_node = p.child_by_field_name("name").or_else(|| {
+                    let mut c3 = p.walk();
+                    p.named_children(&mut c3)
+                        .find(|c| c.kind() == "variable_declarator")
+                        .and_then(|d| d.child_by_field_name("name"))
+                });
+                if let Some(n) = name_node {
+                    let fid = format!("{id}#{}", text(n, self.src));
+                    self.symbol(fid, SymbolKind::Field, p, n, Some(&id));
+                }
+                self.param_use(p, &id, &tp);
+            }
+        }
+
         if let Some(body) = node.child_by_field_name("body") {
-            self.members(body, &id);
+            self.members(body, &id, &tp, rec_arity);
         }
     }
 
-    fn members(&mut self, body: Node, tid: &str) {
+    /// Record a `Uses` entry for the type of a (formal or spread) parameter.
+    fn param_use(&mut self, p: Node, tid: &str, tp: &[String]) {
+        let ty = if p.kind() == "spread_parameter" {
+            let mut cur = p.walk();
+            p.named_children(&mut cur)
+                .find_map(|c| type_name(c, self.src))
+        } else {
+            p.child_by_field_name("type")
+                .and_then(|t| type_name(t, self.src))
+        };
+        if let Some(t) = ty
+            && !tp.contains(&t)
+        {
+            self.out.uses.push((tid.to_string(), t));
+        }
+    }
+
+    fn members(&mut self, body: Node, tid: &str, tp: &[String], rec_arity: usize) {
         let mut cur = body.walk();
         for m in body.named_children(&mut cur) {
             match m.kind() {
-                "enum_body_declarations" => self.members(m, tid),
+                "enum_body_declarations" => self.members(m, tid, tp, rec_arity),
                 "class_declaration"
                 | "interface_declaration"
                 | "enum_declaration"
                 | "record_declaration"
-                | "annotation_type_declaration" => self.type_decl(m, Some(tid)),
+                | "annotation_type_declaration" => self.type_decl(m, Some(tid), tp),
                 "method_declaration" => {
                     if let Some(n) = m.child_by_field_name("name") {
                         let id = format!(
@@ -221,28 +278,38 @@ impl Ctx<'_> {
                         self.symbol(id, SymbolKind::Method, m, n, Some(tid));
                     }
                 }
+                "annotation_type_element_declaration" => {
+                    if let Some(n) = m.child_by_field_name("name") {
+                        let id = format!("{tid}#{}(0)", text(n, self.src));
+                        self.symbol(id, SymbolKind::Method, m, n, Some(tid));
+                    }
+                }
+                "compact_constructor_declaration" => {
+                    if let Some(n) = m.child_by_field_name("name") {
+                        let id = format!("{tid}#<init>({rec_arity})");
+                        self.symbol(id, SymbolKind::Constructor, m, n, Some(tid));
+                    }
+                }
                 "constructor_declaration" => {
                     if let Some(n) = m.child_by_field_name("name") {
                         let params = m.child_by_field_name("parameters");
                         let id = format!("{tid}#<init>({})", arity(params));
                         self.symbol(id, SymbolKind::Constructor, m, n, Some(tid));
+                        let mut ctp = tp.to_vec();
+                        ctp.extend(type_params_of(m, self.src));
                         if let Some(p) = params {
                             let mut c2 = p.walk();
                             for prm in p.named_children(&mut c2) {
-                                if let Some(t) = prm
-                                    .child_by_field_name("type")
-                                    .and_then(|t| type_name(t, self.src))
-                                {
-                                    self.out.uses.push((tid.to_string(), t));
-                                }
+                                self.param_use(prm, tid, &ctp);
                             }
                         }
                     }
                 }
-                "field_declaration" => {
+                "field_declaration" | "constant_declaration" => {
                     let ty = m
                         .child_by_field_name("type")
-                        .and_then(|t| type_name(t, self.src));
+                        .and_then(|t| type_name(t, self.src))
+                        .filter(|t| !tp.contains(t));
                     let mut c2 = m.walk();
                     for d in m.children_by_field_name("declarator", &mut c2) {
                         if let Some(n) = d.child_by_field_name("name") {
@@ -309,7 +376,7 @@ pub fn parse_source(file: &str, src: &str) -> Result<FileSymbols> {
     };
     let mut cur = root.walk();
     for n in root.children(&mut cur) {
-        ctx.type_decl(n, None);
+        ctx.type_decl(n, None, &[]);
     }
     let mut out = ctx.out;
     out.package = package;
@@ -363,10 +430,16 @@ impl TypeIndex {
 
     fn resolve(&self, fs: &FileSymbols, name: &str) -> Option<String> {
         let suffix = format!(".{name}");
+        let mut explicit = false;
         for imp in fs.imports.iter().filter(|i| i.ends_with(&suffix)) {
+            explicit = true;
             if let Some(id) = self.dotted.get(imp) {
                 return Some(id.clone());
             }
+        }
+        if explicit {
+            // Explicitly imported non-project class: external, never guess.
+            return None;
         }
         match &fs.package {
             Some(p) => {
@@ -395,12 +468,21 @@ impl TypeIndex {
 /// Parse every main-source `.java` file under `root` into a `Graph`
 /// (symbols, `Extends`/`Implements` and `Uses` edges; no calls).
 pub fn parse_project(root: &Path) -> Result<Graph> {
+    let walk_root = root.to_path_buf();
     let walker = ignore::WalkBuilder::new(root)
         .require_git(false)
-        .filter_entry(|e| {
+        .filter_entry(move |e| {
+            if e.depth() == 0 {
+                return true;
+            }
             let n = e.file_name().to_string_lossy();
             let is_dir = e.file_type().is_some_and(|t| t.is_dir());
-            !(is_dir && matches!(n.as_ref(), "target" | "build" | "node_modules"))
+            if !(is_dir && matches!(n.as_ref(), "target" | "build" | "node_modules")) {
+                return true;
+            }
+            // Keep such dirs when they sit under a `src/` component (packages).
+            let rel = e.path().strip_prefix(&walk_root).unwrap_or(e.path());
+            rel.components().any(|c| c.as_os_str() == "src")
         })
         .build();
     let mut files = Vec::new();
@@ -464,6 +546,10 @@ pub fn parse_project(root: &Path) -> Result<Graph> {
             }
         }
     }
+
+    let mut all = all;
+    all.sort_by(|a, b| a.id.cmp(&b.id));
+    edges.sort_by(|a, b| (&a.from, &a.to, a.kind as u8).cmp(&(&b.from, &b.to, b.kind as u8)));
 
     Ok(Graph {
         root: root.to_string_lossy().into_owned(),
@@ -633,5 +719,112 @@ record Point(int x, int y) implements Shape { double len() { return 0; } }
             g.symbols.iter().find(|s| s.id == "p.Impl").unwrap().file,
             "src/main/java/p/Impl.java"
         );
+    }
+
+    #[test]
+    fn constants_annotation_elements_records_varargs_typevars() {
+        let src = "package p;\n\
+            interface K { int MAX = 3; }\n\
+            @interface A { String value(); }\n\
+            record R<T>(Foo foo, T t, Bar... bars) { R {} }\n\
+            class G<T> { T val; Baz baz; <U> G(T t, U u, Qux... q) {} }\n";
+        let fs = parse_source("p/K.java", src).unwrap();
+        assert_eq!(get(&fs, "p.K#MAX").kind, SymbolKind::Field);
+        assert_eq!(get(&fs, "p.A#value(0)").kind, SymbolKind::Method);
+        assert_eq!(get(&fs, "p.R#foo").kind, SymbolKind::Field);
+        assert_eq!(get(&fs, "p.R#bars").kind, SymbolKind::Field);
+        assert_eq!(get(&fs, "p.R#<init>(3)").kind, SymbolKind::Constructor);
+        assert_eq!(get(&fs, "p.G#<init>(3)").kind, SymbolKind::Constructor);
+        let uses = |t: &str| -> Vec<&str> {
+            fs.uses
+                .iter()
+                .filter(|(f, _)| f == t)
+                .map(|(_, n)| n.as_str())
+                .collect()
+        };
+        assert_eq!(uses("p.R"), ["Foo", "Bar"]);
+        assert_eq!(uses("p.G"), ["Baz", "Qux"]);
+    }
+
+    #[test]
+    fn generics_stripped_and_end_ranges() {
+        let src = "class A extends B<C<D>, E> {\n  Map<String, F> m;\n  void f() {\n  }\n}\n";
+        let fs = parse_source("A.java", src).unwrap();
+        assert_eq!(get(&fs, "A").supertypes, ["B"]);
+        let f = get(&fs, "A#f(0)");
+        assert_eq!(
+            (f.range.start_line, f.range.end_line, f.range.end_col),
+            (2, 3, 3)
+        );
+        let m = get(&fs, "A#m");
+        assert_eq!(m.range.end_line, 1);
+        assert_eq!(m.range.end_col, 19);
+        assert_eq!(m.name_range.start_col, 17);
+        assert_eq!(m.name_range.end_col, 18);
+        assert_eq!(fs.uses, [("A".to_string(), "Map".to_string())]);
+    }
+
+    fn write(dir: &Path, rel: &str, content: &str) {
+        let p = dir.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, content).unwrap();
+    }
+
+    #[test]
+    fn resolution_rules_and_pruning() {
+        let dir = std::env::temp_dir().join(format!("structure_java_res_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let m = "src/main/java/";
+        write(
+            &dir,
+            &format!("{m}q/Widget.java"),
+            "package q; class Widget {}",
+        );
+        write(
+            &dir,
+            &format!("{m}w/Gadget.java"),
+            "package w; class Gadget {}",
+        );
+        write(
+            &dir,
+            &format!("{m}z/Gadget.java"),
+            "package z; class Gadget {}",
+        );
+        write(
+            &dir,
+            &format!("{m}y/Thing.java"),
+            "package y; class Thing {}",
+        );
+        write(
+            &dir,
+            &format!("{m}x/Thing.java"),
+            "package x; class Thing {}",
+        );
+        write(
+            &dir,
+            &format!("{m}org/x/build/B.java"),
+            "package org.x.build; class B {}",
+        );
+        write(&dir, "build/gen/Gen.java", "package gen; class Gen {}");
+        write(&dir, "target/gen/Tgt.java", "package gen; class Tgt {}");
+        write(
+            &dir,
+            &format!("{m}u/User.java"),
+            "package u; import org.ext.Widget; import w.*;\n\
+             class User { Widget a; Gadget b; Thing c; Date d; String e; int f; }",
+        );
+        let g = parse_project(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let uses: Vec<&str> = g
+            .edges
+            .iter()
+            .filter(|e| e.from == "u.User" && e.kind == EdgeKind::Uses)
+            .map(|e| e.to.as_str())
+            .collect();
+        assert_eq!(uses, ["ext:Thing", "ext:Widget", "w.Gadget"]);
+        let ids: Vec<&str> = g.symbols.iter().map(|s| s.id.as_str()).collect();
+        assert!(ids.contains(&"org.x.build.B"));
+        assert!(!ids.contains(&"gen.Gen") && !ids.contains(&"gen.Tgt"));
+        assert!(ids.windows(2).all(|w| w[0] <= w[1]));
     }
 }

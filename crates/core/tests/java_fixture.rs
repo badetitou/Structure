@@ -47,4 +47,18 @@ fn jpetstore_symbols() {
     );
     let acc = find(".Account");
     assert_eq!(acc.package.as_deref(), Some("org.mybatis.jpetstore.domain"));
+
+    // Id format and a service -> mapper Uses edge.
+    assert_eq!(svc.id, "org.mybatis.jpetstore.service.AccountService");
+    assert!(g.symbols.iter().any(|s| {
+        s.id == "org.mybatis.jpetstore.service.AccountService#getAccount(1)"
+            || s.id
+                .starts_with("org.mybatis.jpetstore.service.AccountService#")
+                && s.id.ends_with(')')
+    }));
+    assert!(g.edges.iter().any(|e| {
+        e.from == svc.id
+            && e.to == "org.mybatis.jpetstore.mapper.AccountMapper"
+            && e.kind == structure_core::ir::EdgeKind::Uses
+    }));
 }
