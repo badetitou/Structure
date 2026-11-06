@@ -69,8 +69,10 @@ pub struct DomainSpec {
     /// boundary: `MyBatisArticle` -> `Article`, but `Defaulted` is kept.
     #[serde(default)]
     pub strip_prefixes: Vec<String>,
-    /// `name_root` only: drop a trailing plural `s` (`Comments` -> `Comment`),
-    /// except after `s`, `u` or `i` (`Address`, `Status`, `Axis`).
+    /// Applies wherever the name root is used (the `name_root` strategy and the
+    /// fallback of the segment strategies): `Comments` -> `Comment`,
+    /// `Categories` -> `Category`, `Boxes` -> `Box`. Common singular nouns in
+    /// `s` (`News`, `Series`, `Status`, `Address`, ...) are kept.
     #[serde(default)]
     pub singularize: bool,
     #[serde(default)]
@@ -218,13 +220,37 @@ fn strip_prefix<'a>(name: &'a str, prefixes: &[String]) -> &'a str {
     name
 }
 
-fn singular(name: &str) -> &str {
-    let mut it = name.chars().rev();
-    match (it.next(), it.next()) {
-        (Some('s'), Some(prev)) if name.len() > 3 && !matches!(prev, 's' | 'u' | 'i') => {
-            &name[..name.len() - 1]
-        }
-        _ => name,
+/// Singular nouns that end in `s`; matched on the last camel-case word.
+const SINGULAR_S: [&str; 11] = [
+    "news", "alias", "canvas", "atlas", "bias", "series", "lens", "gas", "status", "address",
+    "analysis",
+];
+
+/// Naive English singular of the last word: `ies` -> `y` (stem > 2 letters),
+/// `es` after `x`/`ch`/`sh`, else a trailing `s` (not after `s`, `u`, `i`).
+fn singular(name: &str) -> String {
+    let lower = name.to_lowercase();
+    let at_word = |w: &str| {
+        lower.ends_with(w)
+            && (name.len() == w.len()
+                || name[name.len() - w.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_uppercase))
+    };
+    if SINGULAR_S.iter().any(|w| at_word(w)) {
+        return name.to_string();
+    }
+    let cut = |n: usize| name[..name.len() - n].to_string();
+    if lower.ends_with("ies") && name.len() - 3 > 2 {
+        return format!("{}y", cut(3));
+    }
+    if ["xes", "ches", "shes"].iter().any(|e| lower.ends_with(e)) {
+        return cut(2);
+    }
+    match lower.strip_suffix('s').and_then(|r| r.chars().last()) {
+        Some(prev) if name.len() > 3 && !matches!(prev, 's' | 'u' | 'i') => cut(1),
+        _ => name.to_string(),
     }
 }
 
@@ -247,9 +273,8 @@ fn domain_of(spec: &DomainSpec, s: &Symbol) -> String {
         if spec.singularize {
             singular(root)
         } else {
-            root
+            root.to_string()
         }
-        .to_string()
     };
     let after = spec.after.as_deref();
     let raw = match spec.strategy {
@@ -1052,6 +1077,23 @@ aliases = { billing = ["invoices"] }
         assert_eq!(singular("Bus"), "Bus");
         assert_eq!(singular("Ids"), "Ids");
         assert_eq!(singular("Id"), "Id");
+        for (i, o) in [
+            ("News", "News"),
+            ("Alias", "Alias"),
+            ("Series", "Series"),
+            ("Status", "Status"),
+            ("Address", "Address"),
+            ("UserNews", "UserNews"),
+            ("Categories", "Category"),
+            ("Ies", "Ies"),
+            ("Boxes", "Box"),
+            ("Searches", "Search"),
+            ("Dishes", "Dish"),
+            ("Articles", "Article"),
+            ("Comments", "Comment"),
+        ] {
+            assert_eq!(singular(i), o, "{i}");
+        }
         // opt-in: default spec leaves plurals and prefixes alone
         let s = java("MyBatisUsers", SymbolKind::Class, "x");
         assert_eq!(domain_of(&DomainSpec::default(), &s), "mybatisusers");
