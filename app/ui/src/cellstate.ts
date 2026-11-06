@@ -13,6 +13,8 @@ export interface CellPaint {
   opacity: number;
 }
 
+import type { ImpactView } from "./domaintree";
+
 export const FWD = "var(--fwd)";
 export const BWD = "var(--bwd)";
 
@@ -42,7 +44,7 @@ export function edgeKind(
   from: string,
   to: string,
   hover: Hover | null,
-  impact: { changed: ReadonlySet<string>; impacted: ReadonlyMap<string, number> } | null,
+  impact: ImpactView | null,
 ): EdgeKind {
   if (hover) {
     const inF = (id: string) => id === hover.id || hover.fwd.has(id);
@@ -56,6 +58,34 @@ export function edgeKind(
     if (on(from) && on(to)) return "imp";
   }
   return "def";
+}
+
+/** Opacity of default edges: dimmed while hovering or showing impact (set once on their container). */
+export function defaultEdgeOpacity(hovering: boolean, impacting: boolean): number {
+  return hovering ? 0.1 : impacting ? 0.12 : 0.5;
+}
+
+export interface EdgeStyle {
+  stroke: string;
+  /** Id of the arrowhead marker. */
+  marker: string;
+  /** CSS opacity; default edges take their container's `--edge-opacity`. */
+  opacity: string;
+  width: number;
+}
+
+export function edgeStyle(kind: EdgeKind, weight: number): EdgeStyle {
+  const width = Math.max(1, 1 + Math.log(weight));
+  switch (kind) {
+    case "fwd":
+      return { stroke: FWD, marker: "a-fwd", opacity: "0.95", width };
+    case "bwd":
+      return { stroke: BWD, marker: "a-bwd", opacity: "0.95", width };
+    case "imp":
+      return { stroke: CHANGED, marker: "a-imp", opacity: "0.9", width };
+    default:
+      return { stroke: "var(--edge)", marker: "a-def", opacity: "var(--edge-opacity)", width };
+  }
 }
 
 /** Impact-mode state of a cell: changed beats impacted beats dimmed. */

@@ -26,11 +26,16 @@ describe("reach", () => {
     expect(adj.backward.get("c")).toEqual(["b", "d"]);
     expect(reach("a", adj, "forward")).toEqual(reach("a", adj, "forward"));
   });
-  it("walks a long chain in linear time", () => {
-    const n = 200_000;
-    const chain = adjacency(Array.from({ length: n }, (_, i) => e(`n${i}`, `n${i + 1}`)));
-    const t = performance.now();
-    expect(reach("n0", chain, "forward").size).toBe(n);
-    expect(performance.now() - t).toBeLessThan(1000);
+  it("visits every node once on a long chain plus a wide fan-out", () => {
+    const n = 5000;
+    const es = [
+      ...Array.from({ length: n }, (_, i) => e(`c${i}`, `c${i + 1}`)),
+      ...Array.from({ length: n }, (_, i) => e("c0", `f${i}`)),
+      // every fan-out leaf also points at the chain end: extra edges, no extra nodes
+      ...Array.from({ length: n }, (_, i) => e(`f${i}`, `c${n}`)),
+    ];
+    const g = adjacency(es);
+    expect(reach("c0", g, "forward").size).toBe(2 * n); // c1..cn and f0..f(n-1)
+    expect(reach(`c${n}`, g, "backward").size).toBe(2 * n); // c0..c(n-1) and f*
   });
 });

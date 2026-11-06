@@ -4,6 +4,7 @@
   import DetailsPanel from "./DetailsPanel.svelte";
   import HistorySidebar from "./HistorySidebar.svelte";
   import MatrixView from "./MatrixView.svelte";
+  import type { MatrixHandle } from "./MatrixView.svelte";
   import Progress from "./Progress.svelte";
   import ProjectHeader from "./ProjectHeader.svelte";
   import SidePanel from "./SidePanel.svelte";
@@ -13,7 +14,7 @@
   // Analyses `path`, shows the progress, then the matrix with its panels.
   let { path, onExit }: { path: string; onExit: (error?: string) => void } = $props();
 
-  let matrix = $state<ReturnType<typeof MatrixView> | null>(null);
+  let matrix = $state<MatrixHandle | null>(null);
 
   onMount(() => {
     let live = true;

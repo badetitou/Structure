@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { edgeKind } from "../../../cellstate";
+  import { edgeKind, edgeStyle } from "../../../cellstate";
   import type { Hover } from "../../../cellstate";
+  import type { ImpactView } from "../../../domaintree";
   import type { CellEdge } from "../../../api";
   import type { Tile } from "../../../layout";
   import { edgePath } from "../../../matrixgeom";
 
-  // An edge only knows its kind (default / forward / backward / impact). Dimming
-  // the default ones while hovering is a class on the container, so a hover
+  // An edge only knows its kind (default / forward / backward / impact). The default
+  // ones are dimmed through a CSS variable on the container, so a hover
   // writes to the few edges that change kind, not to all of them.
   let {
     edge,
@@ -19,43 +20,17 @@
     from: Tile;
     to: Tile;
     hover: Hover | null;
-    impact: { changed: ReadonlySet<string>; impacted: ReadonlyMap<string, number> } | null;
+    impact: ImpactView | null;
   } = $props();
 
-  const kind = $derived(edgeKind(edge.from, edge.to, hover, impact));
+  const st = $derived(edgeStyle(edgeKind(edge.from, edge.to, hover, impact), edge.weight));
 </script>
 
-<path class={kind} d={edgePath(from, to)} stroke-width={Math.max(1, 1 + Math.log(edge.weight))} />
+<path d={edgePath(from, to)} style:stroke={st.stroke} style:opacity={st.opacity} stroke-width={st.width} marker-end="url(#{st.marker})" />
 
 <style>
   path {
     fill: none;
     pointer-events: none;
-  }
-  .def {
-    stroke: var(--edge);
-    opacity: 0.5;
-    marker-end: url(#a-def);
-  }
-  :global(.hovering) .def {
-    opacity: 0.1;
-  }
-  :global(.impacting) .def {
-    opacity: 0.12;
-  }
-  .fwd {
-    stroke: var(--fwd);
-    opacity: 0.95;
-    marker-end: url(#a-fwd);
-  }
-  .bwd {
-    stroke: var(--bwd);
-    opacity: 0.95;
-    marker-end: url(#a-bwd);
-  }
-  .imp {
-    stroke: var(--changed);
-    opacity: 0.9;
-    marker-end: url(#a-imp);
   }
 </style>

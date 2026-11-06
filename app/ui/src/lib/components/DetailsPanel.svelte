@@ -2,18 +2,17 @@
   import { Button } from "$lib/components/ui/button";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { hasMore } from "../../cellsymbols";
+  import { initialCaps, moreLabel, showMore } from "../../symbolcap";
   import { symbolName } from "../../symbolname";
   import { app } from "../../state.svelte";
 
   const impacted = $derived(
     app.impact ? [...app.impact.impacted_symbols].sort((a, b) => a.distance - b.distance) : [],
   );
-  // Long symbol lists render a page at a time ("Show more").
-  const CAP = 200;
-  let shown = $state({ changed: CAP, impacted: CAP });
+  let shown = $state.raw(initialCaps());
   $effect(() => {
     void app.impact;
-    shown = { changed: CAP, impacted: CAP };
+    shown = initialCaps();
   });
   const list = $derived(app.selected && app.symbols?.cell === app.selected.id ? app.symbols : null);
 </script>
@@ -27,8 +26,9 @@
         <li>{r.name}<small class="block break-all text-muted-foreground">{r.sub}</small></li>
       {/each}
     </ul>
-    {#if more && total > rows.length}
-      <Button variant="outline" size="sm" class="mt-1" onclick={more}>Show more ({rows.length} / {total})</Button>
+    {@const label = more ? moreLabel(rows.length, total) : null}
+    {#if more && label}
+      <Button variant="outline" size="sm" class="mt-1" onclick={more}>{label}</Button>
     {/if}
   {/if}
 {/snippet}
@@ -44,13 +44,13 @@
       {@render items(
         app.impact.changed_symbols.slice(0, shown.changed).map((id) => ({ name: symbolName(id), sub: id })),
         app.impact.changed_symbols.length,
-        () => (shown.changed += CAP),
+        () => (shown = showMore(shown, "changed")),
       )}
       {@render heading(`Impacted symbols (${app.impact.impacted_symbols.length})`)}
       {@render items(
         impacted.slice(0, shown.impacted).map((x) => ({ name: symbolName(x.id), sub: `distance ${x.distance} · ${x.id}` })),
         impacted.length,
-        () => (shown.impacted += CAP),
+        () => (shown = showMore(shown, "impacted")),
       )}
     {/if}
     {#if app.selected}

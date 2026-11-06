@@ -77,4 +77,3 @@ export function resize(vb: ViewBox, oldW: number, newW: number, newH: number): V
   return { x: vb.x, y: vb.y, w: Math.max(newW, 1) * k, h: Math.max(newH, 1) * k };
 }
 
-export const viewBoxAttr = (vb: ViewBox) => `${vb.x} ${vb.y} ${vb.w} ${vb.h}`;
