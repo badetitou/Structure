@@ -1,6 +1,6 @@
 # Tauri API (UI contract)
 
-The UI talks to the Rust side through three commands and one event. JSON field
+The UI talks to the Rust side through four commands and one event. JSON field
 names are snake_case; enums are snake_case strings. Rust definitions live in
 `crates/core/src/model.rs` and `ir.rs`. Samples: `docs/samples/matrix.json`,
 `docs/samples/impact.json`.
@@ -11,6 +11,10 @@ names are snake_case; enums are snake_case strings. Rust definitions live in
 invoke<Matrix>("analyze", { path: string });
 invoke<Impact>("impact", { path: string, base: string | null, head: string | null });
 invoke<History>("history", { path: string, limit: number | null });
+invoke<CellSymbols>("cell_symbols", {
+  path: string, head: string | null, generation: number, cells: string[],
+  offset: number | null, limit: number | null,
+});
 ```
 
 - `analyze(path)` analyzes the Java/TypeScript project at `path` and returns the matrix.
@@ -25,6 +29,24 @@ invoke<History>("history", { path: string, limit: number | null });
   `index.scip`. The result then carries `matrix`, the snapshot's matrix: show
   it instead of the working-tree one (cells as of that commit; the impact ids
   refer to it). With `head = null`, `matrix` is absent.
+- `cell_symbols(path, head, generation, cells, offset, limit)`: the top-level symbols of
+  the given cell ids (the matrix carries counts only), sorted by (name, id),
+  concatenated in the order of `cells`. `head = null` reads the working-tree
+  analysis, otherwise the snapshot of that commit: pass the full SHA of
+  `Impact.head` (the backend resolves any `head` you gave `impact` to a full
+  SHA, and snapshots are cached under it). `generation` is `Matrix.generation`
+  of the matrix on screen; if the cached analysis was replaced since (for
+  example `impact` re-parsed an edited working tree), the call fails with
+  `analysis changed, re-run Analyze`. Paged: `offset` default 0, `limit` default 500, at most 2000.
+  Reads the analyses cached by `analyze` / `impact`; same error when none
+  exists. The cache keeps each project's working-tree analysis and at most 2
+  commit snapshots (vscode: ~3.5 GB each); snapshots never evict working trees.
+  `docs/samples/cell-symbols.json` maps cell ids to their symbols, the data
+  the browser-only dev mode serves for `cell_symbols`.
+- `impact` reuses the cached analysis instead of re-analysing: a commit
+  snapshot is immutable, so `impact(path, base, head)` analyses `head` once;
+  for the working tree the cached analysis is reused while the working tree
+  is unchanged (same HEAD, same `git status`, same mtimes of the changed files).
 - `history(path, limit)`: up to `limit` (default 200) commits reachable from
   HEAD in topological order (`git log --topo-order`: children before parents,
   each merged line of history contiguous), newest first. `dirty` = the working tree has changes under the
@@ -54,9 +76,10 @@ interface Matrix {
   language: Language;
   layers: Layer[];   // only the layers present, in Layer order
   domains: string[];
-  cells: Cell[];
-  edges: CellEdge[];
+  cells: Cell[];     // non-empty cells only, sorted by (layer, domain)
+  edges: EdgeGroup[]; // cell-to-cell calls/uses, grouped by source cell
   stats: Stats;
+  generation?: number; // set by the app: id of the cached analysis; pass to `cell_symbols`
   warnings?: string[]; // only when non-empty: indexing failed, stale index...
   // Only when domains are modules (package / directory) instead of name roots:
   // module trie, single-child chains without own classes collapsed. Every entry
@@ -73,16 +96,23 @@ interface Cell {
   id: string; // "<layer>:<domain>", e.g. "business:account"
   layer: Layer;
   domain: string;
-  size: number;
-  symbols: CellSymbol[];
+  size: number;   // number of top-level symbols; list them with `cell_symbols`
 }
 interface CellSymbol { id: string; name: string; file: string }
-interface CellEdge { from: string; to: string; weight: number } // cell ids
+interface CellSymbols {
+  total: number;   // symbols in the requested cells
+  offset: number;
+  symbols: CellSymbol[]; // at most `limit`, from `offset`
+}
+// Edges refer to cells by index into `Matrix.cells` (a cell id is ~40 bytes,
+// repeated 130 000 times on vscode). `targets` = [[cell index, weight], ...],
+// sorted; no self-loops. The UI expands them to {from, to, weight} with cell ids.
+interface EdgeGroup { from: number; targets: [number, number][] }
 interface Stats { files: number; symbols: number; edges: number; elapsed_ms: number }
 
 interface Impact {
   base: string;
-  head: string | null;
+  head: string | null; // full SHA when a commit was analysed (as resolved from the request)
   changed_files: string[];
   changed_symbols: string[];
   changed_cells: string[];
@@ -107,8 +137,12 @@ interface Commit {
 interface Progress { step: string; pct: number; detail?: string } // pct 0..100
 ```
 
-Granularity: symbol ids in `Matrix.cells[].symbols` and in `Impact` are class-level (top-level symbol) ids.
+Granularity: symbol ids in `CellSymbols` and in `Impact` are class-level (top-level symbol) ids.
+
+Payload size (vscode, 2 501 cells, 133 514 cell edges): 33 MB pretty-printed /
+24.7 MB compact before (symbol lists 13 MB, string-id edges 11.5 MB); counts and
+index-based grouped edges bring it to about 1.7 MB.
 
 `analyze` re-runs the indexer when a source file is newer than `index.scip`.
-`impact` always re-parses the project (fresh symbol ranges) and reuses the
-index, warning when it is stale.
+`impact` re-parses the working tree only when it changed since the cached
+analysis (fresh symbol ranges), reusing the index and warning when it is stale.

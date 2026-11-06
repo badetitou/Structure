@@ -36,12 +36,11 @@ describe("initialExpanded / columns", () => {
   });
 });
 
-const cell = (layer: Cell["layer"], domain: string, size: number, syms: string[]): Cell => ({
+const cell = (layer: Cell["layer"], domain: string, size: number): Cell => ({
   id: `${layer}:${domain}`,
   layer,
   domain,
   size,
-  symbols: syms.map((id) => ({ id, name: id, file: "f" })),
 });
 const m: Matrix = {
   project: "p",
@@ -49,12 +48,12 @@ const m: Matrix = {
   layers: ["ui", "model"],
   domains: ["a1", "a2", "a3", "a4", "b"],
   cells: [
-    cell("ui", "a1", 2, ["x", "y"]),
-    cell("ui", "a2", 3, ["y", "z"]),
-    cell("model", "a3", 1, ["m"]),
-    cell("ui", "a3", 1, ["m"]),
-    cell("ui", "a4", 2, ["m"]),
-    cell("ui", "b", 1, ["q"]),
+    cell("ui", "a1", 2),
+    cell("ui", "a2", 3),
+    cell("model", "a3", 1),
+    cell("ui", "a3", 1),
+    cell("ui", "a4", 2),
+    cell("ui", "b", 1),
   ],
   edges: [
     { from: "ui:a1", to: "ui:a2", weight: 5 },
@@ -67,12 +66,12 @@ const m: Matrix = {
 };
 
 describe("aggregate", () => {
-  it("sums sizes, unions symbols, remaps edges without self-loops", () => {
+  it("sums sizes, lists members, remaps edges without self-loops", () => {
     const v = aggregate(m, columns(tree, new Set(["g:0"])));
     expect(v.cells.find((c) => c.id === "model:g:0/2")?.size).toBe(1);
     const ui = v.cells.find((c) => c.id === "ui:g:0/2");
     expect(ui?.size).toBe(3);
-    expect(ui?.symbols.map((s) => s.id)).toEqual(["m"]);
+    expect(ui?.members).toEqual(["ui:a3", "ui:a4"]);
     expect(ui?.label).toBe("AG");
     // ui:a3 -> ui:a4 became a self-loop and is dropped.
     expect(v.edges).toEqual([

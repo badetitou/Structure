@@ -1,0 +1,211 @@
+{
+  "entry:account": [
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.AccountController",
+      "name": "AccountController",
+      "file": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java"
+    }
+  ],
+  "entry:cart": [
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.CartController",
+      "name": "CartController",
+      "file": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java"
+    }
+  ],
+  "entry:catalog": [
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.CatalogController",
+      "name": "CatalogController",
+      "file": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java"
+    }
+  ],
+  "entry:order": [
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.OrderController",
+      "name": "OrderController",
+      "file": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java"
+    }
+  ],
+  "entry:root": [
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.RootController",
+      "name": "RootController",
+      "file": "src/main/java/org/mybatis/jpetstore/web/controllers/RootController.java"
+    }
+  ],
+  "business:account": [
+    {
+      "id": "org.mybatis.jpetstore.service.AccountService",
+      "name": "AccountService",
+      "file": "src/main/java/org/mybatis/jpetstore/service/AccountService.java"
+    }
+  ],
+  "business:catalog": [
+    {
+      "id": "org.mybatis.jpetstore.service.CatalogService",
+      "name": "CatalogService",
+      "file": "src/main/java/org/mybatis/jpetstore/service/CatalogService.java"
+    }
+  ],
+  "business:order": [
+    {
+      "id": "org.mybatis.jpetstore.service.OrderService",
+      "name": "OrderService",
+      "file": "src/main/java/org/mybatis/jpetstore/service/OrderService.java"
+    }
+  ],
+  "persistence:account": [
+    {
+      "id": "org.mybatis.jpetstore.mapper.AccountMapper",
+      "name": "AccountMapper",
+      "file": "src/main/java/org/mybatis/jpetstore/mapper/AccountMapper.java"
+    }
+  ],
+  "persistence:catalog": [
+    {
+      "id": "org.mybatis.jpetstore.mapper.CategoryMapper",
+      "name": "CategoryMapper",
+      "file": "src/main/java/org/mybatis/jpetstore/mapper/CategoryMapper.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.ItemMapper",
+      "name": "ItemMapper",
+      "file": "src/main/java/org/mybatis/jpetstore/mapper/ItemMapper.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.ProductMapper",
+      "name": "ProductMapper",
+      "file": "src/main/java/org/mybatis/jpetstore/mapper/ProductMapper.java"
+    }
+  ],
+  "persistence:order": [
+    {
+      "id": "org.mybatis.jpetstore.mapper.LineItemMapper",
+      "name": "LineItemMapper",
+      "file": "src/main/java/org/mybatis/jpetstore/mapper/LineItemMapper.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.OrderMapper",
+      "name": "OrderMapper",
+      "file": "src/main/java/org/mybatis/jpetstore/mapper/OrderMapper.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.SequenceMapper",
+      "name": "SequenceMapper",
+      "file": "src/main/java/org/mybatis/jpetstore/mapper/SequenceMapper.java"
+    }
+  ],
+  "model:account": [
+    {
+      "id": "org.mybatis.jpetstore.domain.Account",
+      "name": "Account",
+      "file": "src/main/java/org/mybatis/jpetstore/domain/Account.java"
+    }
+  ],
+  "model:cart": [
+    {
+      "id": "org.mybatis.jpetstore.domain.Cart",
+      "name": "Cart",
+      "file": "src/main/java/org/mybatis/jpetstore/domain/Cart.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.CartItem",
+      "name": "CartItem",
+      "file": "src/main/java/org/mybatis/jpetstore/domain/CartItem.java"
+    }
+  ],
+  "model:catalog": [
+    {
+      "id": "org.mybatis.jpetstore.domain.Category",
+      "name": "Category",
+      "file": "src/main/java/org/mybatis/jpetstore/domain/Category.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.Item",
+      "name": "Item",
+      "file": "src/main/java/org/mybatis/jpetstore/domain/Item.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.Product",
+      "name": "Product",
+      "file": "src/main/java/org/mybatis/jpetstore/domain/Product.java"
+    }
+  ],
+  "model:order": [
+    {
+      "id": "org.mybatis.jpetstore.domain.LineItem",
+      "name": "LineItem",
+      "file": "src/main/java/org/mybatis/jpetstore/domain/LineItem.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.Order",
+      "name": "Order",
+      "file": "src/main/java/org/mybatis/jpetstore/domain/Order.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.Sequence",
+      "name": "Sequence",
+      "file": "src/main/java/org/mybatis/jpetstore/domain/Sequence.java"
+    }
+  ],
+  "util:staxfactoryinitializationlistener": [
+    {
+      "id": "org.mybatis.jpetstore.web.configuration.StaxFactoryInitializationListener",
+      "name": "StaxFactoryInitializationListener",
+      "file": "src/main/java/org/mybatis/jpetstore/web/configuration/StaxFactoryInitializationListener.java"
+    }
+  ],
+  "model:famixjavaentities": [
+    {
+      "id": "org.moosetechnology.model.famix.famixjavaentities.Class",
+      "name": "Class",
+      "file": "src/main/java/org/moosetechnology/model/famix/famixjavaentities/Class.java"
+    },
+    {
+      "id": "org.moosetechnology.model.famix.famixjavaentities.Method",
+      "name": "Method",
+      "file": "src/main/java/org/moosetechnology/model/famix/famixjavaentities/Method.java"
+    }
+  ],
+  "model:famixtraits": [
+    {
+      "id": "org.moosetechnology.model.famix.famixtraits.TMethod",
+      "name": "TMethod",
+      "file": "src/main/java/org/moosetechnology/model/famix/famixtraits/TMethod.java"
+    },
+    {
+      "id": "org.moosetechnology.model.famix.famixtraits.TNamedEntity",
+      "name": "TNamedEntity",
+      "file": "src/main/java/org/moosetechnology/model/famix/famixtraits/TNamedEntity.java"
+    }
+  ],
+  "model:tagging": [
+    {
+      "id": "org.moosetechnology.model.famix.tagging.Tag",
+      "name": "Tag",
+      "file": "src/main/java/org/moosetechnology/model/famix/tagging/Tag.java"
+    }
+  ],
+  "unknown:java": [
+    {
+      "id": "fr.inria.verveine.extractor.java.VerveineJParser",
+      "name": "VerveineJParser",
+      "file": "src/main/java/fr/inria/verveine/extractor/java/VerveineJParser.java"
+    }
+  ],
+  "unknown:refvisitors": [
+    {
+      "id": "fr.inria.verveine.extractor.java.visitors.refvisitors.VisitorInvocRef",
+      "name": "VisitorInvocRef",
+      "file": "src/main/java/fr/inria/verveine/extractor/java/visitors/refvisitors/VisitorInvocRef.java"
+    }
+  ],
+  "unknown:utils": [
+    {
+      "id": "fr.inria.verveine.extractor.java.utils.StructuralEntityKinds",
+      "name": "StructuralEntityKinds",
+      "file": "src/main/java/fr/inria/verveine/extractor/java/utils/StructuralEntityKinds.java"
+    }
+  ]
+}

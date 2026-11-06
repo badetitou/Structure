@@ -1,7 +1,9 @@
 //! Quotient graph: symbol-level graph + classification -> layer x domain matrix.
 
 use crate::ir::{EdgeKind, Graph, Symbol};
-use crate::model::{Cell, CellEdge, CellSymbol, Classification, Layer, Matrix, Stats};
+use crate::model::{
+    Cell, CellSymbol, CellSymbols, Classification, EdgeGroup, Layer, Matrix, Stats,
+};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Cell id of any symbol (lifted to its top-level symbol first).
@@ -50,51 +52,92 @@ pub fn class_edges(graph: &Graph) -> Vec<(String, String, EdgeKind, u32)> {
         .collect()
 }
 
-pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64) -> Matrix {
-    let mut grouped: BTreeMap<(Layer, String), Vec<CellSymbol>> = BTreeMap::new();
+/// Top-level symbols of the given cells, sorted by (name, id) within a cell and
+/// concatenated in the order of `cell_ids`; `limit` symbols from `offset`.
+pub fn cell_symbols(
+    graph: &Graph,
+    cls: &Classification,
+    cell_ids: &[String],
+    offset: usize,
+    limit: usize,
+) -> CellSymbols {
+    let mut per_cell: HashMap<&str, Vec<CellSymbol>> =
+        cell_ids.iter().map(|c| (c.as_str(), Vec::new())).collect();
     for s in graph.symbols.iter().filter(|s| s.container.is_none()) {
-        if let Some(p) = cls.placements.get(&s.id) {
-            grouped
-                .entry((p.layer, p.domain.clone()))
-                .or_default()
-                .push(CellSymbol {
-                    id: s.id.clone(),
-                    name: s.name.clone(),
-                    file: s.file.clone(),
-                });
+        let Some(p) = cls.placements.get(&s.id) else {
+            continue;
+        };
+        let id = Cell::id_for(p.layer, &p.domain);
+        if let Some(v) = per_cell.get_mut(id.as_str()) {
+            v.push(CellSymbol {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                file: s.file.clone(),
+            });
         }
     }
-    let layers: Vec<Layer> = grouped
+    let mut total = 0;
+    let mut page = Vec::new();
+    let mut done: BTreeSet<&str> = BTreeSet::new();
+    for id in cell_ids {
+        if !done.insert(id.as_str()) {
+            continue;
+        }
+        let Some(mut v) = per_cell.remove(id.as_str()) else {
+            continue;
+        };
+        v.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
+        let start = offset.saturating_sub(total).min(v.len());
+        let room = limit.saturating_sub(page.len());
+        total += v.len();
+        page.extend(v.into_iter().skip(start).take(room));
+    }
+    CellSymbols {
+        total,
+        offset,
+        symbols: page,
+    }
+}
+
+pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64) -> Matrix {
+    let mut sizes: BTreeMap<(Layer, String), usize> = BTreeMap::new();
+    for s in graph.symbols.iter().filter(|s| s.container.is_none()) {
+        if let Some(p) = cls.placements.get(&s.id) {
+            *sizes.entry((p.layer, p.domain.clone())).or_default() += 1;
+        }
+    }
+    let layers: Vec<Layer> = sizes
         .keys()
         .map(|(l, _)| *l)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let domains: Vec<String> = grouped
+    let domains: Vec<String> = sizes
         .keys()
         .map(|(_, d)| d.clone())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let cells: Vec<Cell> = grouped
+    let cells: Vec<Cell> = sizes
         .into_iter()
-        .map(|((layer, domain), mut symbols)| {
-            symbols.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
-            Cell {
-                id: Cell::id_for(layer, &domain),
-                layer,
-                domain,
-                size: symbols.len(),
-                symbols,
-            }
+        .map(|((layer, domain), size)| Cell {
+            id: Cell::id_for(layer, &domain),
+            layer,
+            domain,
+            size,
         })
+        .collect();
+    let index: HashMap<&str, usize> = cells
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (c.id.as_str(), i))
         .collect();
 
     let cell_of_top = |id: &str| -> Option<String> {
         let p = cls.placements.get(id)?;
         Some(Cell::id_for(p.layer, &p.domain))
     };
-    let mut weights: BTreeMap<(String, String), u32> = BTreeMap::new();
+    let mut weights: BTreeMap<(usize, usize), u32> = BTreeMap::new();
     for (f, t, kind, n) in class_edges(graph) {
         if !matches!(kind, EdgeKind::Call | EdgeKind::Uses) {
             continue;
@@ -102,14 +145,23 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
         let (Some(cf), Some(ct)) = (cell_of_top(&f), cell_of_top(&t)) else {
             continue;
         };
-        if cf != ct {
-            *weights.entry((cf, ct)).or_insert(0) += n;
+        let (Some(&i), Some(&j)) = (index.get(cf.as_str()), index.get(ct.as_str())) else {
+            continue;
+        };
+        if i != j {
+            *weights.entry((i, j)).or_insert(0) += n;
         }
     }
-    let edges = weights
-        .into_iter()
-        .map(|((from, to), weight)| CellEdge { from, to, weight })
-        .collect();
+    let mut edges: Vec<EdgeGroup> = Vec::new();
+    for ((from, to), weight) in weights {
+        match edges.last_mut() {
+            Some(g) if g.from == from => g.targets.push((to, weight)),
+            _ => edges.push(EdgeGroup {
+                from,
+                targets: vec![(to, weight)],
+            }),
+        }
+    }
 
     let files: BTreeSet<&str> = graph.symbols.iter().map(|s| s.file.as_str()).collect();
     Matrix {
@@ -120,6 +172,7 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
         cells,
         edges,
         warnings: vec![],
+        generation: 0,
         domain_tree: cls.domain_tree.clone(),
         stats: Stats {
             files: files.len(),
@@ -240,26 +293,56 @@ mod tests {
         );
         let biz = &m.cells[1];
         assert_eq!(biz.size, 2);
-        assert_eq!(biz.symbols[0].name, "Aaa");
-        assert_eq!(biz.symbols[1].file, "Svc.java");
+        let page = cell_symbols(&g, &cls, &["business:account".to_string()], 0, 10);
+        assert_eq!(page.total, 2);
+        assert_eq!(page.symbols[0].name, "Aaa");
+        assert_eq!(page.symbols[1].file, "Svc.java");
         let e: Vec<_> = m
             .edges
             .iter()
-            .map(|e| (e.from.as_str(), e.to.as_str(), e.weight))
+            .flat_map(|g| {
+                let m = &m;
+                g.targets
+                    .iter()
+                    .map(move |&(t, w)| (m.cells[g.from].id.as_str(), m.cells[t].id.as_str(), w))
+            })
             .collect();
         assert_eq!(
             e,
             [
-                ("business:account", "persistence:account", 1),
                 ("entry:account", "business:account", 3),
+                ("business:account", "persistence:account", 1),
                 ("persistence:account", "business:account", 1),
             ]
         );
+        assert_eq!(m.edges.len(), 3, "one group per source cell");
         assert_eq!(m.stats.files, 7);
         assert_eq!(m.stats.symbols, 11);
         assert_eq!(m.stats.edges, 9);
         assert_eq!(m.stats.elapsed_ms, 7);
         assert_eq!(m.project, "p");
+    }
+
+    #[test]
+    fn cell_symbols_pages_across_cells() {
+        let (g, cls) = fixture();
+        let cells: Vec<String> = ["business:account", "entry:account", "business:account"]
+            .map(String::from)
+            .into();
+        let all = cell_symbols(&g, &cls, &cells, 0, 100);
+        let m = build(&g, &cls, "p", 0);
+        let want: usize = m.cells[..2].iter().map(|c| c.size).sum();
+        assert_eq!(all.total, want, "duplicate cell ids count once");
+        assert_eq!(all.symbols.len(), want);
+        let p = cell_symbols(&g, &cls, &cells, 1, 1);
+        assert_eq!((p.total, p.offset), (want, 1));
+        assert_eq!(p.symbols.len(), 1);
+        assert_eq!(p.symbols[0].id, all.symbols[1].id);
+        assert!(cell_symbols(&g, &cls, &cells, 9, 5).symbols.is_empty());
+        assert_eq!(
+            cell_symbols(&g, &cls, &["nope:x".to_string()], 0, 5).total,
+            0
+        );
     }
 
     #[test]
