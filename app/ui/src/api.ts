@@ -67,6 +67,8 @@ export interface Impact {
   impacted_cells: ImpactedCell[];
   impacted_symbols: ImpactedSymbol[];
   warnings?: string[];
+  /** Present when `head` was analysed in its snapshot: the matrix at that commit. */
+  matrix?: Matrix;
 }
 export interface Commit {
   id: string;

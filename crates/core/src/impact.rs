@@ -260,6 +260,7 @@ pub fn compute(
         impacted_cells,
         impacted_symbols,
         warnings: vec![],
+        matrix: None,
     }
 }
 

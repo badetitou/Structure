@@ -1,3 +1,4 @@
+import { shownMatrix } from "./matrixsel";
 import "./style.css";
 import * as api from "./api";
 import type { Impact, Matrix } from "./api";
@@ -140,14 +141,29 @@ const BWD = "#2563eb";
 const STROKE_NORMAL = [1, 3] as const;
 const STROKE_DENSE = [0.5, 2] as const;
 
-function matrixView(m: Matrix) {
+function matrixView(workMatrix: Matrix) {
+  let m = workMatrix;
   let impact: Impact | null = null;
   let selected: string | null = null;
   let hovered: string | null = null;
 
-  const cellById = new Map(m.cells.map((c) => [c.id, c]));
-  const symName = new Map<string, string>();
-  for (const c of m.cells) for (const sy of c.symbols) symName.set(sy.id, sy.name);
+  let cellById = new Map(m.cells.map((c) => [c.id, c]));
+  let symName = new Map<string, string>();
+  const indexMatrix = () => {
+    cellById = new Map(m.cells.map((c) => [c.id, c]));
+    symName = new Map<string, string>();
+    for (const c of m.cells) for (const sy of c.symbols) symName.set(sy.id, sy.name);
+  };
+  indexMatrix();
+  /** Show the matrix `impact` carries (snapshot) or the working-tree one. */
+  function showMatrixFor(imp: Impact | null) {
+    const next = shownMatrix(workMatrix, imp);
+    if (next === m) return;
+    m = next;
+    indexMatrix();
+    selected = null;
+    build();
+  }
   let mode: Mode = loadMode();
 
   // Header
@@ -500,6 +516,7 @@ function matrixView(m: Matrix) {
     showBtn.disabled = true;
     try {
       impact = await api.impact(projectPath, base, head);
+      showMatrixFor(impact);
       showWarnings(impact.warnings ?? m.warnings ?? []);
       clearBtn.disabled = false;
       hovered = null;
@@ -515,6 +532,7 @@ function matrixView(m: Matrix) {
     impact = null;
     histSel = null;
     renderHistory();
+    showMatrixFor(null);
     showWarnings(m.warnings ?? []);
     clearBtn.disabled = true;
     paint();

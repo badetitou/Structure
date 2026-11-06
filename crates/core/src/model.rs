@@ -134,6 +134,10 @@ pub struct Impact {
     pub impacted_symbols: Vec<ImpactedSymbol>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    /// Matrix of the analysed snapshot; set only when `head` was analysed in
+    /// its own checkout, so the UI can show the cells that exist at that commit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matrix: Option<Matrix>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
