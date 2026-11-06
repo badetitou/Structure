@@ -1,0 +1,11 @@
+[package]
+name = "structure-core"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "structure_core"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,174 @@
+//! Matrix, classification and impact output contracts.
+
+use crate::ir::Language;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+/// Declaration order = matrix rows, top to bottom.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Layer {
+    Ui,
+    State,
+    ApiClient,
+    Entry,
+    Business,
+    Persistence,
+    Model,
+    Util,
+    Unknown,
+}
+
+impl Layer {
+    /// snake_case name, as used in serde and cell ids.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Layer::Ui => "ui",
+            Layer::State => "state",
+            Layer::ApiClient => "api_client",
+            Layer::Entry => "entry",
+            Layer::Business => "business",
+            Layer::Persistence => "persistence",
+            Layer::Model => "model",
+            Layer::Util => "util",
+            Layer::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Placement {
+    pub layer: Layer,
+    pub domain: String,
+}
+
+/// Key = top-level symbol id (class granularity).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Classification {
+    pub placements: BTreeMap<String, Placement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Matrix {
+    pub project: String,
+    pub language: Language,
+    pub layers: Vec<Layer>,
+    pub domains: Vec<String>,
+    pub cells: Vec<Cell>,
+    pub edges: Vec<CellEdge>,
+    pub stats: Stats,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Cell {
+    /// "<layer>:<domain>", e.g. "business:account".
+    pub id: String,
+    pub layer: Layer,
+    pub domain: String,
+    pub size: usize,
+    pub symbols: Vec<CellSymbol>,
+}
+
+impl Cell {
+    pub fn id_for(layer: Layer, domain: &str) -> String {
+        format!("{}:{}", layer.as_str(), domain)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CellSymbol {
+    pub id: String,
+    pub name: String,
+    pub file: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CellEdge {
+    pub from: String,
+    pub to: String,
+    pub weight: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Stats {
+    pub files: usize,
+    pub symbols: usize,
+    pub edges: usize,
+    pub elapsed_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Impact {
+    pub base: String,
+    pub head: Option<String>,
+    pub changed_files: Vec<String>,
+    pub changed_symbols: Vec<String>,
+    pub changed_cells: Vec<String>,
+    pub impacted_cells: Vec<ImpactedCell>,
+    pub impacted_symbols: Vec<ImpactedSymbol>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ImpactedCell {
+    pub id: String,
+    pub distance: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ImpactedSymbol {
+    pub id: String,
+    pub distance: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Progress {
+    pub step: String,
+    pub pct: u8,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MATRIX: &str = include_str!("../../../docs/samples/matrix.json");
+    const IMPACT: &str = include_str!("../../../docs/samples/impact.json");
+
+    fn roundtrip<T: Serialize + for<'a> Deserialize<'a> + PartialEq + std::fmt::Debug>(s: &str) {
+        let v: T = serde_json::from_str(s).unwrap();
+        let back = serde_json::to_value(&v).unwrap();
+        let orig: serde_json::Value = serde_json::from_str(s).unwrap();
+        assert_eq!(back, orig);
+        let again: T = serde_json::from_value(back).unwrap();
+        assert_eq!(v, again);
+    }
+
+    #[test]
+    fn matrix_sample_roundtrips() {
+        roundtrip::<Matrix>(MATRIX);
+    }
+
+    #[test]
+    fn impact_sample_roundtrips() {
+        roundtrip::<Impact>(IMPACT);
+    }
+
+    #[test]
+    fn layer_order_and_serde() {
+        assert!(Layer::Ui < Layer::State);
+        assert!(Layer::Entry < Layer::Business);
+        assert!(Layer::Model < Layer::Util && Layer::Util < Layer::Unknown);
+        assert_eq!(
+            serde_json::to_string(&Layer::ApiClient).unwrap(),
+            "\"api_client\""
+        );
+        assert_eq!(Cell::id_for(Layer::Business, "account"), "business:account");
+    }
+
+    #[test]
+    fn sample_cell_ids_match() {
+        let m: Matrix = serde_json::from_str(MATRIX).unwrap();
+        for c in &m.cells {
+            assert_eq!(c.id, Cell::id_for(c.layer, &c.domain));
+        }
+    }
+}

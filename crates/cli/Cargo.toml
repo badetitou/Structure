@@ -1,0 +1,13 @@
+[package]
+name = "structure-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "structure"
+path = "src/main.rs"
+
+[dependencies]
+structure-core = { path = "../core" }
+anyhow.workspace = true
+clap.workspace = true

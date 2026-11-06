@@ -6,19 +6,22 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 
 ## Commands
 
-- `cargo check` — fast typecheck
+- `cargo check --workspace` — fast typecheck
 - `cargo fmt --check` — formatting (run `cargo fmt` to fix)
-- `cargo clippy --all-targets -- -D warnings` — lints, must be clean
-- `cargo test` — all tests; `cargo test <name>` for one
-- `cargo run` / `cargo build --release` — run / build
+- `cargo clippy --workspace --all-targets -- -D warnings` — lints, must be clean
+- `cargo test --workspace` — all tests; `cargo test <name>` for one
+- `cargo run -p structure-cli -- analyze <path>` / `cargo build --release`
 
 ## Map
 
-- `Cargo.toml` — binary crate `structure`, edition 2024, no dependencies yet.
-- `src/main.rs` — entry point. Keep `main` thin; put logic in modules
-  (`src/<module>.rs`) so it can be unit-tested.
-- `tests/` — integration tests (create when needed).
-<Update this list as modules appear.>
+- `Cargo.toml` — virtual workspace (edition 2024); `app/` (Tauri) is excluded.
+- `crates/core` — lib `structure-core`: `ir` (Graph/Symbol/Edge), `model`
+  (Layer/Matrix/Impact/Progress), plus stubs filled by later tasks: `scip`,
+  `java`, `ts`, `classify`, `matrix`, `impact`, `link`, `pipeline`.
+- `crates/cli` — bin `structure` (clap). Keep `main` thin; logic goes in core.
+- `docs/api.md` — Tauri API contract; `docs/samples/*.json` — sample outputs.
+- `fixtures/` (gitignored) — sample projects. Tests needing them read env
+  `STRUCTURE_FIXTURES` (default `<workspace>/fixtures`) and skip when absent.
 
 ## Rules
 
