@@ -13,6 +13,8 @@ import { layoutLanes } from "./lanes";
 import { DENSE_STEP, PITCH, layout } from "./layout";
 import type { Mode } from "./layout";
 import { loadMode, saveMode } from "./mode";
+import { fit, oneToOne, panBy, resize as resizeVb, isFit, toUser, viewBoxAttr, zoomAtClamped } from "./viewport";
+import type { ViewBox } from "./viewport";
 import { analyzeAndRecord, loadRecent, removeRecent, saveRecent } from "./recent";
 
 const root = document.getElementById("app") as HTMLElement;
@@ -222,7 +224,17 @@ function matrixView(workMatrix: Matrix) {
     headIn,
     showBtn,
   );
-  const toolbar = h("div", { className: "toolbar" }, advanced, denseBtn, clearBtn, msg, legend);
+  const zoomInBtn = h("button", { textContent: "+", title: "Zoom in" });
+  const zoomOutBtn = h("button", { textContent: "\u2212", title: "Zoom out" });
+  const fitBtn = h("button", { textContent: "Fit", title: "Show the whole matrix" });
+  zoomInBtn.onclick = () => zoomBy(1.5, paneW / 2, paneH / 2);
+  zoomOutBtn.onclick = () => zoomBy(1 / 1.5, paneW / 2, paneH / 2);
+  fitBtn.onclick = () => {
+    measure();
+    vb = fitVb = fit(content.w, content.h, paneW, paneH);
+    applyView();
+  };
+  const toolbar = h("div", { className: "toolbar" }, advanced, zoomOutBtn, zoomInBtn, fitBtn, denseBtn, clearBtn, msg, legend);
   // Analysis and impact warnings (e.g. indexing failed → tree-sitter only).
   const warnBox = h("div", { className: "warnings" });
   const showWarnings = (ws: string[]) => {
@@ -236,9 +248,33 @@ function matrixView(workMatrix: Matrix) {
   // Matrix content, shifted down below the group bands.
   const body = s("g");
   const cellEls = new Map<string, SVGRectElement>();
+  // Zoom / pan state. The viewBox keeps the pane's aspect (see viewport.ts).
+  let content = { w: 1, h: 1 };
+  let dense1to1 = false;
+  let vb: ViewBox = { x: 0, y: 0, w: 1, h: 1 };
+  let fitVb: ViewBox = vb;
+  let paneW = 1;
+  let paneH = 1;
+  const measure = () => {
+    paneW = Math.max(view.clientWidth, 1);
+    paneH = Math.max(view.clientHeight, 1);
+  };
+  const applyView = () => svg.setAttribute("viewBox", viewBoxAttr(vb));
+  function resetView() {
+    measure();
+    fitVb = fit(content.w, content.h, paneW, paneH);
+    // Dense mode starts at 1:1 pixels anchored top-left; Fit shows everything.
+    vb = dense1to1 ? oneToOne(paneW, paneH) : fitVb;
+    applyView();
+  }
+  function zoomBy(factor: number, sx: number, sy: number) {
+    const p = toUser(vb, sx, sy, paneW, paneH);
+    vb = zoomAtClamped(vb, factor, p.x, p.y, fitVb);
+    applyView();
+  }
   let edgeEls: { e: Matrix["edges"][number]; el: SVGPathElement }[] = [];
 
-  function build() {
+  function build(resetZoom = true) {
     vm = aggregate(m, tree ? columns(tree, expanded) : flatColumns(m.domains));
     cellById = new Map(vm.cells.map((c) => [c.id, c]));
     const cols = vm.columns;
@@ -260,16 +296,15 @@ function matrixView(workMatrix: Matrix) {
     cellEls.clear();
     edgeEls = [];
     denseBtn.textContent = mode === "dense" ? "Dense: on" : "Dense: off";
-    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-    // Dense mode keeps its natural pixel size: stretching it would blow up the
-    // headers and borders instead of showing more cells.
-    svg.classList.toggle("dense", !lay.detailed);
-    if (lay.detailed) {
-      svg.removeAttribute("width");
-      svg.removeAttribute("height");
-    } else {
-      svg.setAttribute("width", String(width));
-      svg.setAttribute("height", String(height));
+    // The viewBox is driven by zoom/pan. A mode switch or a new matrix resets
+    // it; expand/collapse keeps the current view.
+    content = { w: width, h: height };
+    dense1to1 = !lay.detailed;
+    if (resetZoom) resetView();
+    else {
+      measure();
+      fitVb = fit(content.w, content.h, paneW, paneH);
+      applyView();
     }
     const defs = s("defs");
     for (const [id, color] of [["a-def", "#999"], ["a-fwd", FWD], ["a-bwd", BWD], ["a-imp", CHANGED]]) {
@@ -407,7 +442,7 @@ function matrixView(workMatrix: Matrix) {
   function rebuild() {
     selected = null;
     hovered = null;
-    build();
+    build(false);
     renderPanel();
   }
   denseBtn.onclick = () => {
@@ -420,11 +455,90 @@ function matrixView(workMatrix: Matrix) {
   const panel = h("aside");
   const sidebar = h("nav", { className: "history" });
   sidebar.hidden = true;
-  // The view scrolls when a dense grid is larger than the space left.
   const view = h("div", { className: "view" }, svg as unknown as Node);
   const main = h("div", { className: "main" }, sidebar, view, panel);
   show(header, toolbar, warnBox, main);
   build();
+
+  // Keep the viewBox aspect equal to the pane's when the window or panels resize.
+  const ro = new ResizeObserver(() => {
+    if (!view.isConnected) {
+      ro.disconnect();
+      return;
+    }
+    if (view.clientWidth === 0 || view.clientHeight === 0) return;
+    const oldW = paneW;
+    const wasFit = isFit(vb, fitVb);
+    measure();
+    fitVb = fit(content.w, content.h, paneW, paneH);
+    vb = wasFit ? fitVb : resizeVb(vb, oldW, paneW, paneH);
+    applyView();
+  });
+  ro.observe(view);
+  // Wheel: pinch (ctrlKey) zooms around the cursor, two-finger scroll pans.
+  svg.addEventListener(
+    "wheel",
+    (ev) => {
+      ev.preventDefault();
+      const unit = ev.deltaMode === 1 ? 16 : 1;
+      if (ev.ctrlKey) {
+        const r = svg.getBoundingClientRect();
+        zoomBy(Math.exp(-ev.deltaY * unit * 0.01), ev.clientX - r.left, ev.clientY - r.top);
+      } else {
+        vb = panBy(vb, -ev.deltaX * unit, -ev.deltaY * unit, paneW, paneH);
+        applyView();
+      }
+    },
+    { passive: false },
+  );
+  // Drag to pan. Pointer capture only starts past a few px so plain clicks
+  // still reach the cells; a real drag swallows the click that follows it.
+  const DRAG_PX = 4;
+  let drag: { id: number; x: number; y: number; moved: boolean } | null = null;
+  let suppressClick = false;
+  svg.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, moved: false };
+    suppressClick = false;
+  });
+  svg.addEventListener("pointermove", (ev) => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    if (ev.buttons === 0) {
+      // Released outside the svg before capture: the drag is stale.
+      drag = null;
+      svg.classList.remove("panning");
+      return;
+    }
+    if (!drag.moved) {
+      if (Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < DRAG_PX) return;
+      drag.moved = true;
+      suppressClick = true;
+      svg.setPointerCapture(ev.pointerId);
+      svg.classList.add("panning");
+    }
+    vb = panBy(vb, ev.clientX - drag.x, ev.clientY - drag.y, paneW, paneH);
+    drag.x = ev.clientX;
+    drag.y = ev.clientY;
+    applyView();
+  });
+  const endDrag = (ev: PointerEvent) => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    if (drag.moved && svg.hasPointerCapture(ev.pointerId)) svg.releasePointerCapture(ev.pointerId);
+    drag = null;
+    svg.classList.remove("panning");
+  };
+  svg.addEventListener("pointerup", endDrag);
+  svg.addEventListener("pointercancel", endDrag);
+  svg.addEventListener(
+    "click",
+    (ev) => {
+      if (suppressClick) {
+        ev.stopPropagation();
+        suppressClick = false;
+      }
+    },
+    true,
+  );
 
   function paint() {
     const { changed, impacted: impactById } = aggregateImpact(impact, vm.cellMap);
