@@ -15,3 +15,6 @@ toml = "0.8"
 clap = { version = "4", features = ["derive"] }
 scip = "0.5"
 protobuf = "3"
+tree-sitter = "0.25"
+rayon = "1"
+ignore = "0.4"
