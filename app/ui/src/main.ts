@@ -7,8 +7,9 @@ import { clickCommit, isSelected, relativeDate, selectionDiff } from "./history"
 import type { Selection } from "./history";
 import { rowSvg } from "./graphsvg";
 import { layoutLanes } from "./lanes";
-import { layout, loadMode, saveMode } from "./layout";
+import { layout } from "./layout";
 import type { Mode } from "./layout";
+import { loadMode, saveMode } from "./mode";
 import { analyzeAndRecord, loadRecent, removeRecent, saveRecent } from "./recent";
 
 const root = document.getElementById("app") as HTMLElement;
@@ -132,6 +133,9 @@ async function runAnalysis() {
 // ---- 3. Matrix view ----
 const FWD = "#16a34a";
 const BWD = "#2563eb";
+/** Cell stroke width [unselected, selected] per mode. */
+const STROKE_NORMAL = [1, 3] as const;
+const STROKE_DENSE = [0.5, 2] as const;
 
 function matrixView(m: Matrix) {
   let impact: Impact | null = null;
@@ -220,7 +224,11 @@ function matrixView(m: Matrix) {
     const fs: Record<string, number> = lay.detailed ? {} : { "font-size": 10 };
     for (const l of lay.domainLabels) {
       const t = s("text", { x: l.x, y: l.y, "font-weight": "bold", ...fs });
-      if (lay.rotateDomains) t.setAttribute("transform", `rotate(-90 ${l.x} ${l.y})`);
+      if (lay.rotateDomains) {
+        t.setAttribute("transform", `rotate(-90 ${l.x} ${l.y})`);
+        // Centre the glyphs on the column, not their baseline.
+        t.setAttribute("dominant-baseline", "middle");
+      }
       else t.setAttribute("text-anchor", "middle");
       t.textContent = l.text;
       svg.append(t);
@@ -345,8 +353,13 @@ function matrixView(m: Matrix) {
       }
       r.setAttribute("fill", fill);
       r.setAttribute("opacity", String(opacity));
-      r.setAttribute("stroke-width", mode === "dense" ? (id === selected ? "2" : "0.5") : id === selected ? "3" : "1");
+      const [base, sel] = mode === "dense" ? STROKE_DENSE : STROKE_NORMAL;
+      r.setAttribute("stroke-width", String(id === selected ? sel : base));
     }
+    // Draw the selected cell last so its thicker outline is not covered by
+    // neighbours (tiles touch in dense mode).
+    const selG = selected ? cellEls.get(selected)?.parentNode : null;
+    if (selG && svg.lastChild !== (selG as Node)) svg.append(selG);
     for (const { e, el } of edgeEls) {
       let color = "#999";
       let marker = "a-def";

@@ -40,8 +40,8 @@ export const PITCH = 140;
 export const MARGIN_L = 110;
 export const MARGIN_T = 40;
 export const DENSE_STEP = 14;
-/** Approx. width of one character of a dense header label (font-size 10). */
-export const DENSE_CHAR_W = 6;
+/** Upper bound of one character's width in a dense header label (bold, font-size 10). */
+export const DENSE_CHAR_W = 7;
 const denseMargin = (names: readonly string[]) =>
   12 + DENSE_CHAR_W * Math.max(0, ...names.map((n) => n.length));
 
@@ -97,22 +97,4 @@ export function layout(
     rotateDomains: dense,
     detailed: !dense,
   };
-}
-
-const KEY = "structure.matrix.mode";
-
-export function loadMode(): Mode {
-  try {
-    return localStorage.getItem(KEY) === "dense" ? "dense" : "normal";
-  } catch {
-    return "normal";
-  }
-}
-
-export function saveMode(mode: Mode) {
-  try {
-    localStorage.setItem(KEY, mode);
-  } catch {
-    // storage unavailable: the choice just is not persisted
-  }
 }
