@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::ir::{Graph, Language};
 use crate::java;
+use structure_ir::ir::{Graph, Language};
 
 use super::{LanguageFrontend, find_on_path};
 

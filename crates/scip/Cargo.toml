@@ -1,0 +1,11 @@
+[package]
+name = "structure-scip"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+structure-ir = { path = "../ir" }
+anyhow.workspace = true
+libc.workspace = true
+protobuf.workspace = true
+scip.workspace = true

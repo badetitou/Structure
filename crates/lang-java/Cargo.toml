@@ -1,0 +1,12 @@
+[package]
+name = "structure-lang-java"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+structure-ir = { path = "../ir" }
+anyhow.workspace = true
+ignore.workspace = true
+rayon.workspace = true
+tree-sitter.workspace = true
+tree-sitter-java.workspace = true

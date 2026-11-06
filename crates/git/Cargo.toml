@@ -1,0 +1,8 @@
+[package]
+name = "structure-git"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+structure-ir = { path = "../ir" }
+anyhow.workspace = true

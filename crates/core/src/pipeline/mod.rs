@@ -1,7 +1,6 @@
 //! End-to-end pipeline: detect language, index (SCIP), parse, link,
 //! classify, build the matrix, compute impact.
 
-mod git;
 mod history;
 mod indexer;
 mod process;
@@ -12,10 +11,10 @@ mod test_support;
 
 pub use crate::lang::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts_index_args};
 pub use crate::lang::{SCIP_JAVA_VERSION, SCIP_TS_VERSION};
-pub use git::{resolve_base, resolve_commit, worktree_fingerprint};
 pub use history::{history, impact};
 pub use indexer::{ensure_index, ensure_index_with_progress};
 pub use snapshot::{MAX_SNAPSHOTS, analyze_snapshot, impact_at, impact_in_snapshot, snapshot};
+pub use structure_git::{resolve_base, resolve_commit, worktree_fingerprint};
 
 use std::path::Path;
 use std::time::Instant;
@@ -175,7 +174,10 @@ pub fn analyze(
 
     step("classifying", 80);
     let t = Instant::now();
-    let mut rules = RuleSet::builtin(lang)?;
+    let mut rules = {
+        let (toml, name) = crate::lang::frontend(lang).default_rules();
+        RuleSet::from_embedded(toml, name)?
+    };
     let custom = root.join(".structure/rules.toml");
     if custom.is_file() {
         let text = std::fs::read_to_string(&custom)
@@ -184,7 +186,11 @@ pub fn analyze(
             .with_context(|| format!("parsing {}", custom.display()))?;
         rules = rules.merge(user);
     }
-    let classification = classify(&graph, &rules);
+    let classification = classify(
+        &graph,
+        &rules,
+        crate::lang::frontend(lang).module_separator(),
+    );
     metrics.phase("classify", t, None);
 
     step("building matrix", 95);

@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::ir::{Graph, Language};
 use crate::ts;
+use structure_ir::ir::{Graph, Language};
 
 use super::ts_args::{node_heap_mb, node_options, ts_index_args};
 use super::{LanguageFrontend, find_on_path};

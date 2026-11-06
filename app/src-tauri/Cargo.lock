@@ -3042,20 +3042,77 @@ dependencies = [
 ]
 
 [[package]]
+name = "structure-classify"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "structure-ir",
+ "toml 0.8.2",
+]
+
+[[package]]
 name = "structure-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "ignore",
- "protobuf",
- "rayon",
- "scip",
+ "structure-classify",
+ "structure-git",
+ "structure-ir",
+ "structure-lang-java",
+ "structure-lang-ts",
+ "structure-scip",
+]
+
+[[package]]
+name = "structure-git"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "structure-ir",
+]
+
+[[package]]
+name = "structure-ir"
+version = "0.1.0"
+dependencies = [
  "serde",
- "serde_json",
- "toml 0.8.2",
+]
+
+[[package]]
+name = "structure-lang-java"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ignore",
+ "rayon",
+ "structure-ir",
  "tree-sitter",
  "tree-sitter-java",
+]
+
+[[package]]
+name = "structure-lang-ts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ignore",
+ "rayon",
+ "structure-ir",
+ "tree-sitter",
  "tree-sitter-typescript",
+]
+
+[[package]]
+name = "structure-scip"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "protobuf",
+ "scip",
+ "structure-ir",
 ]
 
 [[package]]

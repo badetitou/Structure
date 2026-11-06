@@ -2,8 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::ir::{EdgeKind, Graph};
 use crate::scip::ScipIndex;
+use structure_ir::ir::{EdgeKind, Graph};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PhaseTiming {
@@ -85,7 +85,7 @@ pub fn peak_rss_bytes() -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{Edge, Language};
+    use structure_ir::ir::{Edge, Language};
 
     #[test]
     fn counts_edges_by_kind_and_ext() {

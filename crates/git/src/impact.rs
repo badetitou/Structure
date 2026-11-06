@@ -1,11 +1,11 @@
 //! Diff impact analysis: changed lines from git, changed/impacted classes and cells.
 
-use crate::ir::{Graph, Symbol};
-use crate::model::{Cell, Classification, Impact, ImpactedCell, ImpactedSymbol};
 use anyhow::{Context, bail};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::Path;
 use std::process::Command;
+use structure_ir::ir::{Graph, Symbol};
+use structure_ir::model::{Cell, Classification, Impact, ImpactedCell, ImpactedSymbol};
 
 /// Changed line ranges of one file: 0-based, end-exclusive, NEW side.
 /// An empty `lines` means the whole file is considered changed (deleted/renamed/binary).
@@ -15,7 +15,7 @@ pub struct FileChange {
     pub lines: Vec<(u32, u32)>,
 }
 
-pub(crate) fn git(project: &Path, args: &[&str]) -> anyhow::Result<String> {
+pub fn git(project: &Path, args: &[&str]) -> anyhow::Result<String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(project)
@@ -267,8 +267,8 @@ pub fn compute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{Edge, EdgeKind, Language, Range, SymbolKind};
-    use crate::model::{Layer, Placement};
+    use structure_ir::ir::{Edge, EdgeKind, Language, Range, SymbolKind};
+    use structure_ir::model::{Layer, Placement};
 
     #[test]
     fn parse_modify_and_multiple_hunks() {

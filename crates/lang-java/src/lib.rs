@@ -14,7 +14,7 @@ use anyhow::{Context, Result, anyhow};
 use rayon::prelude::*;
 use tree_sitter::{Node, Parser};
 
-use crate::ir::{Edge, EdgeKind, Graph, Language, Range, Symbol, SymbolKind};
+use structure_ir::ir::{Edge, EdgeKind, Graph, Language, Range, Symbol, SymbolKind};
 
 /// Result of parsing one Java source file.
 #[derive(Debug, Clone, Default)]
