@@ -1,8 +1,11 @@
 //! Language frontends: everything that differs per language (detection,
 //! indexer, sources, parsing, default rules) behind one trait. A new language
-//! is one module here plus one line in [`all`] (and a `Language` variant).
+//! needs: a `Language` variant, one module here implementing the trait, one
+//! `static` and one line in [`all`], and one arm in [`frontend`]. The
+//! `registry_is_consistent` test fails if a variant is missing from [`all`].
 
 mod java;
+mod ts_args;
 mod typescript;
 
 use std::path::{Path, PathBuf};
@@ -11,8 +14,12 @@ use std::process::Command;
 use crate::ir::{Graph, Language};
 
 pub use java::SCIP_JAVA_VERSION;
+pub use ts_args::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts_index_args};
 pub use typescript::SCIP_TS_VERSION;
 
+/// Per-language classify behaviour is the embedded rules TOML
+/// ([`default_rules`](LanguageFrontend::default_rules)) plus
+/// [`module_separator`](LanguageFrontend::module_separator); there are no other hooks.
 pub trait LanguageFrontend: Sync {
     /// Serialized identifier of the language.
     fn language(&self) -> Language;
@@ -64,6 +71,16 @@ mod tests {
 
     #[test]
     fn registry_is_consistent() {
+        // Exhaustive: adding a variant breaks compilation here until listed.
+        for lang in [Language::Java, Language::TypeScript] {
+            match lang {
+                Language::Java | Language::TypeScript => {}
+            }
+            assert!(
+                all().iter().any(|f| f.language() == lang),
+                "{lang:?} missing from all()"
+            );
+        }
         for f in all() {
             assert_eq!(frontend(f.language()).language(), f.language());
             assert!(!f.extensions().is_empty());

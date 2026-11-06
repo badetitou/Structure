@@ -2,9 +2,9 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::ir::{Graph, Language};
-use crate::pipeline::{node_heap_mb, node_options, ts_index_args};
 use crate::ts;
 
+use super::ts_args::{node_heap_mb, node_options, ts_index_args};
 use super::{LanguageFrontend, find_on_path};
 
 pub const SCIP_TS_VERSION: &str = "0.6.1";
