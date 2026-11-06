@@ -1,55 +1,14 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::ir::Language;
+use crate::lang::frontend;
 
 use super::Options;
 use super::process::run_indexer;
-use super::ts_args::{node_heap_mb, node_options, ts_index_args};
-
-pub const SCIP_JAVA_VERSION: &str = "0.12.3";
-pub const SCIP_TS_VERSION: &str = "0.6.1";
-
-fn find_on_path(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|d| d.join(name))
-        .find(|p| p.is_file())
-}
-
-fn find_cs() -> Option<PathBuf> {
-    find_on_path("cs").or_else(|| {
-        let p = PathBuf::from(std::env::var_os("HOME")?).join(".local/bin/cs");
-        p.is_file().then_some(p)
-    })
-}
 
 /// Build-tool specific advice appended to indexer failures. Pure: only checks marker files in `root`.
 fn indexer_hint(root: &Path, lang: Language) -> Option<String> {
-    if !matches!(lang, Language::Java) {
-        return None;
-    }
-    let has = |n: &str| root.join(n).is_file();
-    if has("pom.xml") {
-        return Some("Maven project: check ~/.m2/settings.xml (unreachable repository?) and try `mvn -q compile` in the project".into());
-    }
-    let gradle = [
-        "build.gradle",
-        "build.gradle.kts",
-        "settings.gradle",
-        "settings.gradle.kts",
-    ];
-    if gradle.iter().any(|f| has(f)) {
-        let cmd = if has("gradlew") {
-            "./gradlew help"
-        } else {
-            "gradle help"
-        };
-        return Some(format!(
-            "Gradle project: run `{cmd}` in the project to see the build error (toolchain/plugin resolution?)"
-        ));
-    }
-    None
+    frontend(lang).indexer_hint(root)
 }
 
 /// Number of source files modified after `index` was written.
@@ -57,10 +16,7 @@ fn newer_sources(root: &Path, lang: Language, index: &Path) -> usize {
     let Ok(indexed) = std::fs::metadata(index).and_then(|m| m.modified()) else {
         return 0;
     };
-    let exts: &[&str] = match lang {
-        Language::Java => &["java"],
-        Language::TypeScript => &["ts", "tsx"],
-    };
+    let exts = frontend(lang).extensions();
     ignore::WalkBuilder::new(root)
         // `.gradle` is explicit: keeps it out even if `.hidden(false)` is set later.
         .filter_entry(|e| {
@@ -118,38 +74,7 @@ pub fn ensure_index_with_progress(
             return Ok(Some(index));
         }
     }
-    let cmd = match lang {
-        Language::Java => {
-            if let Some(p) = find_on_path("scip-java") {
-                let mut c = Command::new(p);
-                c.args(["index", "--output", "index.scip"]);
-                Some(c)
-            } else if let Some(cs) = find_cs() {
-                let mut c = Command::new(cs);
-                c.arg("launch")
-                    .arg(format!(
-                        "com.sourcegraph:scip-java_2.13:{SCIP_JAVA_VERSION}"
-                    ))
-                    .args(["--", "index", "--output", "index.scip"]);
-                Some(c)
-            } else {
-                None
-            }
-        }
-        Language::TypeScript => find_on_path("npx").map(|p| {
-            let mut c = Command::new(p);
-            c.args(["-y"])
-                .arg(format!("@sourcegraph/scip-typescript@{SCIP_TS_VERSION}"))
-                .args(["index", "--output", "index.scip"])
-                .args(ts_index_args(root));
-            let existing = std::env::var("NODE_OPTIONS").ok();
-            c.env(
-                "NODE_OPTIONS",
-                node_options(existing.as_deref(), node_heap_mb()),
-            );
-            c
-        }),
-    };
+    let cmd = frontend(lang).indexer_command(root);
     let Some(cmd) = cmd else {
         warn("no SCIP indexer found (scip-java/cs/npx); using tree-sitter only".into());
         return Ok(None);

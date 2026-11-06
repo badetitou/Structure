@@ -9,13 +9,13 @@ mod progress;
 mod snapshot;
 #[cfg(test)]
 mod test_support;
-mod ts_args;
 
+pub use crate::lang::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts_index_args};
+pub use crate::lang::{SCIP_JAVA_VERSION, SCIP_TS_VERSION};
 pub use git::{resolve_base, resolve_commit, worktree_fingerprint};
 pub use history::{history, impact};
-pub use indexer::{SCIP_JAVA_VERSION, SCIP_TS_VERSION, ensure_index, ensure_index_with_progress};
+pub use indexer::{ensure_index, ensure_index_with_progress};
 pub use snapshot::{MAX_SNAPSHOTS, analyze_snapshot, impact_at, impact_in_snapshot, snapshot};
-pub use ts_args::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts_index_args};
 
 use std::path::Path;
 use std::time::Instant;
@@ -28,7 +28,7 @@ use crate::link::{LinkStats, link};
 use crate::matrix;
 use crate::metrics::Metrics;
 use crate::model::{Classification, Matrix, Progress};
-use crate::{java, scip, ts};
+use crate::scip;
 
 pub const DEFAULT_INDEXER_TIMEOUT_SECS: u64 = 600;
 
@@ -74,22 +74,15 @@ pub struct Analysis {
 }
 
 pub fn detect_language(root: &Path) -> anyhow::Result<Language> {
-    let has = |n: &str| root.join(n).is_file();
-    if has("pom.xml")
-        || has("build.gradle")
-        || has("build.gradle.kts")
-        || has("settings.gradle")
-        || has("settings.gradle.kts")
-    {
-        Ok(Language::Java)
-    } else if has("tsconfig.json") || has("package.json") {
-        Ok(Language::TypeScript)
-    } else {
-        bail!(
-            "cannot detect language in {}: expected pom.xml/build.gradle/build.gradle.kts/settings.gradle/settings.gradle.kts (Java) or tsconfig.json/package.json (TypeScript)",
-            root.display()
-        )
+    if let Some(f) = crate::lang::all().iter().find(|f| f.detect(root)) {
+        return Ok(f.language());
     }
+    let markers: Vec<&str> = crate::lang::all().iter().map(|f| f.markers()).collect();
+    bail!(
+        "cannot detect language in {}: expected {}",
+        root.display(),
+        markers.join(" or ")
+    )
 }
 
 fn project_name(root: &Path) -> String {
@@ -152,11 +145,9 @@ pub fn analyze(
 
     step("parsing", 35);
     let t = Instant::now();
-    let graph = match lang {
-        Language::Java => java::parse_project(root),
-        Language::TypeScript => ts::parse_project(root),
-    }
-    .with_context(|| format!("parsing {}", root.display()))?;
+    let graph = crate::lang::frontend(lang)
+        .parse_project(root)
+        .with_context(|| format!("parsing {}", root.display()))?;
     metrics.phase("parse", t, None);
 
     step("linking", 60);
