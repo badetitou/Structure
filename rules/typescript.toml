@@ -1,0 +1,70 @@
+# TypeScript classification rules (Angular, NestJS). First match wins.
+
+# --- NestJS ---
+[[rule]]
+layer = "entry"
+any_annotation = ["Controller"]
+
+[[rule]]
+layer = "model"
+any_annotation = ["Entity"]
+
+# --- Angular ---
+[[rule]]
+layer = "ui"
+any_annotation = ["Component"]
+
+[[rule]]
+layer = "util"
+any_annotation = ["Directive", "Pipe"]
+
+# Guards, interceptors, resolvers (usually @Injectable, but not business logic)
+[[rule]]
+layer = "util"
+name_suffix = ["Guard", "Interceptor", "Resolver"]
+
+[[rule]]
+layer = "util"
+path_contains = ["/guards/", "/interceptors/"]
+
+[[rule]]
+layer = "api_client"
+any_annotation = ["Injectable"]
+uses = ["HttpClient"]
+
+[[rule]]
+layer = "state"
+any_annotation = ["Injectable"]
+name_suffix = ["Store", "State", "StoreService", "StateService"]
+
+[[rule]]
+layer = "state"
+any_annotation = ["Injectable"]
+uses = ["BehaviorSubject", "ReplaySubject"]
+
+# NestJS repositories
+[[rule]]
+layer = "persistence"
+any_annotation = ["Injectable"]
+uses = ["Repository", "EntityManager", "DataSource"]
+
+[[rule]]
+layer = "business"
+any_annotation = ["Injectable"]
+
+# --- Models ---
+[[rule]]
+layer = "model"
+kind = ["interface", "enum"]
+path_contains = ["/models/", "/model/"]
+
+[[rule]]
+layer = "model"
+path_contains = [".model.ts", ".entity.ts", ".dto.ts"]
+
+[domain]
+strategy = "path_segment"
+after = "src/app/"
+skip_segments = ["features", "feature", "shared", "core", "modules", "pages"]
+strip_suffixes = ["Component", "Service", "Store", "State", "Guard", "Interceptor", "Controller", "Module"]
+fallback = "misc"

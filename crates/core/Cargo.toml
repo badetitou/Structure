@@ -9,3 +9,5 @@ name = "structure_core"
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+anyhow.workspace = true
+toml.workspace = true
