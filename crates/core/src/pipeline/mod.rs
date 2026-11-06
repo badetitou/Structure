@@ -9,15 +9,13 @@ mod progress;
 mod snapshot;
 #[cfg(test)]
 mod test_support;
-mod ts_args;
 
+pub use crate::lang::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts_index_args};
 pub use crate::lang::{SCIP_JAVA_VERSION, SCIP_TS_VERSION};
 pub use git::{resolve_base, resolve_commit, worktree_fingerprint};
 pub use history::{history, impact};
 pub use indexer::{ensure_index, ensure_index_with_progress};
 pub use snapshot::{MAX_SNAPSHOTS, analyze_snapshot, impact_at, impact_in_snapshot, snapshot};
-pub(crate) use ts_args::node_heap_mb;
-pub use ts_args::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts_index_args};
 
 use std::path::Path;
 use std::time::Instant;

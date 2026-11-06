@@ -3047,7 +3047,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ignore",
- "libc",
  "protobuf",
  "rayon",
  "scip",
