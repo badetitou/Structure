@@ -140,6 +140,7 @@ fn newer_sources(root: &Path, lang: Language, index: &Path) -> usize {
         Language::TypeScript => &["ts", "tsx"],
     };
     ignore::WalkBuilder::new(root)
+        // `.gradle` is explicit: keeps it out even if `.hidden(false)` is set later.
         .filter_entry(|e| {
             !matches!(
                 e.file_name().to_str(),
@@ -361,7 +362,29 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(dir.join(f), "").unwrap();
             assert!(matches!(detect_language(&dir).unwrap(), Language::Java));
+            let _ = std::fs::remove_dir_all(&dir);
         }
+    }
+
+    #[test]
+    fn build_gradle_kts_detected_as_java() {
+        let dir = std::env::temp_dir().join(format!("structure-detect-kts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("build.gradle.kts"), "").unwrap();
+        assert!(matches!(detect_language(&dir).unwrap(), Language::Java));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detect_language_error_lists_gradle_files() {
+        let dir = std::env::temp_dir().join(format!("structure-detect-err-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let msg = detect_language(&dir).unwrap_err().to_string();
+        assert!(msg.contains("settings.gradle"), "{msg}");
+        assert!(msg.contains("settings.gradle.kts"), "{msg}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -375,6 +398,9 @@ mod tests {
         touch(&index, t0);
         touch(&dir.join(".gradle/x/A.java"), t0 + Duration::from_secs(50));
         assert_eq!(newer_sources(&dir, Language::Java, &index), 0);
+        touch(&dir.join("B.java"), t0 + Duration::from_secs(50));
+        assert_eq!(newer_sources(&dir, Language::Java, &index), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

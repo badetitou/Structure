@@ -477,6 +477,7 @@ pub fn parse_project(root: &Path) -> Result<Graph> {
             }
             let n = e.file_name().to_string_lossy();
             let is_dir = e.file_type().is_some_and(|t| t.is_dir());
+            // Explicit: keeps Gradle's working dir out even if `.hidden(false)` is set later.
             if is_dir && n == ".gradle" {
                 return false;
             }
@@ -575,10 +576,12 @@ mod tests {
         std::fs::create_dir_all(dir.join(".gradle/src/main/java")).unwrap();
         std::fs::write(dir.join("src/main/java/A.java"), "class A {}").unwrap();
         std::fs::write(dir.join(".gradle/src/main/java/B.java"), "class B {}").unwrap();
+        std::fs::create_dir_all(dir.join("sub/.gradle")).unwrap();
+        std::fs::write(dir.join("sub/.gradle/B.java"), "class B {}").unwrap();
         let g = parse_project(&dir).unwrap();
-        let dbg = format!("{g:?}");
-        assert!(dbg.contains("A.java"), "{dbg}");
-        assert!(!dbg.contains("B.java"), "{dbg}");
+        assert!(g.symbols.iter().any(|s| s.name == "A"));
+        assert!(!g.symbols.iter().any(|s| s.name == "B"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     const SRC: &str = r#"package com.acme.shop;
