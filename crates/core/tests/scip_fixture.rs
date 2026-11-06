@@ -18,12 +18,9 @@ fn check(rel: &str, ext: &str) {
     }
     let t = Instant::now();
     let idx = scip::load(&path).expect("load index");
-    let (d, s, o) = idx.stats();
-    eprintln!(
-        "{rel}: {d} docs, {s} symbols, {o} occurrences in {:?}",
-        t.elapsed()
-    );
-    assert!(d > 0 && s > 0 && o > 0);
+    let st = idx.stats();
+    eprintln!("{rel}: {st:?} in {:?}", t.elapsed());
+    assert!(st.documents > 0 && st.symbols > 0 && st.occurrences > 0);
     let has_def = idx
         .documents
         .iter()

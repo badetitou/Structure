@@ -48,11 +48,31 @@ pub struct ScipRelationship {
     pub is_definition: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScipStats {
+    pub documents: usize,
+    pub symbols: usize,
+    pub occurrences: usize,
+    pub definitions: usize,
+    pub references: usize,
+}
+
 impl ScipIndex {
-    /// (documents, symbols, occurrences)
-    pub fn stats(&self) -> (usize, usize, usize) {
-        let occ = self.documents.iter().map(|d| d.occurrences.len()).sum();
-        (self.documents.len(), self.symbols.len(), occ)
+    pub fn stats(&self) -> ScipStats {
+        let occurrences: usize = self.documents.iter().map(|d| d.occurrences.len()).sum();
+        let definitions = self
+            .documents
+            .iter()
+            .flat_map(|d| &d.occurrences)
+            .filter(|o| o.is_definition)
+            .count();
+        ScipStats {
+            documents: self.documents.len(),
+            symbols: self.symbols.len(),
+            occurrences,
+            definitions,
+            references: occurrences - definitions,
+        }
     }
 }
 
@@ -241,18 +261,89 @@ mod tests {
 
         let bytes = idx.write_to_bytes().unwrap();
         let m = from_bytes(&bytes).unwrap();
-        assert_eq!(m.stats(), (2, 2, 3));
-        let o = &m.documents[0].occurrences[0];
-        assert!(o.is_definition);
-        assert_eq!(o.range.end_col, 10);
-        assert_eq!(o.enclosing_range.unwrap().end_line, 3);
-        assert!(!m.documents[1].occurrences[0].is_definition);
+        assert_eq!(
+            m.stats(),
+            ScipStats {
+                documents: 2,
+                symbols: 2,
+                occurrences: 3,
+                definitions: 1,
+                references: 2
+            }
+        );
+        let got = |d: usize| -> Vec<(String, [u32; 4], bool)> {
+            m.documents[d]
+                .occurrences
+                .iter()
+                .map(|o| {
+                    let r = o.range;
+                    (
+                        o.symbol.clone(),
+                        [r.start_line, r.start_col, r.end_line, r.end_col],
+                        o.is_definition,
+                    )
+                })
+                .collect()
+        };
+        // Empty-symbol and malformed (2-element) occurrences are dropped.
+        assert_eq!(
+            got(0),
+            vec![
+                (JAVA.to_string(), [1, 2, 1, 10], true),
+                ("local 1".to_string(), [0, 0, 1, 5], false)
+            ]
+        );
+        assert_eq!(got(1), vec![(JAVA.to_string(), [4, 1, 4, 9], false)]);
+        let e = m.documents[0].occurrences[0].enclosing_range.unwrap();
+        assert_eq!((e.start_line, e.end_line, e.end_col), (1, 3, 1));
         assert!(m.documents[1].occurrences[0].enclosing_range.is_none());
         let s = &m.symbols[JAVA];
         assert_eq!(s.display_name.as_deref(), Some("getAccount"));
         assert!(s.relationships[0].is_implementation);
         assert!(m.symbols.contains_key("ext 1"));
+    }
+
+    #[test]
+    fn invalid_bytes_error() {
         assert!(from_bytes(&[0xff, 0xff, 0xff]).is_err());
+    }
+
+    #[test]
+    fn symbol_merge() {
+        use types::symbol_information::Kind;
+        let rel = |s: &str| {
+            let mut r = Relationship::new();
+            r.symbol = s.into();
+            r.is_reference = true;
+            r
+        };
+        let mut doc_info = SymbolInformation::new();
+        doc_info.symbol = "s 1".into();
+        doc_info.relationships.push(rel("a"));
+        // display_name empty and kind unspecified here: filled by external.
+        let mut ext = SymbolInformation::new();
+        ext.symbol = "s 1".into();
+        ext.display_name = "First".into();
+        ext.kind = Kind::Class.into();
+        ext.relationships.push(rel("b"));
+        let mut ext2 = SymbolInformation::new();
+        ext2.symbol = "s 1".into();
+        ext2.display_name = "Second".into();
+        ext2.kind = Kind::Method.into();
+
+        let mut idx = Index::new();
+        let mut d = Document::new();
+        d.symbols.push(doc_info);
+        idx.documents.push(d);
+        idx.external_symbols.push(ext);
+        idx.external_symbols.push(ext2);
+        let m = from_bytes(&idx.write_to_bytes().unwrap()).unwrap();
+        assert_eq!(m.symbols.len(), 1);
+        let s = &m.symbols["s 1"];
+        let rels: Vec<_> = s.relationships.iter().map(|r| r.symbol.as_str()).collect();
+        assert_eq!(rels, ["a", "b"]);
+        assert_eq!(s.display_name.as_deref(), Some("First"));
+        assert_eq!(s.kind.as_deref(), Some("Class"));
     }
 
     #[test]
