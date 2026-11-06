@@ -786,6 +786,7 @@ pub fn impact_at(
         head,
     );
     result.warnings = analysis.warnings;
+    result.matrix = Some(analysis.matrix);
     Ok(result)
 }
 
@@ -1037,6 +1038,7 @@ mod tests {
         let imp = impact_at(&root, Some(&base), Some(&c1), &no_scip(), &|_| {}).unwrap();
         assert_eq!(imp.changed_symbols, vec!["B".to_string()], "{imp:?}");
         assert!(imp.warnings.iter().all(|w| !w.contains("checked out")));
+        assert!(imp.matrix.is_some(), "snapshot path carries its matrix");
         // Relative base resolves in the user's repo, not the snapshot's HEAD.
         let imp = impact_at(&root, Some("HEAD~2"), Some(&c1), &no_scip(), &|_| {}).unwrap();
         assert_eq!(imp.changed_symbols, vec!["B".to_string()], "{imp:?}");

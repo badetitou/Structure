@@ -17,6 +17,14 @@ invoke<History>("history", { path: string, limit: number | null });
 - `impact(path, base, head)`: `base = null` means HEAD vs working tree;
   otherwise `base..head` (`head = null` means working tree). Impact cell ids
   and symbol ids refer to the ids in the `Matrix` from `analyze`.
+  When `head` is set, the commit is analysed exactly in a detached checkout
+  (not the working tree) at `<git-common-dir>/structure/snapshots/<sha>`; at
+  most 8 snapshots are kept (least recently used pruned). The first click on a
+  commit may run the SCIP indexer (slow; `analysis-progress` starts with
+  `checking out <short sha>`); later ones reuse the snapshot and its
+  `index.scip`. The result then carries `matrix`, the snapshot's matrix: show
+  it instead of the working-tree one (cells as of that commit; the impact ids
+  refer to it). With `head = null`, `matrix` is absent.
 - `history(path, limit)`: up to `limit` (default 200) commits reachable from
   HEAD in topological order (`git log --topo-order`: children before parents,
   each merged line of history contiguous), newest first. `dirty` = the working tree has changes under the
@@ -71,6 +79,7 @@ interface Impact {
   impacted_cells: ImpactedCell[];     // distance = hops from a changed cell
   impacted_symbols: ImpactedSymbol[];
   warnings?: string[];
+  matrix?: Matrix;                    // only when `head` was analysed in its snapshot
 }
 interface ImpactedCell { id: string; distance: number }
 interface ImpactedSymbol { id: string; distance: number }
