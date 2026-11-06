@@ -39,11 +39,20 @@ export interface Stats {
   edges: number;
   elapsed_ms: number;
 }
+/** Domain hierarchy (#16): leaves carry `domain`, groups carry children. */
+export interface DomainNode {
+  label: string;
+  domain?: string;
+  size: number;
+  children: DomainNode[];
+}
 export interface Matrix {
   project: string;
   language: Language;
   layers: Layer[];
   domains: string[];
+  /** Present only when the domains form a hierarchy. */
+  domain_tree?: DomainNode[];
   cells: Cell[];
   edges: CellEdge[];
   stats: Stats;
