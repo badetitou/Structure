@@ -1,6 +1,6 @@
 import type { CellEdge } from "./api";
 
-/** Cells reachable from `start` following edges forward (or backward). Excludes `start` unless in a cycle. */
+/** Cells reachable from `start` following edges forward (or backward). Includes `start` only if it is reachable from itself via a cycle. */
 export function reach(
   start: string,
   edges: CellEdge[],
@@ -24,6 +24,5 @@ export function reach(
       }
     }
   }
-  seen.delete(start);
   return seen;
 }

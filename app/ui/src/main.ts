@@ -1,6 +1,7 @@
 import "./style.css";
 import * as api from "./api";
 import type { Cell, Impact, Matrix } from "./api";
+import { CHANGED, DEFAULT_FILL, impactCellPaint } from "./cellstate";
 import { reach } from "./graph";
 
 const root = document.getElementById("app") as HTMLElement;
@@ -42,7 +43,10 @@ function home(error?: string) {
       home();
     }
   };
-  analyzeBtn.onclick = () => void runAnalysis();
+  analyzeBtn.onclick = () => {
+    analyzeBtn.disabled = true;
+    void runAnalysis();
+  };
   show(
     h(
       "div",
@@ -88,14 +92,6 @@ const MARGIN_L = 110;
 const MARGIN_T = 40;
 const FWD = "#16a34a";
 const BWD = "#2563eb";
-const CHANGED = "#dc2626";
-
-function impactColor(distance: number): string {
-  // distance 1 = darkest orange, fading with distance.
-  const t = Math.min(Math.max(distance - 1, 0) / 4, 1);
-  const l = 40 + t * 40;
-  return `hsl(25 90% ${l}%)`;
-}
 
 function matrixView(m: Matrix) {
   let impact: Impact | null = null;
@@ -245,23 +241,21 @@ function matrixView(m: Matrix) {
     const changed = new Set(impact?.changed_cells ?? []);
     let fwd = new Set<string>();
     let bwd = new Set<string>();
-    if (!impact && hovered) {
+    if (hovered) {
       fwd = reach(hovered, m.edges, "forward");
       bwd = reach(hovered, m.edges, "backward");
     }
     for (const [id, r] of cellEls) {
-      let fill = "#cbd5e1";
+      let fill = DEFAULT_FILL;
       let opacity = 1;
-      if (impact) {
-        if (changed.has(id)) fill = CHANGED;
-        else if (impactById.has(id)) fill = impactColor(impactById.get(id) as number);
-        else opacity = 0.25;
-      } else if (hovered) {
+      if (hovered) {
         if (id === hovered) fill = "#facc15";
         else if (fwd.has(id) && bwd.has(id)) fill = "#a855f7";
         else if (fwd.has(id)) fill = FWD;
         else if (bwd.has(id)) fill = BWD;
         else opacity = 0.25;
+      } else if (impact) {
+        ({ fill, opacity } = impactCellPaint(id, changed, impactById));
       }
       r.setAttribute("fill", fill);
       r.setAttribute("opacity", String(opacity));
@@ -271,14 +265,7 @@ function matrixView(m: Matrix) {
       let color = "#999";
       let marker = "a-def";
       let opacity = 0.5;
-      if (impact) {
-        const on = (id: string) => changed.has(id) || impactById.has(id);
-        if (on(e.from) && on(e.to)) {
-          color = CHANGED;
-          marker = "a-imp";
-          opacity = 0.9;
-        } else opacity = 0.12;
-      } else if (hovered) {
+      if (hovered) {
         const inF = (id: string) => id === hovered || fwd.has(id);
         const inB = (id: string) => id === hovered || bwd.has(id);
         if (inF(e.from) && fwd.has(e.to)) {
@@ -290,6 +277,13 @@ function matrixView(m: Matrix) {
           marker = "a-bwd";
           opacity = 0.95;
         } else opacity = 0.1;
+      } else if (impact) {
+        const on = (id: string) => changed.has(id) || impactById.has(id);
+        if (on(e.from) && on(e.to)) {
+          color = CHANGED;
+          marker = "a-imp";
+          opacity = 0.9;
+        } else opacity = 0.12;
       }
       el.setAttribute("stroke", color);
       el.setAttribute("stroke-width", String(Math.max(1, 1 + Math.log(e.weight))));

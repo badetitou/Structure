@@ -13,11 +13,12 @@ pub async fn analyze(app: AppHandle, path: String) -> Result<Matrix, String> {
 
 #[tauri::command]
 pub async fn impact(
+    app: AppHandle,
     path: String,
     base: Option<String>,
     head: Option<String>,
 ) -> Result<Impact, String> {
-    tauri::async_runtime::spawn_blocking(move || mock::impact(&path, base, head))
+    tauri::async_runtime::spawn_blocking(move || mock::impact(&app, &path, base, head))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -55,10 +56,19 @@ mod mock {
     }
 
     pub fn impact(
+        app: &AppHandle,
         _path: &str,
         _base: Option<String>,
         _head: Option<String>,
     ) -> Result<Impact, String> {
+        for (step, pct) in [
+            ("diffing", 20),
+            ("analyzing", 60),
+            ("computing impact", 100),
+        ] {
+            emit_progress(app, step, pct);
+            sleep(Duration::from_millis(200));
+        }
         serde_json::from_str(IMPACT).map_err(|e| e.to_string())
     }
 

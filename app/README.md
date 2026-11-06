@@ -15,8 +15,9 @@ cd app/ui && npm run dev                  # browser only, uses /samples/*.json
 cd app/src-tauri && cargo tauri build --debug --no-bundle   # binary in target/debug/structure-app
 ```
 
-`app/ui/public/samples/` is a copy of `docs/samples/` for the browser fallback
-(used when `__TAURI_INTERNALS__` is absent); refresh it if the samples change.
+`app/ui/public/samples/` is a git-ignored copy of `docs/samples/`, refreshed by
+`predev`/`prebuild`; it is the browser fallback (no `__TAURI_INTERNALS__`).
+`npm test` runs vitest. Hovering a cell temporarily overrides impact colouring.
 
 ## Layout
 
