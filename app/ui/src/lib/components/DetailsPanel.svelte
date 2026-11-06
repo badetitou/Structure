@@ -8,11 +8,18 @@
   const impacted = $derived(
     app.impact ? [...app.impact.impacted_symbols].sort((a, b) => a.distance - b.distance) : [],
   );
+  // Long symbol lists render a page at a time ("Show more").
+  const CAP = 200;
+  let shown = $state({ changed: CAP, impacted: CAP });
+  $effect(() => {
+    void app.impact;
+    shown = { changed: CAP, impacted: CAP };
+  });
   const list = $derived(app.selected && app.symbols?.cell === app.selected.id ? app.symbols : null);
 </script>
 
-{#snippet items(rows: { name: string; sub: string }[])}
-  {#if rows.length === 0}
+{#snippet items(rows: { name: string; sub: string }[], total: number, more?: () => void)}
+  {#if total === 0}
     <div class="text-muted-foreground">none</div>
   {:else}
     <ul class="m-0 list-disc pl-4">
@@ -20,6 +27,9 @@
         <li>{r.name}<small class="block break-all text-muted-foreground">{r.sub}</small></li>
       {/each}
     </ul>
+    {#if more && total > rows.length}
+      <Button variant="outline" size="sm" class="mt-1" onclick={more}>Show more ({rows.length} / {total})</Button>
+    {/if}
   {/if}
 {/snippet}
 
@@ -31,15 +41,26 @@
   <div class="px-3.5 py-2.5">
     {#if app.impact}
       {@render heading(`Changed symbols (${app.impact.changed_symbols.length})`)}
-      {@render items(app.impact.changed_symbols.map((id) => ({ name: symbolName(id), sub: id })))}
+      {@render items(
+        app.impact.changed_symbols.slice(0, shown.changed).map((id) => ({ name: symbolName(id), sub: id })),
+        app.impact.changed_symbols.length,
+        () => (shown.changed += CAP),
+      )}
       {@render heading(`Impacted symbols (${app.impact.impacted_symbols.length})`)}
-      {@render items(impacted.map((x) => ({ name: symbolName(x.id), sub: `distance ${x.distance} · ${x.id}` })))}
+      {@render items(
+        impacted.slice(0, shown.impacted).map((x) => ({ name: symbolName(x.id), sub: `distance ${x.distance} · ${x.id}` })),
+        impacted.length,
+        () => (shown.impacted += CAP),
+      )}
     {/if}
     {#if app.selected}
       {@const c = app.selected}
       {@render heading(`${c.layer}/${c.label} — ${c.size} symbols`)}
       {#if list && list.items.length > 0}
-        {@render items(list.items.map((x) => ({ name: x.name, sub: x.file })))}
+        {@render items(
+          list.items.map((x) => ({ name: x.name, sub: x.file })),
+          list.items.length,
+        )}
       {/if}
       {#if list?.error}
         <div class="text-muted-foreground">Cannot list symbols: {list.error}</div>
