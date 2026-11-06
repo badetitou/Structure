@@ -26,9 +26,3 @@ export function fitText(text: string, width: number, charW: number): string {
   return n < 2 ? "" : `${text.slice(0, n - 1)}…`;
 }
 
-/** Cell stroke width [unselected, selected] per mode. */
-export const STROKE_NORMAL = [1, 3] as const;
-export const STROKE_DENSE = [0.5, 2] as const;
-/** Height of one row of group bands above the column headers, per mode. */
-export const BAND_NORMAL = 22;
-export const BAND_DENSE = 14;

@@ -40,6 +40,12 @@ export const PITCH = 140;
 export const MARGIN_L = 110;
 export const MARGIN_T = 40;
 export const DENSE_STEP = 14;
+/** Cell outline width [unselected, selected] per mode. */
+export const STROKE_NORMAL = [1, 3] as const;
+export const STROKE_DENSE = [0.5, 2] as const;
+/** Height of one row of group bands above the column headers, per mode. */
+export const BAND_NORMAL = 22;
+export const BAND_DENSE = 14;
 /** Upper bound of one character's width in a dense header label (bold, font-size 10). */
 export const DENSE_CHAR_W = 7;
 const denseMargin = (names: readonly string[]) =>

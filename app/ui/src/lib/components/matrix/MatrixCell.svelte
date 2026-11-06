@@ -1,7 +1,7 @@
 <script lang="ts">
   import { DEFAULT_FILL, hoverCellPaint, impactCellPaint } from "../../../cellstate";
   import type { Hover } from "../../../cellstate";
-  import type { ViewCell } from "../../../domaintree";
+  import type { ImpactView, ViewCell } from "../../../domaintree";
   import type { Tile } from "../../../layout";
 
   // One cell tile. Its look is derived from the shared hover / impact state, so
@@ -20,7 +20,7 @@
     tile: Tile;
     detailed: boolean;
     hover: Hover | null;
-    impact: { changed: ReadonlySet<string>; impacted: ReadonlyMap<string, number> } | null;
+    impact: ImpactView | null;
     onhover: (id: string | null) => void;
     onselect: (cell: ViewCell) => void;
   } = $props();

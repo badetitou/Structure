@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHANGED, DEFAULT_FILL, edgeKind, hoverCellPaint, impactCellPaint, impactColor } from "./cellstate";
+import { CHANGED, DEFAULT_FILL, edgeKind, edgeStyle, defaultEdgeOpacity, hoverCellPaint, impactCellPaint, impactColor } from "./cellstate";
 import { adjacency, reach } from "./graph";
 
 describe("impactColor", () => {
@@ -57,5 +57,24 @@ describe("hover paint", () => {
     expect(edgeKind("a", "b", null, imp)).toBe("imp");
     expect(edgeKind("b", "c", null, imp)).toBe("def");
     expect(edgeKind("a", "b", null, null)).toBe("def");
+  });
+});
+
+// Values the imperative matrixview.ts used for edges (main:app/ui/src/matrixview.ts, paint()).
+describe("edge style parity", () => {
+  it("matches the old colour / marker / opacity per state", () => {
+    expect(edgeStyle("fwd", 1)).toMatchObject({ stroke: "var(--fwd)", marker: "a-fwd", opacity: "0.95" });
+    expect(edgeStyle("bwd", 1)).toMatchObject({ stroke: "var(--bwd)", marker: "a-bwd", opacity: "0.95" });
+    expect(edgeStyle("imp", 1)).toMatchObject({ stroke: "var(--changed)", marker: "a-imp", opacity: "0.9" });
+    expect(edgeStyle("def", 1)).toMatchObject({ stroke: "var(--edge)", marker: "a-def" });
+  });
+  it("default edges are 0.5, 0.1 while hovering, 0.12 while showing impact", () => {
+    expect(defaultEdgeOpacity(false, false)).toBe(0.5);
+    expect(defaultEdgeOpacity(true, true)).toBe(0.1);
+    expect(defaultEdgeOpacity(false, true)).toBe(0.12);
+  });
+  it("width is max(1, 1 + ln weight)", () => {
+    expect(edgeStyle("def", 1).width).toBe(1);
+    expect(edgeStyle("def", 10).width).toBeCloseTo(1 + Math.log(10));
   });
 });
