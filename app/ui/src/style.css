@@ -16,6 +16,16 @@ aside ul { margin: 0; padding-left: 16px; }
 aside li small { color: #777; display: block; word-break: break-all; }
 .legend span { display: inline-block; width: 10px; height: 10px; margin: 0 4px 0 10px; }
 text { font-size: 11px; }
+.advanced { display: flex; gap: 8px; align-items: center; }
+.advanced[open] { flex-wrap: wrap; }
+.history { width: 260px; flex: none; border-right: 1px solid #ddd; background: #fff; overflow: auto; font-size: 12px; }
+.history h3 { margin: 8px 10px; font-size: 14px; }
+.commit { padding: 6px 10px; border-bottom: 1px solid #eee; cursor: pointer; user-select: none; }
+.commit:hover { background: #f5f5f5; }
+.commit.sel { background: #e0ecff; }
+.commit .subj { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.commit .meta { color: #777; margin-top: 2px; }
+.badge { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; background: #e5e7eb; color: #374151; font-size: 10px; }
 .warnings { padding: 6px 16px; background: #fef3c7; color: #92400e; border-bottom: 1px solid #fcd34d; font-size: 13px; }
 .brand { display: flex; align-items: center; gap: 16px; }
 .brand h1 { margin: 0; font-size: 32px; }
