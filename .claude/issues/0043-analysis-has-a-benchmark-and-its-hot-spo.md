@@ -1,9 +1,9 @@
 ---
 id: 43
 title: Analysis has a benchmark and its hot spots are optimised
-status: todo
+status: done
 parent: 36
-branch: null
+branch: 43-analysis-perf
 remote: null
 created: 2026-11-06
 ---

@@ -1,7 +1,7 @@
 ---
 id: 36
 title: Structure is modular, fast to analyse and its UI is themable and maintainable
-status: in-progress
+status: done
 parent: null
 branch: null
 remote: null
