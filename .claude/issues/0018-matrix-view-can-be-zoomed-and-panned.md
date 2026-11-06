@@ -1,7 +1,7 @@
 ---
 id: 18
 title: Matrix view can be zoomed and panned
-status: done
+status: in-review
 parent: null
 branch: 18-matrix-zoom-pan
 remote: null
