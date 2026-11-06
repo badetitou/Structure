@@ -28,15 +28,6 @@ pub struct LinkStats {
     pub ext_edges: usize,
 }
 
-fn rank(k: EdgeKind) -> u8 {
-    match k {
-        EdgeKind::Call => 0,
-        EdgeKind::Implements => 1,
-        EdgeKind::Extends => 2,
-        EdgeKind::Uses => 3,
-    }
-}
-
 fn is_ctor_name(n: &str) -> bool {
     matches!(n, "<init>" | "<constructor>" | "constructor" | "init")
 }
@@ -74,7 +65,7 @@ enum Target {
 }
 
 fn edge_order(a: &Edge, b: &Edge) -> std::cmp::Ordering {
-    (&a.from, &a.to, rank(a.kind)).cmp(&(&b.from, &b.to, rank(b.kind)))
+    (&a.from, &a.to, a.kind.rank()).cmp(&(&b.from, &b.to, b.kind.rank()))
 }
 
 pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
@@ -285,8 +276,8 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
             }
             fn key(e: &Found) -> (usize, usize, &str, u8) {
                 match &e.1 {
-                    Target::Sym(i) => (e.0, *i, "", rank(e.2)),
-                    Target::Ext(n) => (e.0, usize::MAX, n.as_str(), rank(e.2)),
+                    Target::Sym(i) => (e.0, *i, "", e.2.rank()),
+                    Target::Ext(n) => (e.0, usize::MAX, n.as_str(), e.2.rank()),
                 }
             }
             found.sort_unstable_by(|a, b| key(a).cmp(&key(b)));
@@ -613,6 +604,67 @@ mod tests {
         let mut sorted = a.edges.clone();
         sorted.sort_by(edge_order);
         assert_eq!(sorted, a.edges);
+    }
+
+    /// The same reference repeated within a document and across documents
+    /// yields one edge, identically on every run.
+    #[test]
+    fn duplicate_references_collapse() {
+        let g = Graph {
+            root: ".".into(),
+            language: Language::Java,
+            symbols: vec![
+                sym(
+                    "p.X",
+                    SymbolKind::Class,
+                    "X",
+                    "X.java",
+                    r(0, 0, 9, 1),
+                    r(0, 6, 0, 7),
+                ),
+                sym(
+                    "p.Y",
+                    SymbolKind::Class,
+                    "Y",
+                    "Y.java",
+                    r(0, 0, 9, 1),
+                    r(0, 6, 0, 7),
+                ),
+            ],
+            edges: vec![],
+        };
+        let refs = |line: u32| {
+            vec![
+                occ("p/Y#", r(line, 2, line, 3), false),
+                occ("p/Y#", r(line + 1, 2, line + 1, 3), false),
+                occ("ext/Q#", r(line, 5, line, 6), false),
+                occ("ext/Q#", r(line + 1, 5, line + 1, 6), false),
+            ]
+        };
+        let mut first = vec![occ("p/X#", r(0, 6, 0, 7), true)];
+        first.extend(refs(2));
+        let idx = ScipIndex {
+            documents: vec![
+                doc("X.java", first),
+                doc("X.java", refs(5)),
+                doc("Y.java", vec![occ("p/Y#", r(0, 6, 0, 7), true)]),
+            ],
+            symbols: Default::default(),
+        };
+        let (a, st) = link(g.clone(), &idx);
+        let count = |t: &str| {
+            a.edges
+                .iter()
+                .filter(|e| e.from == "p.X" && e.to == t)
+                .count()
+        };
+        assert_eq!(count("p.Y"), 1);
+        assert_eq!(count("ext:Q"), 1);
+        assert_eq!(a.edges.len(), 2);
+        assert_eq!(st.references, 8);
+        assert_eq!((st.uses_edges, st.ext_edges), (2, 1));
+        let (b, _) = link(g, &idx);
+        assert_eq!(a, b);
     }
 
     /// scip-java puts method definitions on the annotation line; members
