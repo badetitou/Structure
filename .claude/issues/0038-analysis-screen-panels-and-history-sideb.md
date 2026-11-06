@@ -1,7 +1,7 @@
 ---
 id: 38
 title: Analysis screen, panels and history sidebar are Svelte components
-status: todo
+status: done
 parent: 36
 branch: null
 remote: null
