@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Minimal settings: Maven Central only. Used with `mvn -s` so a user-level
+     ~/.m2/settings.xml pointing at an unreachable private repository cannot hang the build. -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"/>

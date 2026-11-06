@@ -1,0 +1,147 @@
+# Hand-written oracle for jpetstore-6 @ 8f11fab. Entry points are Spring MVC @Controller
+# (current HEAD no longer uses Stripes). Nested class FQN uses '.' as separator.
+
+[[class]]
+name = "org.mybatis.jpetstore.domain.Account"
+layer = "model"
+domain = "account"
+
+[[class]]
+name = "org.mybatis.jpetstore.domain.Cart"
+layer = "model"
+domain = "cart"
+
+[[class]]
+name = "org.mybatis.jpetstore.domain.CartItem"
+layer = "model"
+domain = "cart"
+
+[[class]]
+name = "org.mybatis.jpetstore.domain.Category"
+layer = "model"
+domain = "catalog"
+
+[[class]]
+name = "org.mybatis.jpetstore.domain.Item"
+layer = "model"
+domain = "catalog"
+
+[[class]]
+name = "org.mybatis.jpetstore.domain.LineItem"
+layer = "model"
+domain = "order"
+
+[[class]]
+name = "org.mybatis.jpetstore.domain.Order"
+layer = "model"
+domain = "order"
+
+[[class]]
+name = "org.mybatis.jpetstore.domain.Product"
+layer = "model"
+domain = "catalog"
+
+[[class]]
+name = "org.mybatis.jpetstore.domain.Sequence"
+layer = "model"
+domain = "order"
+
+[[class]]
+name = "org.mybatis.jpetstore.mapper.AccountMapper"
+layer = "persistence"
+domain = "account"
+
+[[class]]
+name = "org.mybatis.jpetstore.mapper.CategoryMapper"
+layer = "persistence"
+domain = "catalog"
+
+[[class]]
+name = "org.mybatis.jpetstore.mapper.ItemMapper"
+layer = "persistence"
+domain = "catalog"
+
+[[class]]
+name = "org.mybatis.jpetstore.mapper.LineItemMapper"
+layer = "persistence"
+domain = "order"
+
+[[class]]
+name = "org.mybatis.jpetstore.mapper.OrderMapper"
+layer = "persistence"
+domain = "order"
+
+[[class]]
+name = "org.mybatis.jpetstore.mapper.ProductMapper"
+layer = "persistence"
+domain = "catalog"
+
+[[class]]
+name = "org.mybatis.jpetstore.mapper.SequenceMapper"
+layer = "persistence"
+domain = "order"
+
+[[class]]
+name = "org.mybatis.jpetstore.service.AccountService"
+layer = "business"
+domain = "account"
+
+[[class]]
+name = "org.mybatis.jpetstore.service.CatalogService"
+layer = "business"
+domain = "catalog"
+
+[[class]]
+name = "org.mybatis.jpetstore.service.OrderService"
+layer = "business"
+domain = "order"
+
+[[class]]
+name = "org.mybatis.jpetstore.web.controllers.AccountController"
+layer = "entry"
+domain = "account"
+
+[[class]]
+name = "org.mybatis.jpetstore.web.controllers.CartController"
+layer = "entry"
+domain = "cart"
+
+[[class]]
+name = "org.mybatis.jpetstore.web.controllers.CatalogController"
+layer = "entry"
+domain = "catalog"
+
+[[class]]
+name = "org.mybatis.jpetstore.web.controllers.OrderController"
+layer = "entry"
+domain = "order"
+
+[[class]]
+name = "org.mybatis.jpetstore.web.controllers.RootController"
+layer = "entry"
+domain = "catalog"
+
+[[class]]
+name = "org.mybatis.jpetstore.web.controllers.AccountController.AccountSession"
+layer = "state"
+domain = "account"
+
+[[class]]
+name = "org.mybatis.jpetstore.web.configuration.StaxFactoryInitializationListener"
+layer = "util"
+domain = "shared"
+
+[[path]]
+chain = ["org.mybatis.jpetstore.web.controllers.AccountController", "org.mybatis.jpetstore.service.AccountService", "org.mybatis.jpetstore.mapper.AccountMapper"]
+
+[[path]]
+chain = ["org.mybatis.jpetstore.web.controllers.OrderController", "org.mybatis.jpetstore.service.OrderService", "org.mybatis.jpetstore.mapper.OrderMapper"]
+
+[[path]]
+chain = ["org.mybatis.jpetstore.web.controllers.OrderController", "org.mybatis.jpetstore.service.OrderService", "org.mybatis.jpetstore.mapper.LineItemMapper"]
+
+[[path]]
+chain = ["org.mybatis.jpetstore.web.controllers.CatalogController", "org.mybatis.jpetstore.service.CatalogService", "org.mybatis.jpetstore.mapper.ProductMapper"]
+
+[[path]]
+chain = ["org.mybatis.jpetstore.web.controllers.AccountController", "org.mybatis.jpetstore.service.CatalogService", "org.mybatis.jpetstore.mapper.ProductMapper"]
