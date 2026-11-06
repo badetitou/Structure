@@ -19,7 +19,7 @@ cd app/src-tauri && cargo tauri build --debug --no-bundle   # binary in target/d
 
 `app/ui/public/samples/` is a git-ignored copy of `docs/samples/`, refreshed by
 `predev`/`prebuild`; it is the browser fallback (no `__TAURI_INTERNALS__`).
-`npm test` runs vitest. Hovering a cell temporarily overrides impact colouring.
+`npm test` runs vitest. Hovering a cell temporarily overrides impact colouring. The "Dense" toolbar toggle (kept in localStorage) packs the matrix into uniform tiles without labels or edges (`layout.ts`).
 
 ## Layout
 
