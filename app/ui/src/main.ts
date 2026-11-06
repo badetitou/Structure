@@ -199,6 +199,16 @@ function matrixView(m: Matrix) {
     edgeEls = [];
     denseBtn.textContent = mode === "dense" ? "Dense: on" : "Dense: off";
     svg.setAttribute("viewBox", `0 0 ${lay.width} ${lay.height}`);
+    // Dense mode keeps its natural pixel size: stretching it would blow up the
+    // headers and borders instead of showing more cells.
+    svg.classList.toggle("dense", !lay.detailed);
+    if (lay.detailed) {
+      svg.removeAttribute("width");
+      svg.removeAttribute("height");
+    } else {
+      svg.setAttribute("width", String(lay.width));
+      svg.setAttribute("height", String(lay.height));
+    }
     const defs = s("defs");
     for (const [id, color] of [["a-def", "#999"], ["a-fwd", FWD], ["a-bwd", BWD], ["a-imp", CHANGED]]) {
       const mk = s("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto" });
@@ -264,7 +274,7 @@ function matrixView(m: Matrix) {
       const g = s("g");
       const r = lay.detailed
         ? s("rect", { x: t.x, y: t.y, width: t.w, height: t.h, rx: 3, stroke: "#333", "stroke-width": 1 })
-        : s("rect", { x: t.x + 0.5, y: t.y + 0.5, width: t.w - 1, height: t.h - 1, stroke: "#333", "stroke-width": 1 });
+        : s("rect", { x: t.x + 0.5, y: t.y + 0.5, width: t.w - 1, height: t.h - 1, stroke: "#333" });
       r.style.cursor = "pointer";
       const label = `${c.layer}/${c.domain} (${c.size})`;
       if (lay.detailed) {
@@ -306,7 +316,9 @@ function matrixView(m: Matrix) {
   const panel = h("aside");
   const sidebar = h("nav", { className: "history" });
   sidebar.hidden = true;
-  const main = h("div", { className: "main" }, sidebar, svg as unknown as Node, panel);
+  // The view scrolls when a dense grid is larger than the space left.
+  const view = h("div", { className: "view" }, svg as unknown as Node);
+  const main = h("div", { className: "main" }, sidebar, view, panel);
   show(header, toolbar, warnBox, main);
   build();
 
@@ -333,7 +345,7 @@ function matrixView(m: Matrix) {
       }
       r.setAttribute("fill", fill);
       r.setAttribute("opacity", String(opacity));
-      r.setAttribute("stroke-width", id === selected ? "3" : "1");
+      r.setAttribute("stroke-width", mode === "dense" ? (id === selected ? "2" : "0.5") : id === selected ? "3" : "1");
     }
     for (const { e, el } of edgeEls) {
       let color = "#999";

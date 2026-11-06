@@ -40,8 +40,10 @@ export const PITCH = 140;
 export const MARGIN_L = 110;
 export const MARGIN_T = 40;
 export const DENSE_STEP = 14;
-export const DENSE_MARGIN_L = 90;
-export const DENSE_MARGIN_T = 90;
+/** Approx. width of one character of a dense header label (font-size 10). */
+export const DENSE_CHAR_W = 6;
+const denseMargin = (names: readonly string[]) =>
+  12 + DENSE_CHAR_W * Math.max(0, ...names.map((n) => n.length));
 
 export function layout(
   mode: Mode,
@@ -52,8 +54,8 @@ export function layout(
   const byId = new Map(cells.map((c) => [c.id, c]));
   const maxSize = Math.max(1, ...cells.map((c) => c.size));
   const dense = mode === "dense";
-  const ml = dense ? DENSE_MARGIN_L : MARGIN_L;
-  const mt = dense ? DENSE_MARGIN_T : MARGIN_T;
+  const ml = dense ? denseMargin(layers) : MARGIN_L;
+  const mt = dense ? denseMargin(domains) : MARGIN_T;
   const pitch = dense ? DENSE_STEP : PITCH;
   const tiles: Tile[] = [];
   layers.forEach((layer, r) => {
@@ -87,8 +89,8 @@ export function layout(
     y: mt + i * pitch + pitch / 2 + (dense ? 3 : 0),
   }));
   return {
-    width: ml + domains.length * pitch + 20,
-    height: mt + layers.length * pitch + 20,
+    width: ml + domains.length * pitch + (dense ? 4 : 20),
+    height: mt + layers.length * pitch + (dense ? 4 : 20),
     tiles,
     domainLabels,
     layerLabels,
