@@ -18,89 +18,37 @@
       "id": "model:famixjavaentities",
       "layer": "model",
       "domain": "famixjavaentities",
-      "size": 2,
-      "symbols": [
-        {
-          "id": "org.moosetechnology.model.famix.famixjavaentities.Class",
-          "name": "Class",
-          "file": "src/main/java/org/moosetechnology/model/famix/famixjavaentities/Class.java"
-        },
-        {
-          "id": "org.moosetechnology.model.famix.famixjavaentities.Method",
-          "name": "Method",
-          "file": "src/main/java/org/moosetechnology/model/famix/famixjavaentities/Method.java"
-        }
-      ]
+      "size": 2
     },
     {
       "id": "model:famixtraits",
       "layer": "model",
       "domain": "famixtraits",
-      "size": 2,
-      "symbols": [
-        {
-          "id": "org.moosetechnology.model.famix.famixtraits.TMethod",
-          "name": "TMethod",
-          "file": "src/main/java/org/moosetechnology/model/famix/famixtraits/TMethod.java"
-        },
-        {
-          "id": "org.moosetechnology.model.famix.famixtraits.TNamedEntity",
-          "name": "TNamedEntity",
-          "file": "src/main/java/org/moosetechnology/model/famix/famixtraits/TNamedEntity.java"
-        }
-      ]
+      "size": 2
     },
     {
       "id": "model:tagging",
       "layer": "model",
       "domain": "tagging",
-      "size": 1,
-      "symbols": [
-        {
-          "id": "org.moosetechnology.model.famix.tagging.Tag",
-          "name": "Tag",
-          "file": "src/main/java/org/moosetechnology/model/famix/tagging/Tag.java"
-        }
-      ]
+      "size": 1
     },
     {
       "id": "unknown:java",
       "layer": "unknown",
       "domain": "java",
-      "size": 1,
-      "symbols": [
-        {
-          "id": "fr.inria.verveine.extractor.java.VerveineJParser",
-          "name": "VerveineJParser",
-          "file": "src/main/java/fr/inria/verveine/extractor/java/VerveineJParser.java"
-        }
-      ]
+      "size": 1
     },
     {
       "id": "unknown:refvisitors",
       "layer": "unknown",
       "domain": "refvisitors",
-      "size": 1,
-      "symbols": [
-        {
-          "id": "fr.inria.verveine.extractor.java.visitors.refvisitors.VisitorInvocRef",
-          "name": "VisitorInvocRef",
-          "file": "src/main/java/fr/inria/verveine/extractor/java/visitors/refvisitors/VisitorInvocRef.java"
-        }
-      ]
+      "size": 1
     },
     {
       "id": "unknown:utils",
       "layer": "unknown",
       "domain": "utils",
-      "size": 1,
-      "symbols": [
-        {
-          "id": "fr.inria.verveine.extractor.java.utils.StructuralEntityKinds",
-          "name": "StructuralEntityKinds",
-          "file": "src/main/java/fr/inria/verveine/extractor/java/utils/StructuralEntityKinds.java"
-        }
-      ]
+      "size": 1
     }
   ],
   "edges": [],

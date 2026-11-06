@@ -70,7 +70,8 @@ pub struct Matrix {
     pub layers: Vec<Layer>,
     pub domains: Vec<String>,
     pub cells: Vec<Cell>,
-    pub edges: Vec<CellEdge>,
+    /// Grouped by source cell, indices into `cells` (see docs/api.md).
+    pub edges: Vec<EdgeGroup>,
     pub stats: Stats,
     /// Things the user should know about this analysis (indexing failed,
     /// stale index...). Omitted from JSON when empty.
@@ -87,8 +88,8 @@ pub struct Cell {
     pub id: String,
     pub layer: Layer,
     pub domain: String,
+    /// Number of top-level symbols; the list is `matrix::cell_symbols`.
     pub size: usize,
-    pub symbols: Vec<CellSymbol>,
 }
 
 impl Cell {
@@ -104,11 +105,20 @@ pub struct CellSymbol {
     pub file: String,
 }
 
+/// One page of the symbols of some cells.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CellEdge {
-    pub from: String,
-    pub to: String,
-    pub weight: u32,
+pub struct CellSymbols {
+    pub total: usize,
+    pub offset: usize,
+    pub symbols: Vec<CellSymbol>,
+}
+
+/// Edges leaving one cell; indices refer to `Matrix::cells`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EdgeGroup {
+    pub from: usize,
+    /// `[cell index, weight]`, sorted by index.
+    pub targets: Vec<(usize, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
