@@ -11,9 +11,6 @@ use anyhow::Context;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-const JAVA_RULES: &str = include_str!("../../../rules/java.toml");
-const TS_RULES: &str = include_str!("../../../rules/typescript.toml");
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rule {
@@ -126,10 +123,8 @@ impl RuleSet {
 
     /// Embedded rules for a language.
     pub fn builtin(lang: Language) -> anyhow::Result<RuleSet> {
-        match lang {
-            Language::Java => Self::from_toml_str(JAVA_RULES).context("rules/java.toml"),
-            Language::TypeScript => Self::from_toml_str(TS_RULES).context("rules/typescript.toml"),
-        }
+        let (toml, name) = crate::lang::frontend(lang).default_rules();
+        Self::from_toml_str(toml).context(name)
     }
 
     /// `other` takes priority: its rules come first, and its domain spec
@@ -397,10 +392,7 @@ pub fn classify(graph: &Graph, rules: &RuleSet) -> Classification {
         }
         let alone = per_domain.values().filter(|n| **n == 1).count();
         if !auto_ids.is_empty() && alone * 4 >= auto_ids.len() * 3 {
-            let sep = match graph.language {
-                Language::Java => '.',
-                Language::TypeScript => '/',
-            };
+            let sep = crate::lang::frontend(graph.language).module_separator();
             let members: Vec<(&str, Vec<String>)> = auto_ids
                 .iter()
                 .filter_map(|id| facts.get(id).map(|f| (*id, module_path(f.sym, sep))))

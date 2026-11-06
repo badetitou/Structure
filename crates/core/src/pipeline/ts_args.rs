@@ -13,7 +13,7 @@ pub fn node_options(existing: Option<&str>, heap_mb: u64) -> String {
     }
 }
 
-pub(super) fn node_heap_mb() -> u64 {
+pub(crate) fn node_heap_mb() -> u64 {
     std::env::var("STRUCTURE_NODE_HEAP_MB")
         .ok()
         .and_then(|v| v.trim().parse().ok())
