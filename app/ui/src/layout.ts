@@ -50,12 +50,14 @@ export function layout(
   layers: readonly string[],
   domains: readonly string[],
   cells: readonly SlotCell[],
+  /** Header text per domain (defaults to the domain); sizes the dense margin. */
+  domainTexts: readonly string[] = domains,
 ): Layout {
   const byId = new Map(cells.map((c) => [c.id, c]));
   const maxSize = Math.max(1, ...cells.map((c) => c.size));
   const dense = mode === "dense";
   const ml = dense ? denseMargin(layers) : MARGIN_L;
-  const mt = dense ? denseMargin(domains) : MARGIN_T;
+  const mt = dense ? denseMargin(domainTexts) : MARGIN_T;
   const pitch = dense ? DENSE_STEP : PITCH;
   const tiles: Tile[] = [];
   layers.forEach((layer, r) => {
@@ -78,8 +80,8 @@ export function layout(
       });
     });
   });
-  const domainLabels = domains.map((text, i) => ({
-    text,
+  const domainLabels = domains.map((d, i) => ({
+    text: domainTexts[i] ?? d,
     x: ml + i * pitch + pitch / 2,
     y: dense ? mt - 4 : 24,
   }));

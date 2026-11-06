@@ -105,7 +105,7 @@ layer = "persistence"
 uses = ["JdbcTemplate", "EntityManager", "SqlSession", "SqlSessionTemplate"]
 
 [domain]
-strategy = "name_root"
+strategy = "auto"
 # Longest first: only the first matching suffix is stripped.
 strip_suffixes = ["QueryService", "CommandService", "ReadService", "ServiceImpl", "ActionBean", "Datafetcher", "Controller", "Repository", "Component", "Mutation", "Service", "Mapper", "Api", "Dao", "DAO"]
 strip_prefixes = ["MyBatis", "Default", "Jpa", "Abstract"]

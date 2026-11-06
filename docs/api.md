@@ -50,6 +50,16 @@ interface Matrix {
   edges: CellEdge[];
   stats: Stats;
   warnings?: string[]; // only when non-empty: indexing failed, stale index...
+  // Only when domains are modules (package / directory) instead of name roots:
+  // module trie, single-child chains without own classes collapsed. Every entry
+  // of `domains` is exactly one leaf. See docs/samples/matrix-modules.json.
+  domain_tree?: DomainNode[];
+}
+interface DomainNode {
+  label: string;     // collapsed path, e.g. "org.moosetechnology.model.famix"
+  domain?: string;   // leaves only: the matrix domain
+  size: number;      // classes below this node
+  children: DomainNode[]; // a module with own classes and sub-modules gets a leaf child for its own classes
 }
 interface Cell {
   id: string; // "<layer>:<domain>", e.g. "business:account"

@@ -6,10 +6,10 @@
 //! applies (DTO-like class -> `model`, else `unknown`).
 
 use crate::ir::{EdgeKind, Graph, Language, Symbol, SymbolKind};
-use crate::model::{Classification, Layer, Placement};
+use crate::model::{Classification, DomainNode, Layer, Placement};
 use anyhow::Context;
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const JAVA_RULES: &str = include_str!("../../../rules/java.toml");
 const TS_RULES: &str = include_str!("../../../rules/typescript.toml");
@@ -52,6 +52,11 @@ pub enum Strategy {
     /// Symbol name minus `strip_suffixes`.
     #[default]
     NameRoot,
+    /// Per symbol like `name_root` (or `path_segment` when `after` is set);
+    /// project-wide, switches to module domains (package / directory) when
+    /// at least 75% of the symbols using the default spec are alone in their
+    /// domain. An explicit `name_root` never switches.
+    Auto,
     /// First package segment after `after`, skipping `skip_segments`.
     PackageSegment,
     /// First directory segment after `after`, skipping `skip_segments`.
@@ -279,11 +284,12 @@ fn domain_of(spec: &DomainSpec, s: &Symbol) -> String {
     let after = spec.after.as_deref();
     let raw = match spec.strategy {
         Strategy::NameRoot => Some(name_root()),
+        Strategy::Auto if after.is_none() => Some(name_root()),
         Strategy::PackageSegment => s
             .package
             .as_deref()
             .and_then(|p| segment(&format!("{p}."), '.', after, &spec.skip_segments)),
-        Strategy::PathSegment => s
+        Strategy::PathSegment | Strategy::Auto => s
             .file
             .rsplit_once('/')
             .and_then(|(dir, _)| segment(&format!("{dir}/"), '/', after, &spec.skip_segments)),
@@ -356,13 +362,13 @@ pub fn classify(graph: &Graph, rules: &RuleSet) -> Classification {
     }
 
     let default_spec = rules.domain.clone().unwrap_or_default();
-    let placements = facts
-        .into_iter()
+    let mut placements: BTreeMap<String, Placement> = facts
+        .iter()
         .map(|(id, f)| {
-            let hit = rules.rules.iter().find(|r| rule_matches(r, &f));
+            let hit = rules.rules.iter().find(|r| rule_matches(r, f));
             let layer = match hit {
                 Some(r) => r.layer,
-                None if is_dto(&f) => Layer::Model,
+                None if is_dto(f) => Layer::Model,
                 None => Layer::Unknown,
             };
             let spec = hit.and_then(|r| r.domain.as_ref()).unwrap_or(&default_spec);
@@ -370,7 +376,167 @@ pub fn classify(graph: &Graph, rules: &RuleSet) -> Classification {
             (id.to_string(), Placement { layer, domain })
         })
         .collect();
-    Classification { placements }
+    let mut domain_tree = None;
+    if default_spec.strategy == Strategy::Auto {
+        let auto_ids: Vec<&str> = facts
+            .iter()
+            .filter(|(_, f)| {
+                rules
+                    .rules
+                    .iter()
+                    .find(|r| rule_matches(r, f))
+                    .is_none_or(|r| r.domain.is_none())
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        let mut per_domain: HashMap<&str, usize> = HashMap::new();
+        for id in &auto_ids {
+            if let Some(p) = placements.get(*id) {
+                *per_domain.entry(p.domain.as_str()).or_default() += 1;
+            }
+        }
+        let alone = per_domain.values().filter(|n| **n == 1).count();
+        if !auto_ids.is_empty() && alone * 4 >= auto_ids.len() * 3 {
+            let sep = match graph.language {
+                Language::Java => '.',
+                Language::TypeScript => '/',
+            };
+            let members: Vec<(&str, Vec<String>)> = auto_ids
+                .iter()
+                .filter_map(|id| facts.get(id).map(|f| (*id, module_path(f.sym, sep))))
+                .collect();
+            let (domains, tree) = module_domains(&members, sep, &default_spec.fallback);
+            for (id, d) in domains {
+                if let Some(p) = placements.get_mut(id) {
+                    p.domain = d;
+                }
+            }
+            domain_tree = Some(tree);
+        }
+    }
+    Classification {
+        placements,
+        domain_tree,
+    }
+}
+
+/// Module of a symbol: its package (Java) or file directory (TS).
+fn module_path(s: &Symbol, sep: char) -> Vec<String> {
+    // Java: the package (a class without one is in the default, empty module);
+    // TS: the file's directory. Split on that language's separator only.
+    let raw = match sep {
+        '.' => s.package.as_deref().unwrap_or(""),
+        _ => s.file.rsplit_once('/').map(|(d, _)| d).unwrap_or(""),
+    };
+    raw.split(sep)
+        .filter(|x| !x.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+#[derive(Default)]
+struct Trie {
+    own: usize,
+    domain: Option<String>,
+    children: BTreeMap<String, Trie>,
+}
+
+impl Trie {
+    fn total(&self) -> usize {
+        self.own + self.children.values().map(Trie::total).sum::<usize>()
+    }
+}
+
+fn convert(label: String, t: &Trie, sep: char) -> DomainNode {
+    // Collapse a chain of single-child nodes without own classes.
+    if t.own == 0
+        && t.children.len() == 1
+        && let Some((l, c)) = t.children.iter().next()
+    {
+        return convert(format!("{label}{sep}{l}"), c, sep);
+    }
+    let mut children: Vec<DomainNode> = vec![];
+    if t.own > 0 && !t.children.is_empty() {
+        let last = label.rsplit(['.', '/']).next().unwrap_or(&label);
+        children.push(DomainNode {
+            label: last.to_string(),
+            domain: t.domain.clone(),
+            size: t.own,
+            children: vec![],
+        });
+    }
+    children.extend(t.children.iter().map(|(l, c)| convert(l.clone(), c, sep)));
+    DomainNode {
+        domain: if children.is_empty() {
+            t.domain.clone()
+        } else {
+            None
+        },
+        label,
+        size: t.total(),
+        children,
+    }
+}
+
+/// Assigns each member its module domain (shortest unique suffix of the module
+/// path, lower-cased) and builds the collapsed module tree.
+fn module_domains<'a>(
+    members: &[(&'a str, Vec<String>)],
+    sep: char,
+    fallback: &str,
+) -> (Vec<(&'a str, String)>, Vec<DomainNode>) {
+    let modules: BTreeSet<&Vec<String>> = members.iter().map(|(_, m)| m).collect();
+    // Lower-cased, since domains are: `a.Utils` and `b.utils` must not collide.
+    let suffix = |m: &[String], k: usize| {
+        m[m.len().saturating_sub(k)..]
+            .join(&sep.to_string())
+            .to_lowercase()
+    };
+    let name_of = |m: &Vec<String>| -> String {
+        if m.is_empty() {
+            return fallback.to_string();
+        }
+        let k = (1..=m.len())
+            .find(|k| {
+                let mine = suffix(m, *k);
+                modules.iter().all(|o| *o == m || suffix(o, *k) != mine)
+            })
+            .unwrap_or(m.len());
+        suffix(m, k)
+    };
+    let names: HashMap<&Vec<String>, String> = modules.iter().map(|m| (*m, name_of(m))).collect();
+    let mut root = Trie::default();
+    let mut out = vec![];
+    for (id, m) in members {
+        let name = names
+            .get(m)
+            .cloned()
+            .unwrap_or_else(|| fallback.to_string());
+        let mut node = &mut root;
+        for seg in m {
+            node = node.children.entry(seg.clone()).or_default();
+        }
+        node.own += 1;
+        node.domain = Some(name.clone());
+        out.push((*id, name));
+    }
+    let mut tree: Vec<DomainNode> = root
+        .children
+        .iter()
+        .map(|(l, c)| convert(l.clone(), c, sep))
+        .collect();
+    if root.own > 0 {
+        tree.insert(
+            0,
+            DomainNode {
+                label: fallback.to_string(),
+                domain: root.domain.clone(),
+                size: root.own,
+                children: vec![],
+            },
+        );
+    }
+    (out, tree)
 }
 
 #[cfg(test)]
@@ -1165,5 +1331,113 @@ aliases = { billing = ["invoices"] }
         assert_eq!(g(SymbolKind::Class, &["issue"]), Layer::Unknown);
         assert_eq!(g(SymbolKind::Class, &["setup"]), Layer::Unknown);
         assert_eq!(g(SymbolKind::Class, &["compute"]), Layer::Unknown);
+    }
+
+    fn module_graph() -> Graph {
+        let mut syms = vec![];
+        for n in ["A", "B", "C"] {
+            syms.push(java(n, SymbolKind::Class, "org.x.model.famix.traits"));
+        }
+        for n in ["D", "E"] {
+            syms.push(java(n, SymbolKind::Class, "org.x.model.famix.entities"));
+        }
+        syms.push(java("F", SymbolKind::Class, "fr.y.ext"));
+        syms.push(java("G", SymbolKind::Class, "fr.y.ext.utils"));
+        syms.push(java("H", SymbolKind::Class, "fr.y.visitors.utils"));
+        graph(Language::Java, syms, vec![])
+    }
+
+    fn leaves(n: &DomainNode, out: &mut Vec<String>) {
+        match &n.domain {
+            Some(d) => out.push(d.clone()),
+            None => n.children.iter().for_each(|c| leaves(c, out)),
+        }
+    }
+
+    #[test]
+    fn auto_switches_to_module_domains_with_tree() {
+        let g = module_graph();
+        let mut rules = RuleSet::builtin(Language::Java).unwrap();
+        // names are all distinct: every class alone -> modules
+        let c = classify(&g, &rules);
+        assert_eq!(p(&c, "org.x.model.famix.traits.A").1, "traits");
+        assert_eq!(p(&c, "org.x.model.famix.entities.D").1, "entities");
+        assert_eq!(p(&c, "fr.y.ext.F").1, "ext");
+        assert_eq!(p(&c, "fr.y.ext.utils.G").1, "ext.utils");
+        assert_eq!(p(&c, "fr.y.visitors.utils.H").1, "visitors.utils");
+        let tree = c.domain_tree.clone().unwrap();
+        let labels: Vec<_> = tree.iter().map(|n| n.label.as_str()).collect();
+        assert_eq!(labels, ["fr.y", "org.x.model.famix"]);
+        assert_eq!(tree[1].size, 5);
+        assert_eq!(tree[1].children.len(), 2);
+        let ext = &tree[0].children[0];
+        assert_eq!(ext.label, "ext");
+        assert_eq!(ext.children.len(), 2);
+        assert_eq!(ext.children[0].domain.as_deref(), Some("ext"));
+        let mut ls = vec![];
+        tree.iter().for_each(|n| leaves(n, &mut ls));
+        let mut doms: Vec<_> = c.placements.values().map(|p| p.domain.clone()).collect();
+        doms.sort();
+        doms.dedup();
+        ls.sort();
+        assert_eq!(ls, doms);
+
+        // explicit name_root never switches
+        rules.domain.as_mut().unwrap().strategy = Strategy::NameRoot;
+        let c = classify(&g, &rules);
+        assert!(c.domain_tree.is_none());
+        assert_eq!(p(&c, "org.x.model.famix.traits.A").1, "a");
+    }
+
+    #[test]
+    fn auto_keeps_name_roots_when_not_fragmented() {
+        let mut syms = vec![];
+        for pkg in ["a.one", "a.two", "a.three"] {
+            syms.push(java("UserService", SymbolKind::Class, pkg));
+        }
+        let c = classify(
+            &graph(Language::Java, syms, vec![]),
+            &RuleSet::builtin(Language::Java).unwrap(),
+        );
+        assert!(c.domain_tree.is_none());
+        assert_eq!(p(&c, "a.one.UserService").1, "user");
+    }
+
+    #[test]
+    fn auto_switches_at_exactly_75_percent_alone() {
+        let rules = RuleSet::builtin(Language::Java).unwrap();
+        // `n` distinct names alone, plus two classes sharing one name root.
+        let run = |alone: &[&str]| {
+            let mut syms: Vec<Symbol> = alone
+                .iter()
+                .map(|n| java(n, SymbolKind::Class, &format!("p.{}", n.to_lowercase())))
+                .collect();
+            syms.push(java("Order", SymbolKind::Class, "p.q"));
+            syms.push(java("OrderService", SymbolKind::Class, "p.r"));
+            classify(&graph(Language::Java, syms, vec![]), &rules)
+        };
+        // 6 alone of 8 = 75% -> switch; 5 of 7 ~ 71% -> keep.
+        assert!(run(&["A", "B", "C", "D", "E", "F"]).domain_tree.is_some());
+        assert!(run(&["A", "B", "C", "D", "E"]).domain_tree.is_none());
+    }
+
+    #[test]
+    fn module_domains_differing_only_by_case_stay_distinct() {
+        let syms = vec![
+            java("A", SymbolKind::Class, "a.Utils"),
+            java("B", SymbolKind::Class, "b.utils"),
+            java("C", SymbolKind::Class, ""),
+        ];
+        let mut c_sym = syms;
+        c_sym[2].package = None;
+        let c = classify(
+            &graph(Language::Java, c_sym, vec![]),
+            &RuleSet::builtin(Language::Java).unwrap(),
+        );
+        assert_eq!(p(&c, "a.Utils.A").1, "a.utils");
+        assert_eq!(p(&c, "b.utils.B").1, "b.utils");
+        // no package -> default module (fallback), not the file directory
+        let tree = c.domain_tree.unwrap();
+        assert_eq!(tree[0].domain.as_deref(), Some("misc"));
     }
 }

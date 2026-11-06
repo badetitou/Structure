@@ -1,13 +1,15 @@
 import "./style.css";
 import * as api from "./api";
 import type { Impact, Matrix } from "./api";
+import { aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded } from "./domaintree";
+import type { ViewCell, ViewMatrix } from "./domaintree";
 import { CHANGED, DEFAULT_FILL, impactCellPaint } from "./cellstate";
 import { reach } from "./graph";
 import { clickCommit, isSelected, relativeDate, selectionDiff } from "./history";
 import type { Selection } from "./history";
 import { rowSvg } from "./graphsvg";
 import { layoutLanes } from "./lanes";
-import { layout } from "./layout";
+import { DENSE_STEP, PITCH, layout } from "./layout";
 import type { Mode } from "./layout";
 import { loadMode, saveMode } from "./mode";
 import { analyzeAndRecord, loadRecent, removeRecent, saveRecent } from "./recent";
@@ -139,13 +141,27 @@ const BWD = "#2563eb";
 /** Cell stroke width [unselected, selected] per mode. */
 const STROKE_NORMAL = [1, 3] as const;
 const STROKE_DENSE = [0.5, 2] as const;
+/** Height of one row of group bands above the column headers, per mode. */
+const BAND_NORMAL = 22;
+const BAND_DENSE = 14;
+
+/** `text` cut with an ellipsis to fit `width` px at about `charW` px per glyph. */
+function fitText(text: string, width: number, charW: number): string {
+  const n = Math.floor(width / charW);
+  if (text.length <= n) return text;
+  return n < 2 ? "" : `${text.slice(0, n - 1)}\u2026`;
+}
 
 function matrixView(m: Matrix) {
   let impact: Impact | null = null;
   let selected: string | null = null;
   let hovered: string | null = null;
 
-  const cellById = new Map(m.cells.map((c) => [c.id, c]));
+  // Collapsible columns along the domain tree (module domains), else one per domain.
+  const tree = m.domain_tree && m.domain_tree.length > 0 ? m.domain_tree : undefined;
+  let expanded = tree ? initialExpanded(tree) : new Set<string>();
+  let vm: ViewMatrix = aggregate(m, flatColumns(m.domains));
+  let cellById = new Map<string, ViewCell>();
   const symName = new Map<string, string>();
   for (const c of m.cells) for (const sy of c.symbols) symName.set(sy.id, sy.name);
   let mode: Mode = loadMode();
@@ -196,16 +212,34 @@ function matrixView(m: Matrix) {
 
   // SVG
   const svg = s("svg");
+  // Matrix content, shifted down below the group bands.
+  const body = s("g");
   const cellEls = new Map<string, SVGRectElement>();
   let edgeEls: { e: Matrix["edges"][number]; el: SVGPathElement }[] = [];
 
   function build() {
-    const lay = layout(mode, m.layers, m.domains, m.cells);
+    vm = aggregate(m, tree ? columns(tree, expanded) : flatColumns(m.domains));
+    cellById = new Map(vm.cells.map((c) => [c.id, c]));
+    const cols = vm.columns;
+    const lay = layout(
+      mode,
+      m.layers,
+      cols.map((c) => c.key),
+      vm.cells,
+      cols.map((c) => (c.group ? `\u25b8 ${c.label}` : c.label)),
+    );
+    const bs = tree ? bands(tree, expanded) : [];
+    const bandH = lay.detailed ? BAND_NORMAL : BAND_DENSE;
+    const top = bs.length ? (Math.max(...bs.map((b) => b.depth)) + 1) * bandH : 0;
+    const width = lay.width;
+    const height = lay.height + top;
     svg.replaceChildren();
+    body.replaceChildren();
+    body.setAttribute("transform", `translate(0 ${top})`);
     cellEls.clear();
     edgeEls = [];
     denseBtn.textContent = mode === "dense" ? "Dense: on" : "Dense: off";
-    svg.setAttribute("viewBox", `0 0 ${lay.width} ${lay.height}`);
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     // Dense mode keeps its natural pixel size: stretching it would blow up the
     // headers and borders instead of showing more cells.
     svg.classList.toggle("dense", !lay.detailed);
@@ -213,8 +247,8 @@ function matrixView(m: Matrix) {
       svg.removeAttribute("width");
       svg.removeAttribute("height");
     } else {
-      svg.setAttribute("width", String(lay.width));
-      svg.setAttribute("height", String(lay.height));
+      svg.setAttribute("width", String(width));
+      svg.setAttribute("height", String(height));
     }
     const defs = s("defs");
     for (const [id, color] of [["a-def", "#999"], ["a-fwd", FWD], ["a-bwd", BWD], ["a-imp", CHANGED]]) {
@@ -222,11 +256,42 @@ function matrixView(m: Matrix) {
       mk.append(s("path", { d: "M0,0 L10,5 L0,10 z", fill: color }));
       defs.append(mk);
     }
-    svg.append(defs);
+    svg.append(defs, body);
 
     const fs: Record<string, number> = lay.detailed ? {} : { "font-size": 10 };
-    for (const l of lay.domainLabels) {
+    // Group bands: click collapses the group back into one column.
+    const pitch = lay.detailed ? PITCH : DENSE_STEP;
+    for (const b of bs) {
+      const l0 = lay.domainLabels[b.start];
+      if (!l0) continue;
+      const x = l0.x - pitch / 2;
+      const w = b.span * pitch;
+      const g = s("g");
+      g.style.cursor = "pointer";
+      const r = s("rect", { x: x + 1, y: b.depth * bandH + 1, width: w - 2, height: bandH - 2, rx: 3, fill: "#e2e8f0", stroke: "#94a3b8" });
+      const t = s("text", { x: x + w / 2, y: b.depth * bandH + bandH / 2 + 4, "text-anchor": "middle", "font-weight": "bold", ...fs });
+      t.textContent = fitText(`\u25be ${b.label}`, w - 6, lay.detailed ? 8 : 6);
+      t.style.pointerEvents = "none";
+      const tip = s("title");
+      tip.textContent = `Collapse ${b.label}`;
+      g.append(r, t, tip);
+      g.addEventListener("click", () => {
+        expanded = new Set(expanded);
+        expanded.delete(b.key);
+        rebuild();
+      });
+      svg.append(g);
+    }
+    lay.domainLabels.forEach((l, i) => {
+      const col = cols[i];
       const t = s("text", { x: l.x, y: l.y, "font-weight": "bold", ...fs });
+      if (col?.group) {
+        t.style.cursor = "pointer";
+        t.addEventListener("click", () => {
+          expanded = new Set(expanded).add(col.key);
+          rebuild();
+        });
+      }
       if (lay.rotateDomains) {
         t.setAttribute("transform", `rotate(-90 ${l.x} ${l.y})`);
         // Centre the glyphs on the column, not their baseline.
@@ -234,18 +299,18 @@ function matrixView(m: Matrix) {
       }
       else t.setAttribute("text-anchor", "middle");
       t.textContent = l.text;
-      svg.append(t);
-    }
+      body.append(t);
+    });
     for (const l of lay.layerLabels) {
       const t = s("text", { x: l.x, y: l.y, "font-weight": "bold", ...fs });
       t.textContent = l.text;
-      svg.append(t);
+      body.append(t);
     }
     const tileById = new Map(lay.tiles.flatMap((t) => (t.id ? [[t.id, t] as const] : [])));
     // Empty slots
     for (const t of lay.tiles) {
       if (t.id) continue;
-      svg.append(
+      body.append(
         lay.detailed
           ? s("rect", { x: t.x, y: t.y, width: t.w, height: t.h, fill: "none", stroke: "#ddd", "stroke-dasharray": "3 3", opacity: 0.6 })
           : s("rect", { x: t.x + 0.5, y: t.y + 0.5, width: t.w - 1, height: t.h - 1, fill: "#eef0f3" }),
@@ -253,7 +318,7 @@ function matrixView(m: Matrix) {
     }
 
     // Edges (under cells), normal mode only
-    for (const e of lay.detailed ? m.edges : []) {
+    for (const e of lay.detailed ? vm.edges : []) {
       const a = tileById.get(e.from);
       const b = tileById.get(e.to);
       if (!a || !b) continue;
@@ -274,12 +339,12 @@ function matrixView(m: Matrix) {
       const cy = (sy + ey) / 2 + (dx / len) * bend;
       const el = s("path", { d: `M${sx},${sy} Q${cx},${cy} ${ex},${ey}`, fill: "none" });
       el.style.pointerEvents = "none";
-      svg.append(el);
+      body.append(el);
       edgeEls.push({ e, el });
     }
 
     // Cells
-    for (const c of m.cells) {
+    for (const c of vm.cells) {
       const t = tileById.get(c.id);
       if (!t) continue;
       const g = s("g");
@@ -287,7 +352,7 @@ function matrixView(m: Matrix) {
         ? s("rect", { x: t.x, y: t.y, width: t.w, height: t.h, rx: 3, stroke: "#333", "stroke-width": 1 })
         : s("rect", { x: t.x + 0.5, y: t.y + 0.5, width: t.w - 1, height: t.h - 1, stroke: "#333" });
       r.style.cursor = "pointer";
-      const label = `${c.layer}/${c.domain} (${c.size})`;
+      const label = `${c.layer}/${c.label} (${c.size})`;
       if (lay.detailed) {
         const tx = s("text", { x: t.x + t.w / 2, y: t.y + t.h + 13, "text-anchor": "middle" });
         tx.textContent = label;
@@ -312,10 +377,17 @@ function matrixView(m: Matrix) {
         paint();
         renderPanel();
       });
-      svg.append(g);
+      body.append(g);
       cellEls.set(c.id, r);
     }
     paint();
+  }
+  // Expand/collapse changes the cell ids: drop the selection and hover.
+  function rebuild() {
+    selected = null;
+    hovered = null;
+    build();
+    renderPanel();
   }
   denseBtn.onclick = () => {
     mode = mode === "dense" ? "normal" : "dense";
@@ -334,13 +406,12 @@ function matrixView(m: Matrix) {
   build();
 
   function paint() {
-    const impactById = new Map(impact?.impacted_cells.map((x) => [x.id, x.distance]));
-    const changed = new Set(impact?.changed_cells ?? []);
+    const { changed, impacted: impactById } = aggregateImpact(impact, vm.cellMap);
     let fwd = new Set<string>();
     let bwd = new Set<string>();
     if (hovered) {
-      fwd = reach(hovered, m.edges, "forward");
-      bwd = reach(hovered, m.edges, "backward");
+      fwd = reach(hovered, vm.edges, "forward");
+      bwd = reach(hovered, vm.edges, "backward");
     }
     for (const [id, r] of cellEls) {
       let fill = DEFAULT_FILL;
@@ -362,7 +433,7 @@ function matrixView(m: Matrix) {
     // Draw the selected cell last so its thicker outline is not covered by
     // neighbours (tiles touch in dense mode).
     const selG = selected ? cellEls.get(selected)?.parentNode : null;
-    if (selG && svg.lastChild !== (selG as Node)) svg.append(selG);
+    if (selG && body.lastChild !== (selG as Node)) body.append(selG);
     for (const { e, el } of edgeEls) {
       let color = "#999";
       let marker = "a-def";
@@ -416,7 +487,7 @@ function matrixView(m: Matrix) {
     const c = selected ? cellById.get(selected) : undefined;
     if (c) {
       nodes.push(
-        h("h3", { textContent: `${c.layer}/${c.domain} — ${c.symbols.length} symbols` }),
+        h("h3", { textContent: `${c.layer}/${c.label} — ${c.symbols.length} symbols` }),
         symbolList(c.symbols.map((x) => ({ name: x.name, sub: x.file }))),
       );
     } else if (!impact) {
