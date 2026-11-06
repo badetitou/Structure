@@ -65,6 +65,16 @@ pub struct DomainSpec {
     pub strategy: Strategy,
     #[serde(default)]
     pub strip_suffixes: Vec<String>,
+    /// Role prefixes removed from the name (after the suffix), only at a word
+    /// boundary: `MyBatisArticle` -> `Article`, but `Defaulted` is kept.
+    #[serde(default)]
+    pub strip_prefixes: Vec<String>,
+    /// Applies wherever the name root is used (the `name_root` strategy and the
+    /// fallback of the segment strategies): `Comments` -> `Comment`,
+    /// `Categories` -> `Category`, `Boxes` -> `Box`. Common singular nouns in
+    /// `s` (`News`, `Series`, `Status`, `Address`, ...) are kept.
+    #[serde(default)]
+    pub singularize: bool,
     #[serde(default)]
     pub after: Option<String>,
     #[serde(default)]
@@ -85,6 +95,8 @@ impl Default for DomainSpec {
         DomainSpec {
             strategy: Strategy::NameRoot,
             strip_suffixes: vec![],
+            strip_prefixes: vec![],
+            singularize: false,
             after: None,
             skip_segments: vec![],
             aliases: BTreeMap::new(),
@@ -197,6 +209,51 @@ fn strip_suffix<'a>(name: &'a str, suffixes: &[String]) -> &'a str {
     name
 }
 
+fn strip_prefix<'a>(name: &'a str, prefixes: &[String]) -> &'a str {
+    for p in prefixes {
+        if let Some(rest) = name.strip_prefix(p.as_str())
+            && rest.chars().next().is_some_and(char::is_uppercase)
+        {
+            return rest;
+        }
+    }
+    name
+}
+
+/// Singular nouns that end in `s`; matched on the last camel-case word.
+const SINGULAR_S: [&str; 11] = [
+    "news", "alias", "canvas", "atlas", "bias", "series", "lens", "gas", "status", "address",
+    "analysis",
+];
+
+/// Naive English singular of the last word: `ies` -> `y` (stem > 2 letters),
+/// `es` after `x`/`ch`/`sh`, else a trailing `s` (not after `s`, `u`, `i`).
+fn singular(name: &str) -> String {
+    let lower = name.to_lowercase();
+    let at_word = |w: &str| {
+        lower.ends_with(w)
+            && (name.len() == w.len()
+                || name[name.len() - w.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_uppercase))
+    };
+    if SINGULAR_S.iter().any(|w| at_word(w)) {
+        return name.to_string();
+    }
+    let cut = |n: usize| name[..name.len() - n].to_string();
+    if lower.ends_with("ies") && name.len() - 3 > 2 {
+        return format!("{}y", cut(3));
+    }
+    if ["xes", "ches", "shes"].iter().any(|e| lower.ends_with(e)) {
+        return cut(2);
+    }
+    match lower.strip_suffix('s').and_then(|r| r.chars().last()) {
+        Some(prev) if name.len() > 3 && !matches!(prev, 's' | 'u' | 'i') => cut(1),
+        _ => name.to_string(),
+    }
+}
+
 /// First non-skipped segment of `s` (split on `sep`) after `after`.
 fn segment(s: &str, sep: char, after: Option<&str>, skip: &[String]) -> Option<String> {
     let rest = match after {
@@ -210,7 +267,15 @@ fn segment(s: &str, sep: char, after: Option<&str>, skip: &[String]) -> Option<S
 }
 
 fn domain_of(spec: &DomainSpec, s: &Symbol) -> String {
-    let name_root = || strip_suffix(&s.name, &spec.strip_suffixes).to_string();
+    let name_root = || {
+        let root = strip_suffix(&s.name, &spec.strip_suffixes);
+        let root = strip_prefix(root, &spec.strip_prefixes);
+        if spec.singularize {
+            singular(root)
+        } else {
+            root.to_string()
+        }
+    };
     let after = spec.after.as_deref();
     let raw = match spec.strategy {
         Strategy::NameRoot => Some(name_root()),
@@ -913,6 +978,175 @@ aliases = { billing = ["invoices"] }
         // no package at all
         let s = sym("Q", SymbolKind::Class, "", "Q.java", None);
         assert_eq!(one(rs, s).domain, "misc");
+    }
+
+    #[test]
+    fn spring_ddd_rules() {
+        let rs = RuleSet::builtin(Language::Java).unwrap();
+        let base = "io.acme";
+        let mut with_logic = java(
+            "Article",
+            SymbolKind::Class,
+            &format!("{base}.core.article"),
+        );
+        let work = method(&with_logic, "publish");
+        with_logic.annotations = vec![];
+        let syms = vec![
+            with_logic,
+            work,
+            java(
+                "ArticleRepository",
+                SymbolKind::Interface,
+                &format!("{base}.core.article"),
+            ),
+            java("OrderRepository", SymbolKind::Interface, "x.domain"),
+            ann(
+                java(
+                    "ArticleDatafetcher",
+                    SymbolKind::Class,
+                    &format!("{base}.graphql"),
+                ),
+                &["DgsComponent"],
+            ),
+            java(
+                "JwtService",
+                SymbolKind::Interface,
+                &format!("{base}.core.service"),
+            ),
+            java("Clock", SymbolKind::Class, &format!("{base}.core.service")),
+            java("Encoder", SymbolKind::Class, &format!("{base}.core")),
+            java("Score", SymbolKind::Enum, &format!("{base}.core.user")),
+            java(
+                "FooException",
+                SymbolKind::Class,
+                &format!("{base}.core.exception"),
+            ),
+            java(
+                "StringUtils",
+                SymbolKind::Class,
+                &format!("{base}.core.util"),
+            ),
+            java(
+                "StringUtil",
+                SymbolKind::Class,
+                &format!("{base}.core.util"),
+            ),
+            java("CoreConfig", SymbolKind::Class, &format!("{base}.core")),
+            java(
+                "CoreConfiguration",
+                SymbolKind::Class,
+                &format!("{base}.core"),
+            ),
+            ann(
+                java("UserMutation", SymbolKind::Class, "io.spring.graphql"),
+                &["DgsComponent"],
+            ),
+        ];
+        let c = classify(&graph(Language::Java, syms, vec![]), &rs);
+        let l = |id: &str| c.placements[id].layer;
+        assert_eq!(l("io.acme.core.article.Article"), Layer::Model);
+        assert_eq!(
+            l("io.acme.core.article.ArticleRepository"),
+            Layer::Persistence
+        );
+        // interface named *Repository wins over the `.domain.` model package
+        assert_eq!(l("x.domain.OrderRepository"), Layer::Persistence);
+        assert_eq!(l("io.acme.graphql.ArticleDatafetcher"), Layer::Entry);
+        // `core.service` stays business; the core rule only takes classes
+        assert_eq!(l("io.acme.core.service.JwtService"), Layer::Business);
+        assert_eq!(l("io.acme.core.service.Clock"), Layer::Business);
+        assert_eq!(l("io.acme.core.Encoder"), Layer::Model);
+        assert_eq!(l("io.acme.core.user.Score"), Layer::Unknown);
+        for n in [
+            "exception.FooException",
+            "util.StringUtils",
+            "util.StringUtil",
+            "CoreConfig",
+            "CoreConfiguration",
+        ] {
+            assert_eq!(l(&format!("io.acme.core.{n}")), Layer::Util, "{n}");
+        }
+        assert_eq!(l("io.spring.graphql.UserMutation"), Layer::Entry);
+    }
+
+    #[test]
+    fn role_suffixes_prefixes_and_plurals() {
+        let rs = RuleSet::builtin(Language::Java).unwrap();
+        let names = [
+            ("ArticleQueryService", "article"),
+            ("ArticleCommandService", "article"),
+            ("UserReadService", "user"),
+            ("CommentsApi", "comment"),
+            ("ArticleApi", "article"),
+            ("ArticleDatafetcher", "article"),
+            ("UserMutation", "user"),
+            ("MyBatisArticleRepository", "article"),
+            ("DefaultJwtService", "jwt"),
+            ("JpaOrderRepository", "order"),
+            // not a word boundary / guarded plural / whole-name: kept
+            ("DefaultsService", "default"),
+            ("Defaulted", "defaulted"),
+            ("Address", "address"),
+            ("Status", "status"),
+            ("Api", "api"),
+            ("Is", "is"),
+        ];
+        let syms: Vec<Symbol> = names
+            .iter()
+            .map(|(n, _)| java(n, SymbolKind::Class, "x"))
+            .collect();
+        let c = classify(&graph(Language::Java, syms, vec![]), &rs);
+        for (n, d) in names {
+            assert_eq!(c.placements[&format!("x.{n}")].domain, d, "{n}");
+        }
+    }
+
+    #[test]
+    fn strip_prefix_and_singular_helpers() {
+        let pre = vec!["MyBatis".to_string()];
+        assert_eq!(strip_prefix("MyBatisFoo", &pre), "Foo");
+        assert_eq!(strip_prefix("MyBatis", &pre), "MyBatis");
+        assert_eq!(strip_prefix("MyBatisfoo", &pre), "MyBatisfoo");
+        assert_eq!(singular("Comments"), "Comment");
+        assert_eq!(singular("Class"), "Class");
+        assert_eq!(singular("Bus"), "Bus");
+        assert_eq!(singular("Ids"), "Ids");
+        assert_eq!(singular("Id"), "Id");
+        for (i, o) in [
+            ("News", "News"),
+            ("Alias", "Alias"),
+            ("Series", "Series"),
+            ("Status", "Status"),
+            ("Address", "Address"),
+            ("UserNews", "UserNews"),
+            ("Categories", "Category"),
+            ("Ies", "Ies"),
+            ("Boxes", "Box"),
+            ("Searches", "Search"),
+            ("Dishes", "Dish"),
+            ("Articles", "Article"),
+            ("Comments", "Comment"),
+        ] {
+            assert_eq!(singular(i), o, "{i}");
+        }
+        // opt-in: default spec leaves plurals and prefixes alone
+        let s = java("MyBatisUsers", SymbolKind::Class, "x");
+        assert_eq!(domain_of(&DomainSpec::default(), &s), "mybatisusers");
+    }
+
+    #[test]
+    fn user_domain_spec_without_new_fields_parses() {
+        let rs = RuleSet::from_toml_str(
+            "[domain]\nstrategy = \"name_root\"\nstrip_suffixes = [\"Service\"]\n",
+        )
+        .unwrap();
+        let spec = rs.domain.unwrap();
+        assert!(!spec.singularize);
+        assert!(spec.strip_prefixes.is_empty());
+        assert_eq!(
+            domain_of(&spec, &java("Users", SymbolKind::Class, "x")),
+            "users"
+        );
     }
 
     #[test]

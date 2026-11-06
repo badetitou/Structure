@@ -1,9 +1,7 @@
 # Hand-written oracle for gothinkster/spring-boot-realworld-example-app @ ee17e31 (Gradle, Java 11).
-# Classes the rules and the DTO fallback cannot place (core.article.Article, core.user.User,
-# core.article.ArticleRepository, graphql @DgsComponent classes) are left out rather than weakened.
+# Generic rules and the DTO fallback place every class below (no project-specific rules).
 # Comment and ArticleData are placed (model) by the DTO fallback, not by a rule.
-# Domains are informational only (not asserted by the e2e test): name_root cannot reach several
-# of them (ArticleApi, ...QueryService).
+# Domains are informational only (not asserted by the e2e test).
 
 [[class]]
 name = "io.spring.api.ArticleApi"
@@ -83,6 +81,31 @@ domain = "comment"
 [[class]]
 name = "io.spring.infrastructure.mybatis.readservice.UserReadService"
 layer = "persistence"
+domain = "user"
+
+[[class]]
+name = "io.spring.core.article.Article"
+layer = "model"
+domain = "article"
+
+[[class]]
+name = "io.spring.core.user.User"
+layer = "model"
+domain = "user"
+
+[[class]]
+name = "io.spring.core.article.ArticleRepository"
+layer = "persistence"
+domain = "article"
+
+[[class]]
+name = "io.spring.graphql.ArticleDatafetcher"
+layer = "entry"
+domain = "article"
+
+[[class]]
+name = "io.spring.graphql.UserMutation"
+layer = "entry"
 domain = "user"
 
 # Class-level Call/Uses chains read from field types (constructor injection).

@@ -13,7 +13,7 @@ name_suffix = ["ActionBean"]
 # --- Spring ---
 [[rule]]
 layer = "entry"
-any_annotation = ["RestController", "Controller"]
+any_annotation = ["RestController", "Controller", "DgsComponent"]
 
 [[rule]]
 layer = "business"
@@ -58,6 +58,12 @@ name_suffix = ["Mapper"]
 layer = "persistence"
 any_supertype = ["JpaRepository", "CrudRepository", "PagingAndSortingRepository", "ListCrudRepository"]
 
+# By convention an interface named *Repository is a persistence port (DDD / Spring).
+[[rule]]
+layer = "persistence"
+kind = ["interface"]
+name_suffix = ["Repository"]
+
 # --- Package conventions ---
 [[rule]]
 layer = "model"
@@ -79,6 +85,20 @@ package_contains = [".mapper.", ".repository.", ".dao."]
 layer = "util"
 any_annotation = ["Component"]
 
+# Technical classes in a `core` package are not domain model; first match wins,
+# so this must stay above the model rule below.
+[[rule]]
+layer = "util"
+package_contains = [".core."]
+name_suffix = ["Exception", "Utils", "Util", "Configuration", "Config"]
+
+# Plain classes in a `core` package (hexagonal / DDD core) are the domain model.
+# Last package rule: role packages (`core.service` stays business) and annotations win.
+[[rule]]
+layer = "model"
+kind = ["class"]
+package_contains = [".core."]
+
 # --- Sinks: classes talking to a database API ---
 [[rule]]
 layer = "persistence"
@@ -86,7 +106,10 @@ uses = ["JdbcTemplate", "EntityManager", "SqlSession", "SqlSessionTemplate"]
 
 [domain]
 strategy = "name_root"
-strip_suffixes = ["ActionBean", "ServiceImpl", "Service", "Mapper", "Repository", "Dao", "DAO", "Controller", "Component"]
+# Longest first: only the first matching suffix is stripped.
+strip_suffixes = ["QueryService", "CommandService", "ReadService", "ServiceImpl", "ActionBean", "Datafetcher", "Controller", "Repository", "Component", "Mutation", "Service", "Mapper", "Api", "Dao", "DAO"]
+strip_prefixes = ["MyBatis", "Default", "Jpa", "Abstract"]
+singularize = true
 fallback = "misc"
 
 [domain.aliases]
