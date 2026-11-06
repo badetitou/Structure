@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Context;
+use protobuf::CodedInputStream;
+#[cfg(test)]
 use protobuf::Message;
 use scip::types::{self, descriptor::Suffix};
 
@@ -77,24 +79,47 @@ impl ScipIndex {
 }
 
 pub fn load(path: &Path) -> anyhow::Result<ScipIndex> {
-    let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    from_bytes(&bytes).with_context(|| format!("decoding {}", path.display()))
+    let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let mut reader = std::io::BufReader::with_capacity(1 << 20, file);
+    let mut input = CodedInputStream::new(&mut reader);
+    // Documents are decoded and converted one at a time, so the raw protobuf
+    // never sits in memory next to the model.
+    decode(&mut input).with_context(|| format!("decoding {}", path.display()))
 }
 
 pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<ScipIndex> {
-    let index = types::Index::parse_from_bytes(bytes).context("invalid SCIP protobuf")?;
+    decode(&mut CodedInputStream::from_bytes(bytes))
+}
+
+/// Streams the top-level `Index` message (`documents` = 2,
+/// `external_symbols` = 3; metadata and unknown fields are skipped).
+fn decode(input: &mut CodedInputStream) -> anyhow::Result<ScipIndex> {
     let mut out = ScipIndex::default();
-    for doc in &index.documents {
-        for info in &doc.symbols {
-            add_symbol(&mut out.symbols, info);
+    let mut external: Vec<types::SymbolInformation> = Vec::new();
+    while let Some(tag) = input
+        .read_raw_tag_or_eof()
+        .context("invalid SCIP protobuf")?
+    {
+        match tag >> 3 {
+            2 => {
+                let doc: types::Document = input.read_message().context("invalid SCIP protobuf")?;
+                for info in &doc.symbols {
+                    add_symbol(&mut out.symbols, info);
+                }
+                out.documents.push(ScipDocument {
+                    relative_path: doc.relative_path,
+                    language: doc.language,
+                    occurrences: doc.occurrences.iter().filter_map(convert_occ).collect(),
+                });
+            }
+            3 => external.push(input.read_message().context("invalid SCIP protobuf")?),
+            _ => {
+                let wt = protobuf::rt::WireType::new(tag & 7).context("invalid SCIP protobuf")?;
+                input.skip_field(wt).context("invalid SCIP protobuf")?;
+            }
         }
-        out.documents.push(ScipDocument {
-            relative_path: doc.relative_path.clone(),
-            language: doc.language.clone(),
-            occurrences: doc.occurrences.iter().filter_map(convert_occ).collect(),
-        });
     }
-    for info in &index.external_symbols {
+    for info in &external {
         add_symbol(&mut out.symbols, info);
     }
     Ok(out)
