@@ -12,6 +12,11 @@ use tauri::{AppHandle, Emitter, Manager};
 #[derive(Default)]
 pub struct Cache(pub Mutex<HashMap<String, Analysis>>);
 
+/// Serialises snapshot analyses: concurrent checkouts/indexing of the same
+/// snapshot would race.
+#[derive(Default)]
+pub struct SnapshotLock(pub Mutex<()>);
+
 fn emit_progress(app: &AppHandle, step: &str, pct: u8) {
     emit_progress_event(
         app,
@@ -49,6 +54,15 @@ fn run_analyze(app: &AppHandle, path: &Path, key: &str, opts: &Options) -> Resul
     Ok(matrix)
 }
 
+/// Display form of a revision: 7 chars for a full hex SHA, else as given.
+fn short_rev(rev: &str) -> &str {
+    if rev.len() >= 40 && rev.bytes().all(|b| b.is_ascii_hexdigit()) {
+        &rev[..7]
+    } else {
+        rev
+    }
+}
+
 #[tauri::command]
 pub async fn analyze(app: AppHandle, path: String) -> Result<Matrix, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -69,6 +83,25 @@ pub async fn impact(
 ) -> Result<Impact, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (p, key) = canonical(&path)?;
+        if let Some(h) = head.as_deref() {
+            // A commit is analysed in its own cached checkout; the working-tree
+            // entry in `Cache` is left alone. Re-runs are cheap because the
+            // core caches the snapshot and its index.scip (no extra in-memory
+            // cache here).
+            emit_progress(&app, &format!("checking out {}", short_rev(h)), 2);
+            let opts = Options::default();
+            let state = app.state::<SnapshotLock>();
+            let _guard = state
+                .0
+                .lock()
+                .map_err(|_| "internal error: snapshot lock poisoned".to_string())?;
+            let result = pipeline::impact_at(&p, base.as_deref(), Some(h), &opts, &|pr| {
+                emit_progress_event(&app, pr)
+            })
+            .map_err(|e| format!("{e:#}"))?;
+            emit_progress(&app, "done", 100);
+            return Ok(result);
+        }
         // Always re-parse: the user typically edits files between Analyze and
         // Show impact, and symbol ranges must match the diff. Re-parsing takes
         // well under a second; the (possibly stale) index is reused.
@@ -110,6 +143,13 @@ pub async fn history(path: String, limit: Option<u32>) -> Result<History, String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn short_rev_shortens_only_full_shas() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(short_rev(sha), "0123456");
+        assert_eq!(short_rev("main"), "main");
+    }
 
     #[test]
     fn canonical_reports_missing_path() {

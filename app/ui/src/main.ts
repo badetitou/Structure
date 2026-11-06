@@ -1,3 +1,4 @@
+import { RequestGuard, shownMatrix } from "./matrixsel";
 import "./style.css";
 import * as api from "./api";
 import type { Impact, Matrix } from "./api";
@@ -152,18 +153,38 @@ function fitText(text: string, width: number, charW: number): string {
   return n < 2 ? "" : `${text.slice(0, n - 1)}\u2026`;
 }
 
-function matrixView(m: Matrix) {
+function matrixView(workMatrix: Matrix) {
+  let m = workMatrix;
   let impact: Impact | null = null;
   let selected: string | null = null;
   let hovered: string | null = null;
 
   // Collapsible columns along the domain tree (module domains), else one per domain.
-  const tree = m.domain_tree && m.domain_tree.length > 0 ? m.domain_tree : undefined;
+  const treeOf = (mx: Matrix) =>
+    mx.domain_tree && mx.domain_tree.length > 0 ? mx.domain_tree : undefined;
+  let tree = treeOf(m);
   let expanded = tree ? initialExpanded(tree) : new Set<string>();
   let vm: ViewMatrix = aggregate(m, flatColumns(m.domains));
+  // Rebuilt from `vm` by build().
   let cellById = new Map<string, ViewCell>();
-  const symName = new Map<string, string>();
-  for (const c of m.cells) for (const sy of c.symbols) symName.set(sy.id, sy.name);
+  let symName = new Map<string, string>();
+  const indexSymbols = () => {
+    symName = new Map<string, string>();
+    for (const c of m.cells) for (const sy of c.symbols) symName.set(sy.id, sy.name);
+  };
+  indexSymbols();
+  /** Show the matrix `impact` carries (snapshot) or the working-tree one. */
+  function showMatrixFor(imp: Impact | null) {
+    const next = shownMatrix(workMatrix, imp);
+    if (next === m) return;
+    m = next;
+    // The domain tree can differ between commits: start from its default expansion.
+    tree = treeOf(m);
+    expanded = tree ? initialExpanded(tree) : new Set<string>();
+    indexSymbols();
+    selected = null;
+    build();
+  }
   let mode: Mode = loadMode();
 
   // Header
@@ -566,26 +587,33 @@ function matrixView(m: Matrix) {
     renderHistory();
     void runImpact(baseIn.value.trim() || null, headIn.value.trim() || null);
   };
+  const guard = new RequestGuard();
   async function runImpact(base: string | null, head: string | null) {
     msg.textContent = "";
     showBtn.disabled = true;
+    const req = guard.begin();
     try {
-      impact = await api.impact(projectPath, base, head);
+      const res = await api.impact(projectPath, base, head);
+      if (!guard.isCurrent(req)) return; // superseded or cleared meanwhile
+      impact = res;
+      showMatrixFor(impact);
       showWarnings(impact.warnings ?? m.warnings ?? []);
       clearBtn.disabled = false;
       hovered = null;
       paint();
       renderPanel();
     } catch (e) {
-      msg.textContent = `Impact failed: ${String(e)}`;
+      if (guard.isCurrent(req)) msg.textContent = `Impact failed: ${String(e)}`;
     } finally {
       showBtn.disabled = false;
     }
   }
   clearBtn.onclick = () => {
+    guard.invalidate();
     impact = null;
     histSel = null;
     renderHistory();
+    showMatrixFor(null);
     showWarnings(m.warnings ?? []);
     clearBtn.disabled = true;
     paint();
