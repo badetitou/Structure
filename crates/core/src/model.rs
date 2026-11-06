@@ -77,9 +77,17 @@ pub struct Matrix {
     /// stale index...). Omitted from JSON when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    /// Id of the cached analysis this matrix comes from, set by the app so
+    /// `cell_symbols` can detect a replaced analysis; omitted when 0.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub generation: u64,
     /// Module tree whose leaves are `domains`; omitted when domains are name roots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain_tree: Option<Vec<DomainNode>>,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -69,6 +69,8 @@ export interface Matrix {
   cells: Cell[];
   edges: CellEdge[];
   stats: Stats;
+  /** Id of the cached analysis (pass to `cellSymbols`); set by the app. */
+  generation?: number;
   /** Present only when non-empty (indexing failed, stale index...). */
   warnings?: string[];
 }
@@ -181,6 +183,7 @@ export async function impact(
 export async function cellSymbols(
   path: string,
   head: string | null,
+  generation: number,
   cells: string[],
   offset: number,
   limit: number,
@@ -190,7 +193,7 @@ export async function cellSymbols(
     const list = cells.flatMap((c) => all[c] ?? []);
     return { total: list.length, offset, symbols: list.slice(offset, offset + limit) };
   }
-  return invoke<CellSymbols>("cell_symbols", { path, head, cells, offset, limit });
+  return invoke<CellSymbols>("cell_symbols", { path, head, generation, cells, offset, limit });
 }
 
 export async function history(path: string, limit?: number): Promise<History> {

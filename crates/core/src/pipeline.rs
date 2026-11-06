@@ -871,6 +871,22 @@ pub fn resolve_base(root: &Path, base: &str) -> anyhow::Result<String> {
     Ok(sha.trim().to_string())
 }
 
+/// Full SHA of the commit `rev` names (branch, short SHA, `HEAD~2`...), so
+/// callers can key caches on one identity.
+pub fn resolve_commit(root: &Path, rev: &str) -> anyhow::Result<String> {
+    let sha = impact::git(
+        root,
+        &[
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            &format!("{rev}^{{commit}}"),
+        ],
+    )
+    .with_context(|| format!("unknown revision: {rev}"))?;
+    Ok(sha.trim().to_string())
+}
+
 /// Snapshot of `head` (see [`snapshot`]) and its analysis. A commit never
 /// changes, so callers may cache the result per (project, head).
 pub fn analyze_snapshot(
@@ -1258,6 +1274,16 @@ mod tests {
         // c2 only touches the new comment line: no symbol changed.
         let imp = impact_at(&root, Some(&c1), Some(&c2), &no_scip(), &|_| {}).unwrap();
         assert!(imp.changed_symbols.is_empty(), "{imp:?}");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn resolve_commit_gives_full_sha() {
+        let (repo, c1, _) = temp_repo("resolve");
+        let root = repo.join("app");
+        assert_eq!(resolve_commit(&root, &c1[..8]).unwrap(), c1);
+        assert_eq!(resolve_commit(&root, "HEAD~1").unwrap(), c1);
+        assert!(resolve_commit(&root, "nope").is_err());
         let _ = std::fs::remove_dir_all(&repo);
     }
 
