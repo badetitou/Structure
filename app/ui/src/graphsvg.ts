@@ -1,3 +1,4 @@
+import { setSvgAttr } from "./svgattr";
 import type { LaneRow, Segment } from "./lanes";
 
 export const ROW_H = 40;
@@ -9,7 +10,7 @@ const x = (lane: number) => lane * LANE_W + LANE_W / 2;
 
 function el(tag: string, attrs: Record<string, string | number>): SVGElement {
   const e = document.createElementNS(SVG, tag);
-  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+  for (const [k, v] of Object.entries(attrs)) setSvgAttr(e, k, v);
   return e;
 }
 
@@ -39,7 +40,7 @@ export function rowSvg(
   }
   if (opts.lineAbove) svg.append(link(x(lane), 0, x(lane), MID, opts.lineAbove));
   if (opts.lineBelow) svg.append(link(x(lane), MID, x(lane), ROW_H, opts.lineBelow));
-  const color = row?.color ?? opts.lineBelow ?? "#999";
+  const color = row?.color ?? opts.lineBelow ?? "var(--edge)";
   svg.append(
     el("circle", {
       cx: x(lane),
@@ -47,7 +48,7 @@ export function rowSvg(
       r: 4,
       stroke: color,
       "stroke-width": 2,
-      fill: opts.hollow ? "#fff" : color,
+      fill: opts.hollow ? "var(--card)" : color,
     }),
   );
   return svg;
