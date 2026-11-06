@@ -30,6 +30,7 @@ if [ "${FORCE:-0}" = 1 ] || [ ! -f "$J/index.scip" ]; then
   mkdir -p "$J/.mvn"
   grep -q -- "--settings=" "$J/.mvn/maven.config" 2>/dev/null ||
     echo "--settings=$ROOT/scripts/maven-settings.xml" >> "$J/.mvn/maven.config"
+  grep -q -- "-DskipITs" "$J/.mvn/maven.config" || printf -- "-DskipTests=true\n-DskipITs=true\n" >> "$J/.mvn/maven.config"
   (cd "$J" && cs launch "com.sourcegraph:scip-java_2.13:$SCIP_JAVA_VERSION" -- index --output index.scip)
 fi
 report java "$J/index.scip"
