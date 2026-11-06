@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::ir::{Graph, Language};
 use crate::ts;
+use structure_ir::ir::{Graph, Language};
 
 use super::ts_args::{node_heap_mb, node_options, ts_index_args};
 use super::{LanguageFrontend, find_on_path};
@@ -50,16 +50,5 @@ impl LanguageFrontend for TypeScriptFrontend {
 
     fn parse_project(&self, root: &Path) -> anyhow::Result<Graph> {
         ts::parse_project(root)
-    }
-
-    fn default_rules(&self) -> (&'static str, &'static str) {
-        (
-            include_str!("../../../../rules/typescript.toml"),
-            "rules/typescript.toml",
-        )
-    }
-
-    fn module_separator(&self) -> char {
-        '/'
     }
 }

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use structure_core::impact::{FileChange, changed_lines};
+use structure_git::impact::{FileChange, changed_lines};
 
 fn git(dir: &Path, args: &[&str]) -> String {
     let o = Command::new("git")

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/cli"]
+members = ["crates/ir", "crates/lang-java", "crates/lang-ts", "crates/scip", "crates/classify", "crates/git", "crates/core", "crates/cli"]
 exclude = ["app"]
 
 [workspace.package]

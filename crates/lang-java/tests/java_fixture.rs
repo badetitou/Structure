@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use structure_core::java::parse_project;
+use structure_lang_java::parse_project;
 
 #[test]
 fn jpetstore_symbols() {
@@ -59,6 +59,6 @@ fn jpetstore_symbols() {
     assert!(g.edges.iter().any(|e| {
         e.from == svc.id
             && e.to == "org.mybatis.jpetstore.mapper.AccountMapper"
-            && e.kind == structure_core::ir::EdgeKind::Uses
+            && e.kind == structure_ir::ir::EdgeKind::Uses
     }));
 }

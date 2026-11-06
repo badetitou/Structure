@@ -1,14 +1,12 @@
-//! Structure core library: shared contracts and analysis pipeline.
+//! Structure core library: the analysis pipeline over the focused crates.
+//! The per-concern modules are re-exported here so consumers see one API.
 
-pub mod classify;
-pub mod impact;
-pub mod ir;
-pub mod java;
 pub mod lang;
-pub mod link;
-pub mod matrix;
-pub mod metrics;
-pub mod model;
 pub mod pipeline;
-pub mod scip;
-pub mod ts;
+
+pub use structure_classify::{classify, matrix};
+pub use structure_git::impact;
+pub use structure_ir::{ir, model};
+pub use structure_lang_java as java;
+pub use structure_lang_ts as ts;
+pub use structure_scip::{link, metrics, scip};
