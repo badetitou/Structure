@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DENSE_STEP, layout } from "./layout";
+import { DENSE_CHAR_W, DENSE_STEP, layout } from "./layout";
 
 const layers = ["api", "service", "data"];
 const domains = ["user", "order", "billing", "audit"];
@@ -45,5 +45,16 @@ describe("layout normal", () => {
     expect((t?.x ?? 0) + (t?.w ?? 0) / 2).toBeCloseTo(110 + 140 + 70);
     expect(l.detailed).toBe(true);
     expect(l.rotateDomains).toBe(false);
+  });
+});
+
+describe("layout dense margins", () => {
+  it("leave room for the longest layer and domain names", () => {
+    const long = "averyveryverylongdomainname";
+    const l = layout("dense", ["persistence"], ["a", long], []);
+    const top = Math.min(...l.tiles.map((t) => t.y));
+    const left = Math.min(...l.tiles.map((t) => t.x));
+    expect(top).toBeGreaterThanOrEqual(DENSE_CHAR_W * long.length);
+    expect(left).toBeGreaterThanOrEqual(DENSE_CHAR_W * "persistence".length);
   });
 });
