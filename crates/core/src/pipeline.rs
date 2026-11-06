@@ -80,26 +80,205 @@ fn find_cs() -> Option<PathBuf> {
     })
 }
 
-fn run_indexer(root: &Path, mut cmd: Command) -> Result<(), String> {
-    use std::io::Read;
+/// Reports `(pct, detail)` while the indexer runs.
+type IndexProgress<'a> = &'a mut dyn FnMut(u8, String);
+
+const INDEX_PCT_START: u8 = 5;
+const INDEX_PCT_CAP: u8 = 34;
+const DETAIL_MAX_CHARS: usize = 120;
+
+/// Strips ANSI escapes, trims, and drops blank or download-noise lines;
+/// caps the length. `None` when the line is not worth showing.
+fn clean_line(raw: &str) -> Option<String> {
+    let line = visible(raw);
+    let rest = line.strip_prefix("[INFO] ").unwrap_or(&line);
+    if line.is_empty()
+        || rest.starts_with("Downloading from")
+        || rest.starts_with("Downloaded from")
+        || rest.starts_with("Progress (")
+    {
+        return None;
+    }
+    Some(cap_chars(&line, DETAIL_MAX_CHARS))
+}
+
+fn cap_chars(line: &str, max: usize) -> String {
+    if line.chars().count() > max {
+        let cut: String = line.chars().take(max - 1).collect();
+        format!("{cut}…")
+    } else {
+        line.to_string()
+    }
+}
+
+/// Last non-empty `\r`-separated segment (terminal redraws), ANSI escapes
+/// stripped, trimmed.
+fn visible(raw: &str) -> String {
+    let seg = raw
+        .rsplit('\r')
+        .map(|s| s.trim_matches('\n'))
+        .find(|s| !s.trim().is_empty())
+        .unwrap_or("");
+    let mut out = String::with_capacity(seg.len());
+    let mut chars = seg.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for n in chars.by_ref() {
+                    if n.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out.trim().to_string()
+}
+
+/// Maven reactor counter: `[INFO] Building foo 1.0 [3/12]` gives `(3, 12)`.
+fn reactor_counter(line: &str) -> Option<(u32, u32)> {
+    if !line.contains("Building ") {
+        return None;
+    }
+    let inner = line.trim_end().strip_suffix(']')?;
+    let (_, counter) = inner.rsplit_once('[')?;
+    let (a, b) = counter.split_once('/')?;
+    let (a, b) = (a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?);
+    (b > 0 && a <= b).then_some((a, b))
+}
+
+/// Monotonic percentage inside the indexing band (5..=34).
+#[derive(Debug, Default)]
+struct IndexPct {
+    last: u8,
+    reactor: Option<(u32, u32)>,
+}
+
+impl IndexPct {
+    fn update(&mut self, line: Option<&str>, elapsed_secs: u64) -> u8 {
+        if let Some(c) = line.and_then(reactor_counter) {
+            self.reactor = Some(c);
+        }
+        let band = u64::from(INDEX_PCT_CAP - INDEX_PCT_START);
+        let candidate = match self.reactor {
+            // Module `a` has started: `a - 1` modules are done.
+            Some((a, b)) => u64::from(a.saturating_sub(1)) * band / u64::from(b),
+            // One point every 6 s.
+            None => elapsed_secs / 6,
+        };
+        let pct = (u64::from(INDEX_PCT_START) + candidate).min(u64::from(INDEX_PCT_CAP)) as u8;
+        self.last = self.last.max(pct);
+        self.last
+    }
+}
+
+const MAX_LINE_BYTES: usize = 64 * 1024;
+const TAIL_LINE_CHARS: usize = 300;
+
+/// Reads up to and including `\n` into `buf`, keeping at most `max` bytes and
+/// discarding the rest of the line. Returns the bytes consumed (0 at EOF).
+fn read_capped_line<R: std::io::BufRead>(
+    r: &mut R,
+    buf: &mut Vec<u8>,
+    max: usize,
+) -> std::io::Result<usize> {
+    let mut total = 0;
+    loop {
+        let chunk = r.fill_buf()?;
+        if chunk.is_empty() {
+            return Ok(total);
+        }
+        let (used, done) = match chunk.iter().position(|&b| b == b'\n') {
+            Some(i) => (i + 1, true),
+            None => (chunk.len(), false),
+        };
+        let room = max.saturating_sub(buf.len());
+        buf.extend_from_slice(&chunk[..used.min(room)]);
+        r.consume(used);
+        total += used;
+        if done {
+            return Ok(total);
+        }
+    }
+}
+
+fn spawn_line_reader<R: std::io::Read + Send + 'static>(
+    r: R,
+    tx: std::sync::mpsc::Sender<String>,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut r = std::io::BufReader::new(r);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            match read_capped_line(&mut r, &mut buf, MAX_LINE_BYTES) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    if tx.send(String::from_utf8_lossy(&buf).into_owned()).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    })
+}
+
+const DRAIN_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Feeds pending lines to `f` until the channel closes or `grace` elapses in total.
+fn drain_grace(
+    rx: &std::sync::mpsc::Receiver<String>,
+    grace: std::time::Duration,
+    f: &mut dyn FnMut(&str),
+) {
+    let end = Instant::now() + grace;
+    while let Some(left) = end.checked_duration_since(Instant::now()) {
+        match rx.recv_timeout(left) {
+            Ok(raw) => f(&raw),
+            Err(_) => break,
+        }
+    }
+}
+
+fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result<(), String> {
+    use std::collections::VecDeque;
     use std::process::Stdio;
+    use std::sync::mpsc::{RecvTimeoutError, channel};
     use std::time::Duration;
+    let started = Instant::now();
     let mut child = cmd
         .current_dir(root)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("cannot start {:?}: {e}", cmd.get_program()))?;
-    let mut stderr = child.stderr.take();
-    let reader = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(s) = stderr.as_mut() {
-            let _ = s.read_to_end(&mut buf);
+    let (tx, rx) = channel::<String>();
+    if let Some(s) = child.stdout.take() {
+        spawn_line_reader(s, tx.clone());
+    }
+    if let Some(s) = child.stderr.take() {
+        spawn_line_reader(s, tx.clone());
+    }
+    drop(tx);
+    let mut tail: VecDeque<String> = VecDeque::new();
+    let mut keep = |line: &str| {
+        let v = visible(line);
+        if !v.is_empty() {
+            if tail.len() == 8 {
+                tail.pop_front();
+            }
+            tail.push_back(cap_chars(&v, TAIL_LINE_CHARS));
         }
-        buf
-    });
-    let deadline = Instant::now() + Duration::from_secs(INDEX_TIMEOUT_SECS);
+    };
+    let mut pct = IndexPct::default();
+    let mut last_line = String::from("starting indexer");
+    let mut last_emit: Option<Instant> = None;
+    let mut disconnected = false;
+    let deadline = started + Duration::from_secs(INDEX_TIMEOUT_SECS);
     let status = loop {
         match child.try_wait() {
             Ok(Some(st)) => break st,
@@ -111,20 +290,49 @@ fn run_indexer(root: &Path, mut cmd: Command) -> Result<(), String> {
                     INDEX_TIMEOUT_SECS / 60
                 ));
             }
-            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Ok(None) => {}
             Err(e) => return Err(format!("waiting for indexer: {e}")),
         }
+        let mut cleaned: Option<String> = None;
+        if disconnected {
+            std::thread::sleep(Duration::from_millis(100));
+        } else {
+            match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(raw) => {
+                    keep(&raw);
+                    cleaned = clean_line(&raw);
+                    if let Some(c) = &cleaned {
+                        last_line = c.clone();
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => disconnected = true,
+            }
+        }
+        let elapsed = started.elapsed().as_secs();
+        let p = pct.update(cleaned.as_deref(), elapsed);
+        if last_emit.is_none_or(|t| t.elapsed() >= Duration::from_secs(1)) {
+            last_emit = Some(Instant::now());
+            progress(p, format!("{last_line} · {elapsed}s"));
+        }
     };
+    // Do not join the readers: a forked daemon may keep the pipes open forever.
+    drain_grace(&rx, DRAIN_GRACE, &mut |raw| {
+        keep(raw);
+        if let Some(c) = clean_line(raw) {
+            last_line = c;
+        }
+    });
     if status.success() {
+        progress(
+            pct.last.max(INDEX_PCT_START),
+            format!("{last_line} · {}s", started.elapsed().as_secs()),
+        );
         return Ok(());
     }
-    let buf = reader.join().unwrap_or_default();
-    let err = String::from_utf8_lossy(&buf);
-    let mut tail: Vec<&str> = err.lines().rev().take(8).collect();
-    tail.reverse();
     Err(format!(
         "{} ({status}); for Java also check ~/.m2/settings.xml",
-        tail.join(" | ")
+        tail.iter().cloned().collect::<Vec<_>>().join(" | ")
     ))
 }
 
@@ -172,6 +380,17 @@ pub fn ensure_index(
     opts: &Options,
     warn: &mut dyn FnMut(String),
 ) -> anyhow::Result<Option<PathBuf>> {
+    ensure_index_with_progress(root, lang, opts, warn, &mut |_, _| {})
+}
+
+/// Like [`ensure_index`], reporting `(pct, detail)` while the indexer runs.
+pub fn ensure_index_with_progress(
+    root: &Path,
+    lang: Language,
+    opts: &Options,
+    warn: &mut dyn FnMut(String),
+    progress: &mut dyn FnMut(u8, String),
+) -> anyhow::Result<Option<PathBuf>> {
     let index = root.join("index.scip");
     if index.is_file() && !opts.reindex {
         let stale = newer_sources(root, lang, &index);
@@ -215,7 +434,7 @@ pub fn ensure_index(
         warn("no SCIP indexer found (scip-java/cs/npx); using tree-sitter only".into());
         return Ok(None);
     };
-    match run_indexer(root, cmd) {
+    match run_indexer(root, cmd, progress) {
         Ok(()) if index.is_file() => Ok(Some(index)),
         Ok(()) => {
             warn("indexer succeeded but produced no index.scip; using tree-sitter only".into());
@@ -246,6 +465,7 @@ pub fn analyze(
         progress(Progress {
             step: s.into(),
             pct,
+            detail: None,
         })
     };
     if !root.is_dir() {
@@ -256,7 +476,19 @@ pub fn analyze(
 
     step("indexing", 5);
     let index_path = if opts.use_scip {
-        ensure_index(root, lang, opts, &mut |w| warnings.push(w))?
+        ensure_index_with_progress(
+            root,
+            lang,
+            opts,
+            &mut |w| warnings.push(w),
+            &mut |pct, detail| {
+                progress(Progress {
+                    step: "indexing".into(),
+                    pct,
+                    detail: Some(detail),
+                })
+            },
+        )?
     } else {
         None
     };
@@ -415,6 +647,90 @@ pub fn impact(
 mod tests {
     use super::*;
     use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn drain_grace_returns_when_sender_stays_open() {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        tx.send("a\n".into()).unwrap();
+        let mut got = Vec::new();
+        let t = Instant::now();
+        drain_grace(&rx, Duration::from_millis(100), &mut |l| {
+            got.push(l.to_string())
+        });
+        assert_eq!(got, ["a\n"]);
+        assert!(t.elapsed() < Duration::from_secs(5));
+        drop(tx);
+    }
+
+    #[test]
+    fn clean_line_filters_and_caps() {
+        assert_eq!(clean_line("   \n"), None);
+        assert_eq!(clean_line("[INFO] Downloading from central: x.pom"), None);
+        assert_eq!(
+            clean_line("\u{1b}[1m> Task :app:compileJava\u{1b}[0m\r\n").as_deref(),
+            Some("> Task :app:compileJava")
+        );
+        let long = "x".repeat(500);
+        assert_eq!(clean_line(&long).unwrap().chars().count(), DETAIL_MAX_CHARS);
+    }
+
+    #[test]
+    fn clean_line_gradle_cr_and_noise() {
+        assert_eq!(clean_line("> Task :x\n").as_deref(), Some("> Task :x"));
+        assert_eq!(
+            clean_line("> Task :a\r> Task :b\r\n").as_deref(),
+            Some("> Task :b")
+        );
+        assert_eq!(clean_line("Downloaded from central: x"), None);
+        assert_eq!(clean_line("Progress (1): 3/4 kB"), None);
+        let l = "[INFO] Building Downloader 1.0 [3/12]";
+        assert_eq!(clean_line(l).as_deref(), Some(l));
+        assert_eq!(reactor_counter(l), Some((3, 12)));
+    }
+
+    #[test]
+    fn read_capped_line_bounds_buffer() {
+        let data = format!("{}\nok\n", "y".repeat(200_000));
+        let mut r = std::io::BufReader::with_capacity(16, data.as_bytes());
+        let mut buf = Vec::new();
+        assert_eq!(read_capped_line(&mut r, &mut buf, 1000).unwrap(), 200_001);
+        assert_eq!(buf.len(), 1000);
+        buf.clear();
+        assert_eq!(read_capped_line(&mut r, &mut buf, 1000).unwrap(), 3);
+        assert_eq!(buf, b"ok\n");
+        buf.clear();
+        assert_eq!(read_capped_line(&mut r, &mut buf, 1000).unwrap(), 0);
+    }
+
+    #[test]
+    fn reactor_counter_parses_maven_lines() {
+        assert_eq!(
+            reactor_counter("[INFO] Building foo 1.0 [3/12]"),
+            Some((3, 12))
+        );
+        assert_eq!(reactor_counter("[INFO] Building foo 1.0"), None);
+        assert_eq!(reactor_counter("> Task :x"), None);
+        assert_eq!(reactor_counter("Building x [5/4]"), None);
+    }
+
+    #[test]
+    fn index_pct_is_bounded_and_monotonic() {
+        let mut p = IndexPct::default();
+        assert_eq!(p.update(Some("> Task :x"), 0), 5);
+        assert_eq!(p.update(None, 60), 15);
+        let a = p.update(Some("[INFO] Building a 1 [6/12]"), 61);
+        assert_eq!(a, 17);
+        // Reactor says earlier module: never goes backwards.
+        assert_eq!(p.update(Some("[INFO] Building b 1 [1/12]"), 62), 17);
+        assert_eq!(p.update(Some("[INFO] Building z 1 [12/12]"), 63), 31);
+        assert_eq!(p.update(None, 100_000), 31);
+        let mut q = IndexPct::default();
+        assert_eq!(q.update(None, 100_000), INDEX_PCT_CAP);
+        // First reactor line after time creep does not go backwards.
+        let mut r = IndexPct::default();
+        assert_eq!(r.update(None, 120), 25);
+        assert_eq!(r.update(Some("[INFO] Building a 1 [1/12]"), 121), 25);
+    }
 
     fn touch(p: &Path, t: SystemTime) {
         std::fs::write(p, "x").unwrap();

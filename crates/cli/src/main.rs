@@ -56,6 +56,10 @@ fn run_analysis(
     // when the next step starts.
     let current = std::cell::RefCell::new(None::<(String, Instant)>);
     let analysis = pipeline::analyze(path, &opts, &|p: Progress| {
+        if p.detail.is_some() {
+            // Live indexer output: not a step change.
+            return;
+        }
         let now = Instant::now();
         if let Some((step, start)) = current.replace(Some((p.step.clone(), now))) {
             eprintln!("  {step}: {} ms", now.duration_since(start).as_millis());

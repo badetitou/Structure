@@ -105,6 +105,7 @@ async function runAnalysis() {
   const label = h("div", { textContent: "starting…" });
   const fill = h("div");
   fill.style.width = "0%";
+  const detail = h("div", { className: "muted small" });
   show(
     h(
       "div",
@@ -112,12 +113,14 @@ async function runAnalysis() {
       h("h2", { textContent: "Analyzing…" }),
       h("div", { className: "bar" }, fill),
       label,
+      detail,
     ),
   );
   try {
     const m = await analyzeAndRecord(projectPath, (path) =>
       api.analyze(path, (p) => {
         label.textContent = `${p.step} (${p.pct}%)`;
+        detail.textContent = p.detail ?? "";
         fill.style.width = `${p.pct}%`;
       }),
     );

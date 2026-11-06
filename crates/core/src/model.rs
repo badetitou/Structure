@@ -152,6 +152,8 @@ pub struct ImpactedSymbol {
 pub struct Progress {
     pub step: String,
     pub pct: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[cfg(test)]
@@ -180,6 +182,22 @@ mod tests {
     fn impact_sample_roundtrips() {
         roundtrip::<Impact>(IMPACT);
         roundtrip::<History>(HISTORY);
+    }
+
+    #[test]
+    fn progress_detail_is_optional() {
+        let p: Progress = serde_json::from_str(r#"{"step":"parsing","pct":35}"#).unwrap();
+        assert_eq!(p.detail, None);
+        assert_eq!(
+            serde_json::to_string(&p).unwrap(),
+            r#"{"step":"parsing","pct":35}"#
+        );
+        let p = Progress {
+            detail: Some("> Task :x · 3s".into()),
+            ..p
+        };
+        let back: Progress = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back, p);
     }
 
     #[test]

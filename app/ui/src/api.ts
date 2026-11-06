@@ -87,6 +87,7 @@ export interface History {
 export interface Progress {
   step: string;
   pct: number;
+  detail?: string;
 }
 
 export const inTauri = "__TAURI_INTERNALS__" in window;
@@ -110,6 +111,12 @@ export async function analyze(
   onProgress: (p: Progress) => void,
 ): Promise<Matrix> {
   if (!inTauri) {
+    onProgress({
+      step: "indexing",
+      pct: 8,
+      detail: "[INFO] Building sample 1.0 [2/12] · 4s",
+    });
+    await sleep(250);
     for (const [step, pct] of [
       ["indexing", 10],
       ["parsing", 40],
