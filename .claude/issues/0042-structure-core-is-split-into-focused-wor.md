@@ -1,9 +1,9 @@
 ---
 id: 42
 title: structure-core is split into focused workspace crates
-status: todo
+status: done
 parent: 36
-branch: null
+branch: 42-crate-split
 remote: null
 created: 2026-11-06
 ---
