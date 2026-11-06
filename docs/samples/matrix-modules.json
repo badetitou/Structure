@@ -1,0 +1,163 @@
+{
+  "project": "verveinej-sample",
+  "language": "java",
+  "layers": [
+    "model",
+    "unknown"
+  ],
+  "domains": [
+    "famixjavaentities",
+    "famixtraits",
+    "java",
+    "refvisitors",
+    "tagging",
+    "utils"
+  ],
+  "cells": [
+    {
+      "id": "model:famixjavaentities",
+      "layer": "model",
+      "domain": "famixjavaentities",
+      "size": 2,
+      "symbols": [
+        {
+          "id": "org.moosetechnology.model.famix.famixjavaentities.Class",
+          "name": "Class",
+          "file": "src/main/java/org/moosetechnology/model/famix/famixjavaentities/Class.java"
+        },
+        {
+          "id": "org.moosetechnology.model.famix.famixjavaentities.Method",
+          "name": "Method",
+          "file": "src/main/java/org/moosetechnology/model/famix/famixjavaentities/Method.java"
+        }
+      ]
+    },
+    {
+      "id": "model:famixtraits",
+      "layer": "model",
+      "domain": "famixtraits",
+      "size": 2,
+      "symbols": [
+        {
+          "id": "org.moosetechnology.model.famix.famixtraits.TMethod",
+          "name": "TMethod",
+          "file": "src/main/java/org/moosetechnology/model/famix/famixtraits/TMethod.java"
+        },
+        {
+          "id": "org.moosetechnology.model.famix.famixtraits.TNamedEntity",
+          "name": "TNamedEntity",
+          "file": "src/main/java/org/moosetechnology/model/famix/famixtraits/TNamedEntity.java"
+        }
+      ]
+    },
+    {
+      "id": "model:tagging",
+      "layer": "model",
+      "domain": "tagging",
+      "size": 1,
+      "symbols": [
+        {
+          "id": "org.moosetechnology.model.famix.tagging.Tag",
+          "name": "Tag",
+          "file": "src/main/java/org/moosetechnology/model/famix/tagging/Tag.java"
+        }
+      ]
+    },
+    {
+      "id": "unknown:java",
+      "layer": "unknown",
+      "domain": "java",
+      "size": 1,
+      "symbols": [
+        {
+          "id": "fr.inria.verveine.extractor.java.VerveineJParser",
+          "name": "VerveineJParser",
+          "file": "src/main/java/fr/inria/verveine/extractor/java/VerveineJParser.java"
+        }
+      ]
+    },
+    {
+      "id": "unknown:refvisitors",
+      "layer": "unknown",
+      "domain": "refvisitors",
+      "size": 1,
+      "symbols": [
+        {
+          "id": "fr.inria.verveine.extractor.java.visitors.refvisitors.VisitorInvocRef",
+          "name": "VisitorInvocRef",
+          "file": "src/main/java/fr/inria/verveine/extractor/java/visitors/refvisitors/VisitorInvocRef.java"
+        }
+      ]
+    },
+    {
+      "id": "unknown:utils",
+      "layer": "unknown",
+      "domain": "utils",
+      "size": 1,
+      "symbols": [
+        {
+          "id": "fr.inria.verveine.extractor.java.utils.StructuralEntityKinds",
+          "name": "StructuralEntityKinds",
+          "file": "src/main/java/fr/inria/verveine/extractor/java/utils/StructuralEntityKinds.java"
+        }
+      ]
+    }
+  ],
+  "edges": [],
+  "stats": {
+    "files": 8,
+    "symbols": 480,
+    "edges": 17,
+    "elapsed_ms": 12
+  },
+  "domain_tree": [
+    {
+      "label": "fr.inria.verveine.extractor.java",
+      "size": 3,
+      "children": [
+        {
+          "label": "java",
+          "domain": "java",
+          "size": 1,
+          "children": []
+        },
+        {
+          "label": "utils",
+          "domain": "utils",
+          "size": 1,
+          "children": []
+        },
+        {
+          "label": "visitors.refvisitors",
+          "domain": "refvisitors",
+          "size": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "org.moosetechnology.model.famix",
+      "size": 5,
+      "children": [
+        {
+          "label": "famixjavaentities",
+          "domain": "famixjavaentities",
+          "size": 2,
+          "children": []
+        },
+        {
+          "label": "famixtraits",
+          "domain": "famixtraits",
+          "size": 2,
+          "children": []
+        },
+        {
+          "label": "tagging",
+          "domain": "tagging",
+          "size": 1,
+          "children": []
+        }
+      ]
+    }
+  ]
+}
