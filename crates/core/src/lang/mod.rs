@@ -1,9 +1,11 @@
 //! Language frontends: everything that differs per language (detection,
-//! indexer, sources, parsing) behind one trait. A new language
-//! needs: a `Language` variant, one module here implementing the trait, one
-//! `static` and one line in [`all`], and one arm in [`frontend`] (default rules and
-//! module separator live in `structure-classify`). The
-//! `registry_is_consistent` test fails if a variant is missing from [`all`].
+//! indexer, sources, parsing, default classification rules, module separator)
+//! behind one trait. A new language needs:
+//! - a `Language` variant in `structure-ir`;
+//! - a parser crate and one module here implementing [`LanguageFrontend`];
+//! - one `static` and one line in [`all`], and one arm in [`frontend`].
+//!
+//! The `registry_is_consistent` test fails if a variant is missing from [`all`].
 
 mod java;
 mod ts_args;
@@ -33,6 +35,10 @@ pub trait LanguageFrontend: Sync {
     fn indexer_hint(&self, root: &Path) -> Option<String>;
     /// Parse the project's sources into a graph (tree-sitter only).
     fn parse_project(&self, root: &Path) -> anyhow::Result<Graph>;
+    /// Embedded default rules: `(toml, display name)`.
+    fn default_rules(&self) -> (&'static str, &'static str);
+    /// Separator of module paths in symbol ids (domain inference).
+    fn module_separator(&self) -> char;
 }
 
 static JAVA: java::JavaFrontend = java::JavaFrontend;
@@ -78,7 +84,8 @@ mod tests {
         for f in all() {
             assert_eq!(frontend(f.language()).language(), f.language());
             assert!(!f.extensions().is_empty());
-            assert!(crate::classify::RuleSet::builtin(f.language()).is_ok());
+            let (toml, name) = f.default_rules();
+            assert!(crate::classify::RuleSet::from_embedded(toml, name).is_ok());
         }
     }
 }
