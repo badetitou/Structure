@@ -60,13 +60,19 @@ fn node_heap_mb() -> u64 {
 
 /// Directories holding a `tsconfig.json` under `root` (relative to `root`,
 /// `"."` for the root itself), sorted. Skips the dirs the TS frontend ignores.
+/// Dirs holding sample or deliberately broken projects for tests: each would
+/// cost a full TypeScript program build, so they are not indexed as projects
+/// (their files are still parsed by tree-sitter).
+const SAMPLE_PROJECT_DIRS: &[&str] = &["fixtures", "test-workspace", "testWorkspace", "testbed"];
+
 pub fn discover_tsconfigs(root: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = ignore::WalkBuilder::new(root)
         .filter_entry(|e| {
             let n = e.file_name().to_string_lossy();
             !(e.depth() > 0
                 && e.file_type().is_some_and(|t| t.is_dir())
-                && ts::IGNORED_DIRS.contains(&n.as_ref()))
+                && (ts::IGNORED_DIRS.contains(&n.as_ref())
+                    || SAMPLE_PROJECT_DIRS.contains(&n.as_ref())))
         })
         .build()
         .filter_map(Result::ok)
@@ -909,11 +915,24 @@ mod tests {
     fn tsconfig_discovery_and_args() {
         let dir = std::env::temp_dir().join(format!("structure-tsc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        for d in ["src", "build", "node_modules/x", "ext/a/dist"] {
+        for d in [
+            "src",
+            "build",
+            "node_modules/x",
+            "ext/a/dist",
+            "ext/a/test/fixtures/p1",
+        ] {
             std::fs::create_dir_all(dir.join(d)).unwrap();
         }
         assert_eq!(ts_index_args(&dir), vec!["--infer-tsconfig"]);
-        for d in ["src", "build", "node_modules/x", "ext/a/dist", "ext/a"] {
+        for d in [
+            "src",
+            "build",
+            "node_modules/x",
+            "ext/a/dist",
+            "ext/a",
+            "ext/a/test/fixtures/p1",
+        ] {
             std::fs::write(dir.join(d).join("tsconfig.json"), "{}").unwrap();
         }
         assert_eq!(ts_index_args(&dir), vec!["build", "ext/a", "src"]);
@@ -928,18 +947,6 @@ mod tests {
         assert_eq!(
             node_options(Some("--foo"), 1),
             "--foo --max-old-space-size=1"
-        );
-    }
-
-    #[test]
-    #[ignore]
-    fn print_vscode_args() {
-        let r = Path::new("/Users/benoit.verhaeghe/Documents/Perso/Structure/fixtures/vscode");
-        let a = ts_index_args(r);
-        println!("COUNT {} FIRST {:?}", a.len(), &a[..a.len().min(8)]);
-        println!(
-            "npx -y @sourcegraph/scip-typescript@{SCIP_TS_VERSION} index --output index.scip {}",
-            a.join(" ")
         );
     }
 
