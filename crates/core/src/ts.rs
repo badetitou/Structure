@@ -614,6 +614,9 @@ impl Resolver<'_> {
     }
 }
 
+/// Directories never descended into (below the root) when looking for TS sources.
+pub const IGNORED_DIRS: &[&str] = &["node_modules", "dist", ".angular", ".git"];
+
 /// Parse every TypeScript file under `root` and assemble a [`Graph`].
 pub fn parse_project(root: &Path) -> anyhow::Result<Graph> {
     let mut paths = Vec::new();
@@ -622,7 +625,7 @@ pub fn parse_project(root: &Path) -> anyhow::Result<Graph> {
             let n = e.file_name().to_string_lossy();
             !(e.depth() > 0
                 && e.file_type().is_some_and(|t| t.is_dir())
-                && matches!(n.as_ref(), "node_modules" | "dist" | ".angular" | ".git"))
+                && IGNORED_DIRS.contains(&n.as_ref()))
         })
         .build();
     for entry in walker {
