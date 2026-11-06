@@ -101,6 +101,28 @@ pub struct Stats {
     pub elapsed_ms: u64,
 }
 
+/// One commit of the project history (`pipeline::history`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Commit {
+    pub id: String,
+    pub short: String,
+    pub parents: Vec<String>,
+    /// Diff base for this commit: first parent, or the empty tree for a root commit.
+    pub base: String,
+    pub subject: String,
+    pub author: String,
+    /// ISO 8601 author date.
+    pub date: String,
+    pub refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct History {
+    /// Uncommitted changes present in the working tree.
+    pub dirty: bool,
+    pub commits: Vec<Commit>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Impact {
     pub base: String,
@@ -138,6 +160,7 @@ mod tests {
 
     const MATRIX: &str = include_str!("../../../docs/samples/matrix.json");
     const IMPACT: &str = include_str!("../../../docs/samples/impact.json");
+    const HISTORY: &str = include_str!("../../../docs/samples/history.json");
 
     fn roundtrip<T: Serialize + for<'a> Deserialize<'a> + PartialEq + std::fmt::Debug>(s: &str) {
         let v: T = serde_json::from_str(s).unwrap();
@@ -156,6 +179,7 @@ mod tests {
     #[test]
     fn impact_sample_roundtrips() {
         roundtrip::<Impact>(IMPACT);
+        roundtrip::<History>(HISTORY);
     }
 
     #[test]

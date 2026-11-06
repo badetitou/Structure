@@ -9,7 +9,8 @@ fn main() {
         .manage(commands::Cache::default())
         .invoke_handler(tauri::generate_handler![
             commands::analyze,
-            commands::impact
+            commands::impact,
+            commands::history
         ])
         .run(tauri::generate_context!());
     if let Err(e) = result {

@@ -15,7 +15,7 @@ pub struct FileChange {
     pub lines: Vec<(u32, u32)>,
 }
 
-fn git(project: &Path, args: &[&str]) -> anyhow::Result<String> {
+pub(crate) fn git(project: &Path, args: &[&str]) -> anyhow::Result<String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(project)

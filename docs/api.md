@@ -1,6 +1,6 @@
 # Tauri API (UI contract)
 
-The UI talks to the Rust side through two commands and one event. JSON field
+The UI talks to the Rust side through three commands and one event. JSON field
 names are snake_case; enums are snake_case strings. Rust definitions live in
 `crates/core/src/model.rs` and `ir.rs`. Samples: `docs/samples/matrix.json`,
 `docs/samples/impact.json`.
@@ -10,12 +10,19 @@ names are snake_case; enums are snake_case strings. Rust definitions live in
 ```ts
 invoke<Matrix>("analyze", { path: string });
 invoke<Impact>("impact", { path: string, base: string | null, head: string | null });
+invoke<History>("history", { path: string, limit: number | null });
 ```
 
 - `analyze(path)` analyzes the Java/TypeScript project at `path` and returns the matrix.
 - `impact(path, base, head)`: `base = null` means HEAD vs working tree;
   otherwise `base..head` (`head = null` means working tree). Impact cell ids
   and symbol ids refer to the ids in the `Matrix` from `analyze`.
+- `history(path, limit)`: up to `limit` (default 200) commits reachable from
+  HEAD, newest first. `dirty` = the working tree has changes under the
+  project root that `impact(path, null, null)` would show (tracked edits and
+  non-ignored untracked files; `index.scip` ignored). Pass `commit.base` / `commit.id` as `impact(path, base, head)` to
+  show one commit's diff (`base` is the first parent, or the empty tree for a
+  root commit). Errors when the path is not a repository or has no commits.
 
 ## Event
 
@@ -62,6 +69,16 @@ interface Impact {
 }
 interface ImpactedCell { id: string; distance: number }
 interface ImpactedSymbol { id: string; distance: number }
+
+interface History { dirty: boolean; commits: Commit[] } // newest first
+interface Commit {
+  id: string; short: string;
+  parents: string[];  // empty for a root commit, 2+ for a merge
+  base: string;       // first parent, or the empty tree id for a root commit
+  subject: string; author: string;
+  date: string;       // ISO 8601
+  refs: string[];     // branches/tags pointing at it
+}
 
 interface Progress { step: string; pct: number } // pct 0..100
 ```

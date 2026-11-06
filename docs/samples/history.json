@@ -1,0 +1,25 @@
+{
+  "dirty": true,
+  "commits": [
+    {
+      "id": "71be231a1b2c3d4e5f60718293a4b5c6d7e8f901",
+      "short": "71be231",
+      "parents": ["03016fa0123456789abcdef0123456789abcdef0"],
+      "base": "03016fa0123456789abcdef0123456789abcdef0",
+      "subject": "Add order cancellation",
+      "author": "Jane Doe",
+      "date": "2026-11-05T14:02:11+01:00",
+      "refs": ["HEAD -> main", "origin/main"]
+    },
+    {
+      "id": "03016fa0123456789abcdef0123456789abcdef0",
+      "short": "03016fa",
+      "parents": [],
+      "base": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "subject": "Initial commit",
+      "author": "Jane Doe",
+      "date": "2026-11-01T09:30:00+01:00",
+      "refs": []
+    }
+  ]
+}

@@ -68,6 +68,22 @@ export interface Impact {
   impacted_symbols: ImpactedSymbol[];
   warnings?: string[];
 }
+export interface Commit {
+  id: string;
+  short: string;
+  parents: string[];
+  /** Diff base: first parent, or the empty tree for a root commit. */
+  base: string;
+  subject: string;
+  author: string;
+  /** ISO 8601 */
+  date: string;
+  refs: string[];
+}
+export interface History {
+  dirty: boolean;
+  commits: Commit[];
+}
 export interface Progress {
   step: string;
   pct: number;
@@ -123,4 +139,9 @@ export async function impact(
 ): Promise<Impact> {
   if (!inTauri) return fetchSample<Impact>("impact");
   return invoke<Impact>("impact", { path, base, head });
+}
+
+export async function history(path: string, limit?: number): Promise<History> {
+  if (!inTauri) return fetchSample<History>("history");
+  return invoke<History>("history", { path, limit: limit ?? null });
 }

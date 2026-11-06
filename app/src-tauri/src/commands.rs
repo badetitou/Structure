@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use structure_core::model::{Impact, Matrix, Progress};
+use structure_core::model::{History, Impact, Matrix, Progress};
 use structure_core::pipeline::{self, Analysis, Options};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -87,6 +87,16 @@ pub async fn impact(
         };
         emit_progress(&app, "done", 100);
         Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn history(path: String, limit: Option<u32>) -> Result<History, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (p, _) = canonical(&path)?;
+        pipeline::history(&p, limit.unwrap_or(200)).map_err(|e| format!("{e:#}"))
     })
     .await
     .map_err(|e| e.to_string())?
