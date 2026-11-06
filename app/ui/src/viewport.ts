@@ -48,8 +48,22 @@ export function zoomLevel(vb: ViewBox, fitVb: ViewBox): number {
 /** Zoom keeping (px, py) fixed, with the resulting level clamped to [MIN_ZOOM, MAX_ZOOM] of fit. */
 export function zoomAtClamped(vb: ViewBox, factor: number, px: number, py: number, fitVb: ViewBox): ViewBox {
   const level = zoomLevel(vb, fitVb);
-  const target = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, level * factor));
+  if ((factor > 1 && level >= MAX_ZOOM) || (factor < 1 && level <= MIN_ZOOM)) return vb;
+  // Clamp only in the direction of travel: an out-of-range start may move back
+  // toward the range without snapping to the opposite bound.
+  const target = factor > 1 ? Math.min(MAX_ZOOM, level * factor) : Math.max(MIN_ZOOM, level * factor);
   return zoomAt(vb, target / level, px, py);
+}
+
+/** True when `vb` is (within a small tolerance) the fit view. */
+export function isFit(vb: ViewBox, fitVb: ViewBox, eps = 1e-6): boolean {
+  const tol = eps * Math.max(fitVb.w, 1);
+  return (
+    Math.abs(vb.x - fitVb.x) <= tol &&
+    Math.abs(vb.y - fitVb.y) <= tol &&
+    Math.abs(vb.w - fitVb.w) <= tol &&
+    Math.abs(vb.h - fitVb.h) <= tol
+  );
 }
 
 /** Move the view by a screen delta (content follows the pointer). */

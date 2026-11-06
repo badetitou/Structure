@@ -61,6 +61,20 @@ describe("zoomAtClamped", () => {
     for (let i = 0; i < 50; i++) vb = zoomAtClamped(vb, 0.5, 500, 250, f);
     close(zoomLevel(vb, f), 0.1);
   });
+  it("does nothing past a bound in the direction of travel", () => {
+    const above = zoomAt(f, 20, 0, 0); // level 20
+    expect(zoomAtClamped(above, 2, 0, 0, f)).toBe(above);
+    const below = zoomAt(f, 0.05, 0, 0); // level 0.05
+    expect(zoomAtClamped(below, 0.5, 0, 0, f)).toBe(below);
+  });
+  it("moves back toward the range from outside without snapping", () => {
+    const above = zoomAt(f, 20, 0, 0);
+    close(zoomLevel(zoomAtClamped(above, 0.5, 0, 0, f), f), 10);
+    close(zoomLevel(zoomAtClamped(above, 0.9, 0, 0, f), f), 18);
+    const below = zoomAt(f, 0.05, 0, 0);
+    close(zoomLevel(zoomAtClamped(below, 2, 0, 0, f), f), 0.1);
+    close(zoomLevel(zoomAtClamped(below, 1.2, 0, 0, f), f), 0.06);
+  });
   it("keeps the anchor fixed when not clamped", () => {
     const p = toUser(f, 200, 100, 800, 400);
     const z = zoomAtClamped(f, 3, p.x, p.y, f);

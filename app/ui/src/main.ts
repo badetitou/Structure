@@ -10,7 +10,7 @@ import { layoutLanes } from "./lanes";
 import { layout } from "./layout";
 import type { Mode } from "./layout";
 import { loadMode, saveMode } from "./mode";
-import { fit, oneToOne, panBy, resize as resizeVb, toUser, viewBoxAttr, zoomAtClamped } from "./viewport";
+import { fit, oneToOne, panBy, resize as resizeVb, isFit, toUser, viewBoxAttr, zoomAtClamped } from "./viewport";
 import type { ViewBox } from "./viewport";
 import { analyzeAndRecord, loadRecent, removeRecent, saveRecent } from "./recent";
 
@@ -244,7 +244,6 @@ function matrixView(m: Matrix) {
     // The viewBox is driven by zoom/pan; a mode switch (build) resets it.
     content = { w: lay.width, h: lay.height };
     dense1to1 = !lay.detailed;
-    svg.classList.toggle("dense", !lay.detailed);
     resetView();
     const defs = s("defs");
     for (const [id, color] of [["a-def", "#999"], ["a-fwd", FWD], ["a-bwd", BWD], ["a-imp", CHANGED]]) {
@@ -363,13 +362,20 @@ function matrixView(m: Matrix) {
   build();
 
   // Keep the viewBox aspect equal to the pane's when the window or panels resize.
-  new ResizeObserver(() => {
+  const ro = new ResizeObserver(() => {
+    if (!view.isConnected) {
+      ro.disconnect();
+      return;
+    }
+    if (view.clientWidth === 0 || view.clientHeight === 0) return;
     const oldW = paneW;
+    const wasFit = isFit(vb, fitVb);
     measure();
     fitVb = fit(content.w, content.h, paneW, paneH);
-    vb = resizeVb(vb, oldW, paneW, paneH);
+    vb = wasFit ? fitVb : resizeVb(vb, oldW, paneW, paneH);
     applyView();
-  }).observe(view);
+  });
+  ro.observe(view);
   // Wheel: pinch (ctrlKey) zooms around the cursor, two-finger scroll pans.
   svg.addEventListener(
     "wheel",
@@ -398,6 +404,12 @@ function matrixView(m: Matrix) {
   });
   svg.addEventListener("pointermove", (ev) => {
     if (!drag || ev.pointerId !== drag.id) return;
+    if (ev.buttons === 0) {
+      // Released outside the svg before capture: the drag is stale.
+      drag = null;
+      svg.classList.remove("panning");
+      return;
+    }
     if (!drag.moved) {
       if (Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < DRAG_PX) return;
       drag.moved = true;
