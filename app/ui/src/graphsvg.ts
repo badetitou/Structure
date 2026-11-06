@@ -1,18 +1,12 @@
-import { setSvgAttr } from "./svgattr";
+import { s as el } from "./svgattr";
 import type { LaneRow, Segment } from "./lanes";
 
 export const ROW_H = 40;
 export const LANE_W = 14;
 const MID = ROW_H / 2;
-const SVG = "http://www.w3.org/2000/svg";
 
 const x = (lane: number) => lane * LANE_W + LANE_W / 2;
 
-function el(tag: string, attrs: Record<string, string | number>): SVGElement {
-  const e = document.createElementNS(SVG, tag);
-  for (const [k, v] of Object.entries(attrs)) setSvgAttr(e, k, v);
-  return e;
-}
 
 /** Line between (x1,y1) and (x2,y2), as an S-curve when the lanes differ. */
 function link(x1: number, y1: number, x2: number, y2: number, color: string): SVGElement {
