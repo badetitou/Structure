@@ -51,7 +51,12 @@ function home(error?: string) {
     h(
       "div",
       { className: "center" },
-      h("h1", { textContent: "Structure" }),
+      h(
+        "div",
+        { className: "brand" },
+        h("img", { src: "/logo.svg", alt: "", className: "logo-lg" }),
+        h("h1", { textContent: "Structure" }),
+      ),
       openBtn,
       pathLabel,
       hint,
@@ -115,6 +120,7 @@ function matrixView(m: Matrix) {
   const header = h(
     "header",
     {},
+    h("img", { src: "/logo.svg", alt: "Structure", className: "logo-sm" }),
     h("h1", { textContent: m.project }),
     h("span", {
       className: "muted",
