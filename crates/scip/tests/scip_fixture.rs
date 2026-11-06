@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use structure_core::scip;
+use structure_scip::scip;
 
 fn fixtures_dir() -> PathBuf {
     match std::env::var_os("STRUCTURE_FIXTURES") {

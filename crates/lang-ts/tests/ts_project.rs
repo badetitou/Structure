@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use structure_core::ir::{EdgeKind, Graph};
-use structure_core::ts::parse_project;
+use structure_ir::ir::{EdgeKind, Graph};
+use structure_lang_ts::parse_project;
 
 fn write(root: &Path, rel: &str, content: &str) {
     let p = root.join(rel);

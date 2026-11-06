@@ -8,7 +8,7 @@ use anyhow::Context;
 use rayon::prelude::*;
 use tree_sitter::{Node, Parser};
 
-use crate::ir::{Edge, EdgeKind, Graph, Language, Range, Symbol, SymbolKind};
+use structure_ir::ir::{Edge, EdgeKind, Graph, Language, Range, Symbol, SymbolKind};
 
 /// Result of parsing a single file.
 #[derive(Debug, Clone, Default, PartialEq)]

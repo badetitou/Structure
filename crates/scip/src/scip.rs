@@ -9,7 +9,7 @@ use protobuf::CodedInputStream;
 use protobuf::Message;
 use scip::types::{self, descriptor::Suffix};
 
-use crate::ir::Range;
+use structure_ir::ir::Range;
 
 #[derive(Debug, Clone, Default)]
 pub struct ScipIndex {

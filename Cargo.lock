@@ -453,6 +453,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
+name = "structure-classify"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "structure-ir",
+ "toml",
+]
+
+[[package]]
 name = "structure-cli"
 version = "0.1.0"
 dependencies = [
@@ -469,16 +480,64 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ignore",
- "libc",
- "protobuf",
- "rayon",
- "scip",
+ "structure-classify",
+ "structure-git",
+ "structure-ir",
+ "structure-lang-java",
+ "structure-lang-ts",
+ "structure-scip",
+ "toml",
+]
+
+[[package]]
+name = "structure-git"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "structure-ir",
+]
+
+[[package]]
+name = "structure-ir"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
- "toml",
+]
+
+[[package]]
+name = "structure-lang-java"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ignore",
+ "rayon",
+ "structure-ir",
  "tree-sitter",
  "tree-sitter-java",
+]
+
+[[package]]
+name = "structure-lang-ts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ignore",
+ "rayon",
+ "structure-ir",
+ "tree-sitter",
  "tree-sitter-typescript",
+]
+
+[[package]]
+name = "structure-scip"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "protobuf",
+ "scip",
+ "structure-ir",
 ]
 
 [[package]]

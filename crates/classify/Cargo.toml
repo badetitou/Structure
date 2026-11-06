@@ -1,0 +1,13 @@
+[package]
+name = "structure-classify"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+structure-ir = { path = "../ir" }
+anyhow.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

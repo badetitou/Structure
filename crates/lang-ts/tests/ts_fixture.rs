@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use structure_core::ir::{EdgeKind, SymbolKind};
-use structure_core::ts::parse_project;
+use structure_ir::ir::{EdgeKind, SymbolKind};
+use structure_lang_ts::parse_project;
 
 #[test]
 fn angular_realworld() {
