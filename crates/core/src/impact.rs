@@ -39,9 +39,18 @@ pub fn changed_lines(
     base: Option<&str>,
     head: Option<&str>,
 ) -> anyhow::Result<Vec<FileChange>> {
-    let mut args = vec!["diff", "--relative", "--no-color", "-U0"];
+    let mut args = vec![
+        "diff",
+        "--relative",
+        "--no-color",
+        "--no-ext-diff",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "-U0",
+    ];
     match (base, head) {
-        (None, _) => args.push("HEAD"),
+        (None, Some(_)) => bail!("head requires base"),
+        (None, None) => args.push("HEAD"),
         (Some(b), None) => args.push(b),
         (Some(b), Some(h)) => {
             args.push(b);
@@ -62,8 +71,12 @@ pub fn changed_lines(
                 continue;
             };
             let total = std::fs::read(project.join(rel))
-                .map(|b| b.iter().filter(|&&c| c == b'\n').count() as u32 + 1)
-                .unwrap_or(1);
+                .map(|b| {
+                    let nl = b.iter().filter(|&&c| c == b'\n').count() as u32;
+                    nl + u32::from(b.last().is_some_and(|&c| c != b'\n'))
+                })
+                .unwrap_or(1)
+                .max(1);
             changes.push(FileChange {
                 file: rel.to_string(),
                 lines: vec![(0, total)],
@@ -79,24 +92,28 @@ pub(crate) fn parse_diff(text: &str) -> Vec<FileChange> {
     let mut cur: Option<FileChange> = None;
     let mut old_path: Option<String> = None;
     let mut deleted = false;
+    let mut in_hunk = false;
     for line in text.lines() {
         if line.starts_with("diff --git ") {
             out.extend(cur.take());
             old_path = None;
             deleted = false;
+            in_hunk = false;
             cur = Some(FileChange {
                 file: String::new(),
                 lines: vec![],
             });
+        } else if in_hunk && !line.starts_with("@@ ") {
+            // Hunk body: never a header, even if it starts with "-- " or "++ ".
         } else if let Some(p) = line.strip_prefix("rename to ") {
             if let Some(c) = cur.as_mut() {
-                c.file = p.to_string();
+                c.file = clean_path(p).to_string();
             }
         } else if let Some(p) = line.strip_prefix("--- ") {
-            old_path = p.strip_prefix("a/").map(str::to_string);
+            old_path = clean_path(p).strip_prefix("a/").map(str::to_string);
         } else if let Some(p) = line.strip_prefix("+++ ") {
             if let Some(c) = cur.as_mut() {
-                c.file = match p.strip_prefix("b/") {
+                c.file = match clean_path(p).strip_prefix("b/") {
                     Some(n) => n.to_string(),
                     None => {
                         // /dev/null: deleted file, whole file counts as changed.
@@ -105,16 +122,24 @@ pub(crate) fn parse_diff(text: &str) -> Vec<FileChange> {
                     }
                 };
             }
-        } else if line.starts_with("@@ ")
-            && !deleted
-            && let (Some(c), Some(range)) = (cur.as_mut(), parse_hunk(line))
-        {
-            c.lines.push(range);
+        } else if line.starts_with("@@ ") {
+            in_hunk = true;
+            if !deleted && let (Some(c), Some(range)) = (cur.as_mut(), parse_hunk(line)) {
+                c.lines.push(range);
+            }
         }
     }
     out.extend(cur);
     out.retain(|c| !c.file.is_empty());
     out
+}
+
+/// Strip a trailing tab (git adds one after paths with spaces) and surrounding quotes.
+fn clean_path(p: &str) -> &str {
+    let p = p.trim_end_matches('\t');
+    p.strip_prefix('"')
+        .and_then(|q| q.strip_suffix('"'))
+        .unwrap_or(p)
 }
 
 fn parse_hunk(line: &str) -> Option<(u32, u32)> {
@@ -252,6 +277,20 @@ mod tests {
             vec![FileChange {
                 file: "A.java".into(),
                 lines: vec![(2, 3), (9, 12)]
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_ignores_header_lookalikes_in_hunks() {
+        let d =
+            "diff --git a/A b/A\n--- a/A\n+++ b/A\n@@ -1,2 +1,2 @@\n--- x\n+++ y\n@@ -9 +9 @@\n";
+        let v = parse_diff(d);
+        assert_eq!(
+            v,
+            vec![FileChange {
+                file: "A".into(),
+                lines: vec![(0, 2), (8, 9)]
             }]
         );
     }

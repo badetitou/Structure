@@ -55,12 +55,12 @@ fn working_tree_commits_and_subdirectory() {
     let wt = sorted(changed_lines(&d, None, None).unwrap());
     assert_eq!(
         wt,
-        vec![fc("a.txt", &[(1, 2)]), fc("sub/new.txt", &[(0, 4)])]
+        vec![fc("a.txt", &[(1, 2)]), fc("sub/new.txt", &[(0, 3)])]
     );
 
     // Project is a subdirectory: only its files, relative paths.
     let sub = sorted(changed_lines(&d.join("sub"), None, None).unwrap());
-    assert_eq!(sub, vec![fc("new.txt", &[(0, 4)])]);
+    assert_eq!(sub, vec![fc("new.txt", &[(0, 3)])]);
 
     git(&d, &["add", "."]);
     git(&d, &["commit", "-qm", "two"]);
