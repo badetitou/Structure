@@ -40,9 +40,15 @@ enum Command {
     },
 }
 
-fn run_analysis(path: &Path, reindex: bool, no_scip: bool) -> Result<Analysis> {
+fn run_analysis(
+    path: &Path,
+    reindex: bool,
+    reindex_if_stale: bool,
+    no_scip: bool,
+) -> Result<Analysis> {
     let opts = Options {
         reindex,
+        reindex_if_stale,
         use_scip: !no_scip,
     };
     let t = Instant::now();
@@ -106,7 +112,11 @@ fn write_json<T: serde::Serialize>(v: &T, out: &Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-fn print_impact(i: &Impact) {
+/// `shown`: warnings already printed by the analysis step.
+fn print_impact(i: &Impact, shown: &[String]) {
+    for w in i.warnings.iter().filter(|w| !shown.contains(w)) {
+        eprintln!("warning: {w}");
+    }
     eprintln!("changed files: {}", i.changed_files.len());
     eprintln!("changed cells: {}", i.changed_cells.join(", "));
     for c in &i.impacted_cells {
@@ -123,7 +133,7 @@ fn main() -> Result<()> {
             reindex,
             no_scip,
         } => {
-            let a = run_analysis(&path, reindex, no_scip)?;
+            let a = run_analysis(&path, reindex, true, no_scip)?;
             print_table(&a.matrix);
             write_json(&a.matrix, &output)
         }
@@ -134,9 +144,10 @@ fn main() -> Result<()> {
             output,
             no_scip,
         } => {
-            let a = run_analysis(&path, false, no_scip)?;
+            // A stale index is fine for impact (symbol ranges come from tree-sitter).
+            let a = run_analysis(&path, false, false, no_scip)?;
             let i = pipeline::impact(&path, &a, base.as_deref(), head.as_deref())?;
-            print_impact(&i);
+            print_impact(&i, &a.warnings);
             write_json(&i, &output)
         }
     }

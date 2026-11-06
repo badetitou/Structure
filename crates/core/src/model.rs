@@ -57,6 +57,10 @@ pub struct Matrix {
     pub cells: Vec<Cell>,
     pub edges: Vec<CellEdge>,
     pub stats: Stats,
+    /// Things the user should know about this analysis (indexing failed,
+    /// stale index...). Omitted from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -106,6 +110,8 @@ pub struct Impact {
     pub changed_cells: Vec<String>,
     pub impacted_cells: Vec<ImpactedCell>,
     pub impacted_symbols: Vec<ImpactedSymbol>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

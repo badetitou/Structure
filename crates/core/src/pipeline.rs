@@ -20,7 +20,11 @@ pub const SCIP_TS_VERSION: &str = "0.6.1";
 
 #[derive(Debug, Clone, Copy)]
 pub struct Options {
+    /// Always re-run the indexer.
     pub reindex: bool,
+    /// Re-run the indexer when a source file is newer than `index.scip`.
+    /// When false, a stale index is reused with a warning.
+    pub reindex_if_stale: bool,
     pub use_scip: bool,
 }
 
@@ -28,6 +32,7 @@ impl Default for Options {
     fn default() -> Self {
         Options {
             reindex: false,
+            reindex_if_stale: true,
             use_scip: true,
         }
     }
@@ -120,6 +125,39 @@ fn run_indexer(root: &Path, mut cmd: Command) -> Result<(), String> {
 
 const INDEX_TIMEOUT_SECS: u64 = 600;
 
+/// Number of source files modified after `index` was written.
+fn newer_sources(root: &Path, lang: Language, index: &Path) -> usize {
+    let Ok(indexed) = std::fs::metadata(index).and_then(|m| m.modified()) else {
+        return 0;
+    };
+    let exts: &[&str] = match lang {
+        Language::Java => &["java"],
+        Language::TypeScript => &["ts", "tsx"],
+    };
+    ignore::WalkBuilder::new(root)
+        .filter_entry(|e| {
+            !matches!(
+                e.file_name().to_str(),
+                Some("node_modules" | "target" | "build" | "dist" | ".git")
+            )
+        })
+        .build()
+        .filter_map(Result::ok)
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|x| x.to_str())
+                .is_some_and(|x| exts.contains(&x))
+        })
+        .filter(|e| {
+            e.metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .is_some_and(|t| t > indexed)
+        })
+        .count()
+}
+
 /// Returns the path of an up-to-date `index.scip`, or `Ok(None)` (with a
 /// warning through `warn`) if it could not be produced.
 pub fn ensure_index(
@@ -130,7 +168,16 @@ pub fn ensure_index(
 ) -> anyhow::Result<Option<PathBuf>> {
     let index = root.join("index.scip");
     if index.is_file() && !opts.reindex {
-        return Ok(Some(index));
+        let stale = newer_sources(root, lang, &index);
+        if stale == 0 {
+            return Ok(Some(index));
+        }
+        if !opts.reindex_if_stale {
+            warn(format!(
+                "index.scip is older than {stale} source file(s); call edges in those files may be off until the project is re-analyzed"
+            ));
+            return Ok(Some(index));
+        }
     }
     let cmd = match lang {
         Language::Java => {
@@ -247,7 +294,8 @@ pub fn analyze(
 
     step("building matrix", 95);
     let elapsed = started.elapsed().as_millis() as u64;
-    let matrix = matrix::build(&graph, &classification, &project_name(root), elapsed);
+    let mut matrix = matrix::build(&graph, &classification, &project_name(root), elapsed);
+    matrix.warnings = warnings.clone();
     step("done", 100);
 
     Ok(Analysis {
@@ -268,11 +316,67 @@ pub fn impact(
     let mut changes = impact::changed_lines(root, base, head)?;
     // The SCIP index we write into the project is a build artefact, not a change.
     changes.retain(|c| c.file != "index.scip");
-    Ok(impact::compute(
+    let mut result = impact::compute(
         &analysis.graph,
         &analysis.classification,
         &changes,
         base.unwrap_or("HEAD"),
         head,
-    ))
+    );
+    result.warnings = analysis.warnings.clone();
+    if let Some(h) = head {
+        result.warnings.push(format!(
+            "symbol positions come from the working tree; results for {h} are exact only if it is checked out"
+        ));
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    fn touch(p: &Path, t: SystemTime) {
+        std::fs::write(p, "x").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(p)
+            .unwrap()
+            .set_modified(t)
+            .unwrap();
+    }
+
+    #[test]
+    fn stale_index_detection_and_warning() {
+        let dir = std::env::temp_dir().join(format!("structure-stale-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::create_dir_all(dir.join("node_modules")).unwrap();
+        let t0 = SystemTime::now() - Duration::from_secs(100);
+        let index = dir.join("index.scip");
+        touch(&dir.join("src/old.ts"), t0);
+        touch(&index, t0 + Duration::from_secs(10));
+        touch(
+            &dir.join("node_modules/dep.ts"),
+            t0 + Duration::from_secs(50),
+        );
+        touch(&dir.join("src/notes.md"), t0 + Duration::from_secs(50));
+        assert_eq!(newer_sources(&dir, Language::TypeScript, &index), 0);
+
+        touch(&dir.join("src/new.ts"), t0 + Duration::from_secs(50));
+        assert_eq!(newer_sources(&dir, Language::TypeScript, &index), 1);
+
+        // Stale index reused with a warning when re-indexing is not wanted.
+        let opts = Options {
+            reindex_if_stale: false,
+            ..Options::default()
+        };
+        let mut warnings = vec![];
+        let got = ensure_index(&dir, Language::TypeScript, &opts, &mut |w| warnings.push(w));
+        assert_eq!(got.unwrap(), Some(index));
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("older than 1 source file"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

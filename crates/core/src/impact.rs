@@ -259,6 +259,7 @@ pub fn compute(
         changed_cells: changed_cells.into_iter().collect(),
         impacted_cells,
         impacted_symbols,
+        warnings: vec![],
     }
 }
 

@@ -37,6 +37,7 @@ interface Matrix {
   cells: Cell[];
   edges: CellEdge[];
   stats: Stats;
+  warnings?: string[]; // only when non-empty: indexing failed, stale index...
 }
 interface Cell {
   id: string; // "<layer>:<domain>", e.g. "business:account"
@@ -57,6 +58,7 @@ interface Impact {
   changed_cells: string[];
   impacted_cells: ImpactedCell[];     // distance = hops from a changed cell
   impacted_symbols: ImpactedSymbol[];
+  warnings?: string[];
 }
 interface ImpactedCell { id: string; distance: number }
 interface ImpactedSymbol { id: string; distance: number }
@@ -65,3 +67,7 @@ interface Progress { step: string; pct: number } // pct 0..100
 ```
 
 Granularity: symbol ids in `Matrix.cells[].symbols` and in `Impact` are class-level (top-level symbol) ids.
+
+`analyze` re-runs the indexer when a source file is newer than `index.scip`.
+`impact` always re-parses the project (fresh symbol ranges) and reuses the
+index, warning when it is stale.

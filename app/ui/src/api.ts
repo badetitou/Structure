@@ -47,6 +47,8 @@ export interface Matrix {
   cells: Cell[];
   edges: CellEdge[];
   stats: Stats;
+  /** Present only when non-empty (indexing failed, stale index...). */
+  warnings?: string[];
 }
 export interface ImpactedCell {
   id: string;
@@ -64,6 +66,7 @@ export interface Impact {
   changed_cells: string[];
   impacted_cells: ImpactedCell[];
   impacted_symbols: ImpactedSymbol[];
+  warnings?: string[];
 }
 export interface Progress {
   step: string;

@@ -136,6 +136,13 @@ function matrixView(m: Matrix) {
     `<span style="background:${FWD}"></span>reaches (forward)` +
     `<span style="background:${BWD}"></span>reached by (backward)`;
   const toolbar = h("div", { className: "toolbar" }, baseIn, headIn, showBtn, clearBtn, msg, legend);
+  // Analysis and impact warnings (e.g. indexing failed → tree-sitter only).
+  const warnBox = h("div", { className: "warnings" });
+  const showWarnings = (ws: string[]) => {
+    warnBox.replaceChildren(...ws.map((w) => h("div", { textContent: `⚠ ${w}` })));
+    warnBox.hidden = ws.length === 0;
+  };
+  showWarnings(m.warnings ?? []);
 
   // SVG
   const width = MARGIN_L + m.domains.length * PITCH + 20;
@@ -234,7 +241,7 @@ function matrixView(m: Matrix) {
 
   const panel = h("aside");
   const main = h("div", { className: "main" }, svg as unknown as Node, panel);
-  show(header, toolbar, main);
+  show(header, toolbar, warnBox, main);
 
   function paint() {
     const impactById = new Map(impact?.impacted_cells.map((x) => [x.id, x.distance]));
@@ -328,6 +335,7 @@ function matrixView(m: Matrix) {
     showBtn.disabled = true;
     try {
       impact = await api.impact(projectPath, baseIn.value.trim() || null, headIn.value.trim() || null);
+      showWarnings(impact.warnings ?? m.warnings ?? []);
       clearBtn.disabled = false;
       hovered = null;
       paint();
@@ -340,6 +348,7 @@ function matrixView(m: Matrix) {
   };
   clearBtn.onclick = () => {
     impact = null;
+    showWarnings(m.warnings ?? []);
     clearBtn.disabled = true;
     paint();
     renderPanel();

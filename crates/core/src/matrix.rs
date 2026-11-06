@@ -119,6 +119,7 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
         domains,
         cells,
         edges,
+        warnings: vec![],
         stats: Stats {
             files: files.len(),
             symbols: graph.symbols.len(),

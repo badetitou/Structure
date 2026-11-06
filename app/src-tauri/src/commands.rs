@@ -30,15 +30,11 @@ fn canonical(path: &str) -> Result<(PathBuf, String), String> {
     Ok((p, key))
 }
 
-/// Analyze, emit progress and warnings, and cache the result.
-fn run_analyze(app: &AppHandle, path: &Path, key: &str) -> Result<Matrix, String> {
-    let a = pipeline::analyze(path, &Options::default(), &|p| {
-        emit_progress(app, &p.step, p.pct)
-    })
-    .map_err(|e| format!("{e:#}"))?;
-    for w in &a.warnings {
-        emit_progress(app, &format!("warning: {w}"), 100);
-    }
+/// Analyze (warnings travel in `Matrix::warnings`), emit progress, and cache
+/// the result.
+fn run_analyze(app: &AppHandle, path: &Path, key: &str, opts: &Options) -> Result<Matrix, String> {
+    let a = pipeline::analyze(path, opts, &|p| emit_progress(app, &p.step, p.pct))
+        .map_err(|e| format!("{e:#}"))?;
     let matrix = a.matrix.clone();
     app.state::<Cache>()
         .0
@@ -52,7 +48,8 @@ fn run_analyze(app: &AppHandle, path: &Path, key: &str) -> Result<Matrix, String
 pub async fn analyze(app: AppHandle, path: String) -> Result<Matrix, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (p, key) = canonical(&path)?;
-        run_analyze(&app, &p, &key)
+        // An explicit Analyze re-indexes when sources are newer than index.scip.
+        run_analyze(&app, &p, &key, &Options::default())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -67,15 +64,14 @@ pub async fn impact(
 ) -> Result<Impact, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (p, key) = canonical(&path)?;
-        let cached = app
-            .state::<Cache>()
-            .0
-            .lock()
-            .map_err(|_| "internal error: analysis cache poisoned".to_string())?
-            .contains_key(&key);
-        if !cached {
-            run_analyze(&app, &p, &key)?;
-        }
+        // Always re-parse: the user typically edits files between Analyze and
+        // Show impact, and symbol ranges must match the diff. Re-parsing takes
+        // well under a second; the (possibly stale) index is reused.
+        let opts = Options {
+            reindex_if_stale: false,
+            ..Options::default()
+        };
+        run_analyze(&app, &p, &key, &opts)?;
         emit_progress(&app, "computing impact", 50);
         let result = {
             let state = app.state::<Cache>();
