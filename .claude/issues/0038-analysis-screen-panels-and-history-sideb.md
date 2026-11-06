@@ -3,7 +3,7 @@ id: 38
 title: Analysis screen, panels and history sidebar are Svelte components
 status: done
 parent: 36
-branch: null
+branch: 38-analysis-shadcn
 remote: null
 created: 2026-11-06
 ---
