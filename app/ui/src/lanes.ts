@@ -31,14 +31,14 @@ export interface LaneLayout {
 }
 
 export const PALETTE = [
-  "#2563eb",
-  "#dc2626",
-  "#16a34a",
-  "#d97706",
-  "#9333ea",
-  "#0891b2",
-  "#db2777",
-  "#65a30d",
+  "var(--lane-0)",
+  "var(--lane-1)",
+  "var(--lane-2)",
+  "var(--lane-3)",
+  "var(--lane-4)",
+  "var(--lane-5)",
+  "var(--lane-6)",
+  "var(--lane-7)",
 ];
 
 export function layoutLanes(commits: LaneCommit[]): LaneLayout {
