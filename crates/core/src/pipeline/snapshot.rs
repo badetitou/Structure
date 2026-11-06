@@ -5,8 +5,8 @@ use anyhow::{Context, bail};
 use crate::impact;
 use crate::model::{Impact, Progress};
 
-use super::git::resolve_base;
 use super::{Analysis, Options, analyze};
+use structure_git::resolve_base;
 
 /// Most snapshots kept per repository; the least recently used are removed.
 pub const MAX_SNAPSHOTS: usize = 8;

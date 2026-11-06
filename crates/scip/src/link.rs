@@ -3,8 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::ir::{Edge, EdgeKind, Graph, Range, Symbol, SymbolKind};
 use crate::scip::{self, ScipIndex};
+use structure_ir::ir::{Edge, EdgeKind, Graph, Range, Symbol, SymbolKind};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct LinkStats {
@@ -311,8 +311,8 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::Language;
     use crate::scip::{ScipDocument, ScipOccurrence, ScipRelationship, ScipSymbol};
+    use structure_ir::ir::Language;
 
     fn r(sl: u32, sc: u32, el: u32, ec: u32) -> Range {
         Range {

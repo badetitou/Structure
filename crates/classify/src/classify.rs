@@ -5,11 +5,11 @@
 //! rule (file order) decides the layer. Without a match, a structural fallback
 //! applies (DTO-like class -> `model`, else `unknown`).
 
-use crate::ir::{EdgeKind, Graph, Language, Symbol, SymbolKind};
-use crate::model::{Classification, DomainNode, Layer, Placement};
 use anyhow::Context;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use structure_ir::ir::{EdgeKind, Graph, Language, Symbol, SymbolKind};
+use structure_ir::model::{Classification, DomainNode, Layer, Placement};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -116,6 +116,25 @@ pub struct RuleSet {
     pub domain: Option<DomainSpec>,
 }
 
+/// Embedded default rules of a language: `(toml, display name)`.
+fn default_rules(lang: Language) -> (&'static str, &'static str) {
+    match lang {
+        Language::Java => (include_str!("../../../rules/java.toml"), "rules/java.toml"),
+        Language::TypeScript => (
+            include_str!("../../../rules/typescript.toml"),
+            "rules/typescript.toml",
+        ),
+    }
+}
+
+/// Separator of module paths in symbol ids (domain inference).
+fn module_separator(lang: Language) -> char {
+    match lang {
+        Language::Java => '.',
+        Language::TypeScript => '/',
+    }
+}
+
 impl RuleSet {
     pub fn from_toml_str(s: &str) -> anyhow::Result<RuleSet> {
         toml::from_str(s).context("invalid classification rules")
@@ -123,7 +142,7 @@ impl RuleSet {
 
     /// Embedded rules for a language.
     pub fn builtin(lang: Language) -> anyhow::Result<RuleSet> {
-        let (toml, name) = crate::lang::frontend(lang).default_rules();
+        let (toml, name) = default_rules(lang);
         Self::from_toml_str(toml).context(name)
     }
 
@@ -392,7 +411,7 @@ pub fn classify(graph: &Graph, rules: &RuleSet) -> Classification {
         }
         let alone = per_domain.values().filter(|n| **n == 1).count();
         if !auto_ids.is_empty() && alone * 4 >= auto_ids.len() * 3 {
-            let sep = crate::lang::frontend(graph.language).module_separator();
+            let sep = module_separator(graph.language);
             let members: Vec<(&str, Vec<String>)> = auto_ids
                 .iter()
                 .filter_map(|id| facts.get(id).map(|f| (*id, module_path(f.sym, sep))))
@@ -534,7 +553,7 @@ fn module_domains<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{Edge, Range};
+    use structure_ir::ir::{Edge, Range};
 
     const R: Range = Range {
         start_line: 0,

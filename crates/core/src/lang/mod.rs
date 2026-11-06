@@ -1,7 +1,8 @@
 //! Language frontends: everything that differs per language (detection,
-//! indexer, sources, parsing, default rules) behind one trait. A new language
+//! indexer, sources, parsing) behind one trait. A new language
 //! needs: a `Language` variant, one module here implementing the trait, one
-//! `static` and one line in [`all`], and one arm in [`frontend`]. The
+//! `static` and one line in [`all`], and one arm in [`frontend`] (default rules and
+//! module separator live in `structure-classify`). The
 //! `registry_is_consistent` test fails if a variant is missing from [`all`].
 
 mod java;
@@ -11,15 +12,12 @@ mod typescript;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::ir::{Graph, Language};
+use structure_ir::ir::{Graph, Language};
 
 pub use java::SCIP_JAVA_VERSION;
 pub use ts_args::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts_index_args};
 pub use typescript::SCIP_TS_VERSION;
 
-/// Per-language classify behaviour is the embedded rules TOML
-/// ([`default_rules`](LanguageFrontend::default_rules)) plus
-/// [`module_separator`](LanguageFrontend::module_separator); there are no other hooks.
 pub trait LanguageFrontend: Sync {
     /// Serialized identifier of the language.
     fn language(&self) -> Language;
@@ -35,10 +33,6 @@ pub trait LanguageFrontend: Sync {
     fn indexer_hint(&self, root: &Path) -> Option<String>;
     /// Parse the project's sources into a graph (tree-sitter only).
     fn parse_project(&self, root: &Path) -> anyhow::Result<Graph>;
-    /// Embedded default rules: `(toml, display name)`.
-    fn default_rules(&self) -> (&'static str, &'static str);
-    /// Separator of module paths in symbol ids (domain inference).
-    fn module_separator(&self) -> char;
 }
 
 static JAVA: java::JavaFrontend = java::JavaFrontend;

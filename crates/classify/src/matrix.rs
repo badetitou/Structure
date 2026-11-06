@@ -1,10 +1,10 @@
 //! Quotient graph: symbol-level graph + classification -> layer x domain matrix.
 
-use crate::ir::{EdgeKind, Graph, Symbol};
-use crate::model::{
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use structure_ir::ir::{EdgeKind, Graph, Symbol};
+use structure_ir::model::{
     Cell, CellSymbol, CellSymbols, Classification, EdgeGroup, Layer, Matrix, Stats,
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Cell id of any symbol (lifted to its top-level symbol first).
 pub fn cell_of(graph: &Graph, cls: &Classification, symbol_id: &str) -> Option<String> {
@@ -186,8 +186,8 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{Edge, Language, Range, SymbolKind};
-    use crate::model::Placement;
+    use structure_ir::ir::{Edge, Language, Range, SymbolKind};
+    use structure_ir::model::Placement;
 
     fn sym(id: &str, name: &str, kind: SymbolKind, container: Option<&str>, file: &str) -> Symbol {
         let r = Range {
