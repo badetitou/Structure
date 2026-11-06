@@ -90,8 +90,37 @@ const DETAIL_MAX_CHARS: usize = 120;
 /// Strips ANSI escapes, trims, and drops blank or download-noise lines;
 /// caps the length. `None` when the line is not worth showing.
 fn clean_line(raw: &str) -> Option<String> {
-    let mut out = String::with_capacity(raw.len());
-    let mut chars = raw.chars().peekable();
+    let line = visible(raw);
+    let rest = line.strip_prefix("[INFO] ").unwrap_or(&line);
+    if line.is_empty()
+        || rest.starts_with("Downloading from")
+        || rest.starts_with("Downloaded from")
+        || rest.starts_with("Progress (")
+    {
+        return None;
+    }
+    Some(cap_chars(&line, DETAIL_MAX_CHARS))
+}
+
+fn cap_chars(line: &str, max: usize) -> String {
+    if line.chars().count() > max {
+        let cut: String = line.chars().take(max - 1).collect();
+        format!("{cut}…")
+    } else {
+        line.to_string()
+    }
+}
+
+/// Last non-empty `\r`-separated segment (terminal redraws), ANSI escapes
+/// stripped, trimmed.
+fn visible(raw: &str) -> String {
+    let seg = raw
+        .rsplit('\r')
+        .map(|s| s.trim_matches('\n'))
+        .find(|s| !s.trim().is_empty())
+        .unwrap_or("");
+    let mut out = String::with_capacity(seg.len());
+    let mut chars = seg.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\u{1b}' {
             if chars.peek() == Some(&'[') {
@@ -102,20 +131,11 @@ fn clean_line(raw: &str) -> Option<String> {
                     }
                 }
             }
-        } else if c != '\r' {
+        } else {
             out.push(c);
         }
     }
-    let line = out.trim();
-    if line.is_empty() || line.contains("Download") || line.contains("Progress (") {
-        return None;
-    }
-    Some(if line.chars().count() > DETAIL_MAX_CHARS {
-        let cut: String = line.chars().take(DETAIL_MAX_CHARS - 1).collect();
-        format!("{cut}…")
-    } else {
-        line.to_string()
-    })
+    out.trim().to_string()
 }
 
 /// Maven reactor counter: `[INFO] Building foo 1.0 [3/12]` gives `(3, 12)`.
@@ -155,17 +175,46 @@ impl IndexPct {
     }
 }
 
+const MAX_LINE_BYTES: usize = 64 * 1024;
+const TAIL_LINE_CHARS: usize = 300;
+
+/// Reads up to and including `\n` into `buf`, keeping at most `max` bytes and
+/// discarding the rest of the line. Returns the bytes consumed (0 at EOF).
+fn read_capped_line<R: std::io::BufRead>(
+    r: &mut R,
+    buf: &mut Vec<u8>,
+    max: usize,
+) -> std::io::Result<usize> {
+    let mut total = 0;
+    loop {
+        let chunk = r.fill_buf()?;
+        if chunk.is_empty() {
+            return Ok(total);
+        }
+        let (used, done) = match chunk.iter().position(|&b| b == b'\n') {
+            Some(i) => (i + 1, true),
+            None => (chunk.len(), false),
+        };
+        let room = max.saturating_sub(buf.len());
+        buf.extend_from_slice(&chunk[..used.min(room)]);
+        r.consume(used);
+        total += used;
+        if done {
+            return Ok(total);
+        }
+    }
+}
+
 fn spawn_line_reader<R: std::io::Read + Send + 'static>(
     r: R,
     tx: std::sync::mpsc::Sender<String>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
-        use std::io::BufRead;
         let mut r = std::io::BufReader::new(r);
         let mut buf = Vec::new();
         loop {
             buf.clear();
-            match r.read_until(b'\n', &mut buf) {
+            match read_capped_line(&mut r, &mut buf, MAX_LINE_BYTES) {
                 Ok(0) | Err(_) => break,
                 Ok(_) => {
                     if tx.send(String::from_utf8_lossy(&buf).into_owned()).is_err() {
@@ -217,11 +266,12 @@ fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result
     drop(tx);
     let mut tail: VecDeque<String> = VecDeque::new();
     let mut keep = |line: &str| {
-        if !line.trim().is_empty() {
+        let v = visible(line);
+        if !v.is_empty() {
             if tail.len() == 8 {
                 tail.pop_front();
             }
-            tail.push_back(line.trim_end().to_string());
+            tail.push_back(cap_chars(&v, TAIL_LINE_CHARS));
         }
     };
     let mut pct = IndexPct::default();
@@ -625,6 +675,34 @@ mod tests {
     }
 
     #[test]
+    fn clean_line_gradle_cr_and_noise() {
+        assert_eq!(clean_line("> Task :x\n").as_deref(), Some("> Task :x"));
+        assert_eq!(
+            clean_line("> Task :a\r> Task :b\r\n").as_deref(),
+            Some("> Task :b")
+        );
+        assert_eq!(clean_line("Downloaded from central: x"), None);
+        assert_eq!(clean_line("Progress (1): 3/4 kB"), None);
+        let l = "[INFO] Building Downloader 1.0 [3/12]";
+        assert_eq!(clean_line(l).as_deref(), Some(l));
+        assert_eq!(reactor_counter(l), Some((3, 12)));
+    }
+
+    #[test]
+    fn read_capped_line_bounds_buffer() {
+        let data = format!("{}\nok\n", "y".repeat(200_000));
+        let mut r = std::io::BufReader::with_capacity(16, data.as_bytes());
+        let mut buf = Vec::new();
+        assert_eq!(read_capped_line(&mut r, &mut buf, 1000).unwrap(), 200_001);
+        assert_eq!(buf.len(), 1000);
+        buf.clear();
+        assert_eq!(read_capped_line(&mut r, &mut buf, 1000).unwrap(), 3);
+        assert_eq!(buf, b"ok\n");
+        buf.clear();
+        assert_eq!(read_capped_line(&mut r, &mut buf, 1000).unwrap(), 0);
+    }
+
+    #[test]
     fn reactor_counter_parses_maven_lines() {
         assert_eq!(
             reactor_counter("[INFO] Building foo 1.0 [3/12]"),
@@ -648,6 +726,10 @@ mod tests {
         assert_eq!(p.update(None, 100_000), 31);
         let mut q = IndexPct::default();
         assert_eq!(q.update(None, 100_000), INDEX_PCT_CAP);
+        // First reactor line after time creep does not go backwards.
+        let mut r = IndexPct::default();
+        assert_eq!(r.update(None, 120), 25);
+        assert_eq!(r.update(Some("[INFO] Building a 1 [1/12]"), 121), 25);
     }
 
     fn touch(p: &Path, t: SystemTime) {
