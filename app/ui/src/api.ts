@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { expandMatrix } from "./expand";
 
 export type Language = "java" | "typescript";
 export type Layer =
@@ -25,8 +26,18 @@ export interface Cell {
   id: string;
   layer: Layer;
   domain: string;
+  /** Number of top-level symbols; list them with `cellSymbols`. */
   size: number;
+}
+export interface CellSymbols {
+  total: number;
+  offset: number;
   symbols: CellSymbol[];
+}
+/** Wire form of the edges: grouped by source cell, cells as indices into `cells`. */
+export interface EdgeGroup {
+  from: number;
+  targets: [number, number][];
 }
 export interface CellEdge {
   from: string;
@@ -46,6 +57,8 @@ export interface DomainNode {
   size: number;
   children: DomainNode[];
 }
+/** Matrix as sent by the backend (docs/api.md). */
+export type WireMatrix = Omit<Matrix, "edges"> & { edges: EdgeGroup[] };
 export interface Matrix {
   project: string;
   language: Language;
@@ -56,6 +69,8 @@ export interface Matrix {
   cells: Cell[];
   edges: CellEdge[];
   stats: Stats;
+  /** Id of the cached analysis (pass to `cellSymbols`); set by the app. */
+  generation?: number;
   /** Present only when non-empty (indexing failed, stale index...). */
   warnings?: string[];
 }
@@ -79,6 +94,7 @@ export interface Impact {
   /** Present when `head` was analysed in its snapshot: the matrix at that commit. */
   matrix?: Matrix;
 }
+type WireImpact = Omit<Impact, "matrix"> & { matrix?: WireMatrix };
 export interface Commit {
   id: string;
   short: string;
@@ -138,13 +154,13 @@ export async function analyze(
       onProgress({ step, pct });
       await sleep(250);
     }
-    return fetchSample<Matrix>("matrix");
+    return expandMatrix(await fetchSample<WireMatrix>("matrix"));
   }
   const unlisten = await listen<Progress>("analysis-progress", (e) =>
     onProgress(e.payload),
   );
   try {
-    return await invoke<Matrix>("analyze", { path });
+    return expandMatrix(await invoke<WireMatrix>("analyze", { path }));
   } finally {
     unlisten();
   }
@@ -155,8 +171,29 @@ export async function impact(
   base: string | null,
   head: string | null,
 ): Promise<Impact> {
-  if (!inTauri) return fetchSample<Impact>("impact");
-  return invoke<Impact>("impact", { path, base, head });
+  const w = inTauri
+    ? await invoke<WireImpact>("impact", { path, base, head })
+    : await fetchSample<WireImpact>("impact");
+  const { matrix, ...rest } = w;
+  return matrix ? { ...rest, matrix: expandMatrix(matrix) } : rest;
+}
+
+/** One page of the symbols of `cells` (sorted by name); `head` = commit whose
+ * matrix is shown, null for the working tree. */
+export async function cellSymbols(
+  path: string,
+  head: string | null,
+  generation: number,
+  cells: string[],
+  offset: number,
+  limit: number,
+): Promise<CellSymbols> {
+  if (!inTauri) {
+    const all = await fetchSample<Record<string, CellSymbol[]>>("cell-symbols");
+    const list = cells.flatMap((c) => all[c] ?? []);
+    return { total: list.length, offset, symbols: list.slice(offset, offset + limit) };
+  }
+  return invoke<CellSymbols>("cell_symbols", { path, head, generation, cells, offset, limit });
 }
 
 export async function history(path: string, limit?: number): Promise<History> {
