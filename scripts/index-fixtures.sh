@@ -35,6 +35,40 @@ if [ "${FORCE:-0}" = 1 ] || [ ! -f "$J/index.scip" ]; then
 fi
 report java "$J/index.scip"
 
+# Gradle 7.4 wrapper cannot run on JDK 21: needs a JDK 17 (JAVA17_HOME, brew openjdk@17, java_home).
+G="$FIXTURES/spring-boot-realworld-example-app"
+if [ -d "$G" ]; then
+  J17=""
+  BREW17=""
+  if command -v brew >/dev/null; then
+    BREW17="$(brew --prefix openjdk@17 2>/dev/null || true)"
+    [ -n "$BREW17" ] && BREW17="$BREW17/libexec/openjdk.jdk/Contents/Home"
+  fi
+  for cand in "${JAVA17_HOME:-}" "$BREW17" "$(/usr/libexec/java_home -v 17 2>/dev/null || true)"; do
+    # java_home -v 17 may fall back to a newer JDK: always check the real version.
+    if [ -n "$cand" ] && [ -x "$cand/bin/java" ]; then
+      v=$("$cand/bin/java" -version 2>&1 || true)
+      if printf '%s' "$v" | grep -Eq 'version "17[."]'; then J17="$cand"; break; fi
+    fi
+  done
+  if [ "${FORCE:-0}" = 1 ] || [ ! -f "$G/index.scip" ]; then
+    if [ -n "$J17" ]; then
+      # Index to a temp file; a failure must not abort the other fixtures or leave a partial index.
+      if (cd "$G" && JAVA_HOME="$J17" cs launch "com.sourcegraph:scip-java_2.13:$SCIP_JAVA_VERSION" -- index --output index.scip.tmp); then
+        mv "$G/index.scip.tmp" "$G/index.scip"
+      else
+        rm -f "$G/index.scip.tmp"
+        echo "warning: spring-boot-realworld-example-app: indexing failed" >&2
+      fi
+    else
+      echo "skipping spring-boot-realworld-example-app: JDK 17 not found (set JAVA17_HOME)" >&2
+    fi
+  fi
+  if [ -f "$G/index.scip" ]; then report java-gradle "$G/index.scip"; fi
+else
+  echo "skipping spring-boot-realworld-example-app: fixture not found (run fetch-fixtures.sh)" >&2
+fi
+
 T="$FIXTURES/angular-realworld"
 if [ "${FORCE:-0}" = 1 ] || [ ! -f "$T/index.scip" ]; then
   (cd "$T" && npx -y "@sourcegraph/scip-typescript@$SCIP_TS_VERSION" index --output index.scip)

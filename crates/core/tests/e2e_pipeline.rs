@@ -59,8 +59,12 @@ fn check(name: &str, fixture_dir: &str) {
     let Some(root) = fixture(fixture_dir) else {
         return;
     };
+    check_with(name, &root, &offline(), true);
+}
+
+fn check_with(name: &str, root: &Path, opts: &Options, expect_scip: bool) {
     let t = Instant::now();
-    let a: Analysis = pipeline::analyze(&root, &offline(), &|_| {}).expect("analyze");
+    let a: Analysis = pipeline::analyze(root, opts, &|_| {}).expect("analyze");
     let total = t.elapsed();
     eprintln!(
         "{name}: analyze {total:?}; {} symbols, {} edges, link {:?}, warnings {:?}",
@@ -69,7 +73,11 @@ fn check(name: &str, fixture_dir: &str) {
         a.link_stats,
         a.warnings
     );
-    assert!(a.link_stats.is_some(), "{name}: index.scip was not linked");
+    if expect_scip {
+        assert!(a.link_stats.is_some(), "{name}: index.scip was not linked");
+    } else {
+        assert!(a.link_stats.is_none(), "{name}: unexpected SCIP link");
+    }
     assert!(total.as_secs() < 10, "{name}: analysis too slow: {total:?}");
 
     let Some(g) = golden(name) else {
@@ -161,6 +169,64 @@ fn e2e_jpetstore() {
 #[test]
 fn e2e_realworld() {
     check("realworld", "angular-realworld");
+}
+
+#[test]
+fn e2e_realworld_java() {
+    check("realworld-java", "spring-boot-realworld-example-app");
+}
+
+/// Gradle project; needs no `index.scip`: proves detection and classification.
+#[test]
+fn e2e_realworld_java_tree_sitter() {
+    let root = fixtures().join("spring-boot-realworld-example-app");
+    if !root.join("build.gradle").is_file() {
+        eprintln!("skipping: {} not found", root.display());
+        return;
+    }
+    let opts = Options {
+        use_scip: false,
+        ..offline()
+    };
+    check_with("realworld-java", &root, &opts, false);
+
+    // Stricter checks, tree-sitter only: every golden class is present, anchors are exact.
+    let a = pipeline::analyze(&root, &opts, &|_| {}).expect("analyze");
+    let Some(g) = golden("realworld-java") else {
+        return;
+    };
+    let classes = g
+        .get("class")
+        .and_then(|c| c.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(!classes.is_empty(), "golden has no classes");
+    for c in &classes {
+        let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            a.classification.placements.contains_key(name),
+            "golden class missing from placements: {name}"
+        );
+    }
+    for (name, layer) in [
+        ("io.spring.api.ArticleApi", "entry"),
+        ("io.spring.application.user.UserService", "business"),
+        (
+            "io.spring.infrastructure.repository.MyBatisArticleRepository",
+            "persistence",
+        ),
+        ("io.spring.api.security.WebSecurityConfig", "util"),
+    ] {
+        let p = a.classification.placements.get(name);
+        assert_eq!(p.map(|p| p.layer.as_str()), Some(layer), "{name}");
+    }
+    assert!(
+        a.graph
+            .symbols
+            .iter()
+            .all(|s| !s.file.starts_with("build/") && !s.file.contains("/build/")),
+        "symbol from a build/ path"
+    );
 }
 
 fn git(dir: &Path, args: &[&str]) {

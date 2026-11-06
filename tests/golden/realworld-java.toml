@@ -1,0 +1,99 @@
+# Hand-written oracle for gothinkster/spring-boot-realworld-example-app @ ee17e31 (Gradle, Java 11).
+# Classes the rules and the DTO fallback cannot place (core.article.Article, core.user.User,
+# core.article.ArticleRepository, graphql @DgsComponent classes) are left out rather than weakened.
+# Comment and ArticleData are placed (model) by the DTO fallback, not by a rule.
+# Domains are informational only (not asserted by the e2e test): name_root cannot reach several
+# of them (ArticleApi, ...QueryService).
+
+[[class]]
+name = "io.spring.api.ArticleApi"
+layer = "entry"
+domain = "article"
+
+[[class]]
+name = "io.spring.api.UsersApi"
+layer = "entry"
+domain = "user"
+
+[[class]]
+name = "io.spring.api.CommentsApi"
+layer = "entry"
+domain = "comment"
+
+[[class]]
+name = "io.spring.api.security.WebSecurityConfig"
+layer = "util"
+domain = "security"
+
+[[class]]
+name = "io.spring.application.ArticleQueryService"
+layer = "business"
+domain = "article"
+
+[[class]]
+name = "io.spring.application.article.ArticleCommandService"
+layer = "business"
+domain = "article"
+
+[[class]]
+name = "io.spring.application.user.UserService"
+layer = "business"
+domain = "user"
+
+[[class]]
+name = "io.spring.application.data.ArticleData"
+layer = "model"
+domain = "article"
+
+[[class]]
+name = "io.spring.core.comment.Comment"
+layer = "model"
+domain = "comment"
+
+[[class]]
+name = "io.spring.core.user.UserRepository"
+layer = "persistence"
+domain = "user"
+
+[[class]]
+name = "io.spring.core.service.JwtService"
+layer = "business"
+domain = "jwt"
+
+[[class]]
+name = "io.spring.infrastructure.service.DefaultJwtService"
+layer = "business"
+domain = "jwt"
+
+[[class]]
+name = "io.spring.infrastructure.repository.MyBatisArticleRepository"
+layer = "persistence"
+domain = "article"
+
+[[class]]
+name = "io.spring.infrastructure.mybatis.mapper.ArticleMapper"
+layer = "persistence"
+domain = "article"
+
+[[class]]
+name = "io.spring.infrastructure.mybatis.mapper.CommentMapper"
+layer = "persistence"
+domain = "comment"
+
+[[class]]
+name = "io.spring.infrastructure.mybatis.readservice.UserReadService"
+layer = "persistence"
+domain = "user"
+
+# Class-level Call/Uses chains read from field types (constructor injection).
+[[path]]
+chain = ["io.spring.api.ArticleApi", "io.spring.application.ArticleQueryService", "io.spring.infrastructure.mybatis.readservice.ArticleReadService"]
+
+[[path]]
+chain = ["io.spring.api.UsersApi", "io.spring.application.user.UserService", "io.spring.core.user.UserRepository"]
+
+[[path]]
+chain = ["io.spring.api.ArticlesApi", "io.spring.application.article.ArticleCommandService", "io.spring.core.article.ArticleRepository"]
+
+[[path]]
+chain = ["io.spring.infrastructure.repository.MyBatisArticleRepository", "io.spring.infrastructure.mybatis.mapper.ArticleMapper"]
