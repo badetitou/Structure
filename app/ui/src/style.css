@@ -10,9 +10,9 @@ header { display: flex; gap: 16px; align-items: center; padding: 10px 16px; bord
 header h1 { font-size: 18px; margin: 0; }
 .toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 16px; border-bottom: 1px solid #ddd; background: #fff; }
 .main { display: flex; height: calc(100vh - 100px); }
-.main .view { flex: 1; min-width: 0; overflow: auto; display: flex; }
-.main .view svg { flex: 1; min-width: 0; }
-.main .view svg.dense { flex: none; margin: 16px; }
+.main .view { flex: 1; min-width: 0; overflow: hidden; display: flex; }
+.main .view svg { flex: 1; min-width: 0; height: 100%; cursor: grab; touch-action: none; user-select: none; }
+.main .view svg.panning, .main .view svg.panning * { cursor: grabbing !important; }
 aside { width: 340px; border-left: 1px solid #ddd; background: #fff; padding: 10px 14px; overflow: auto; font-size: 13px; }
 aside h3 { margin: 12px 0 4px; font-size: 14px; }
 aside ul { margin: 0; padding-left: 16px; }
