@@ -5,14 +5,14 @@ classes into a layer x domain matrix, and shows the impact of a diff.
 
 ## How to try the POC
 
-Prerequisites: Rust (stable), Node 20+, JDK + Maven (for Java indexing),
+Prerequisites: Rust (stable), Node 20+, JDK + Maven or a Gradle wrapper (for Java indexing),
 `cargo install tauri-cli --version "^2"`. Optional: `scip-java` or Coursier
 (`cs`) for Java, `npx` for TypeScript (indexers are run automatically).
 
 Fixtures and indexes (already present in `fixtures/` on this machine):
 
 ```
-scripts/fetch-fixtures.sh      # clones jpetstore-6 and angular-realworld into fixtures/
+scripts/fetch-fixtures.sh      # clones jpetstore-6, angular-realworld and spring-boot-realworld-example-app (Gradle) into fixtures/
 scripts/index-fixtures.sh      # writes fixtures/*/index.scip
 ```
 
@@ -55,3 +55,7 @@ fixture or its `index.scip` is missing; they never run indexers).
   an unreachable private repository makes it hang (the app gives up after
   10 min and falls back to tree-sitter). `scripts/index-fixtures.sh` avoids it
   for jpetstore through `.mvn/maven.config` (Central only, tests skipped).
+- Gradle projects are indexed through their own wrapper, which must support the
+  JDK in use (the spring-boot-realworld fixture, Gradle 7.4, needs JDK 17 to
+  index; `index-fixtures.sh` skips it without `JAVA17_HOME`/a JDK 17).
+- Kotlin sources are ignored; generated sources under `build/` are not modelled.

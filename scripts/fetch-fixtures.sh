@@ -9,6 +9,8 @@ JPETSTORE_URL=https://github.com/mybatis/jpetstore-6
 JPETSTORE_SHA=8f11fab492a473d9f98a4eb71de0af8d565f38fe
 REALWORLD_URL=https://github.com/gothinkster/angular-realworld-example-app
 REALWORLD_SHA=d426ec804f7d035c374aa4a1b48ecdb05a03eb02
+SBRW_URL=https://github.com/gothinkster/spring-boot-realworld-example-app
+SBRW_SHA=ee17e31aafe733d98c4853c8b9a74d7f2f6c924a
 
 fetch() { # url dir sha
   if [ ! -d "$2/.git" ]; then git clone -q "$1" "$2"; fi
@@ -20,6 +22,7 @@ fetch() { # url dir sha
 
 fetch "$JPETSTORE_URL" "$FIXTURES/jpetstore-6" "$JPETSTORE_SHA"
 fetch "$REALWORLD_URL" "$FIXTURES/angular-realworld" "$REALWORLD_SHA"
+fetch "$SBRW_URL" "$FIXTURES/spring-boot-realworld-example-app" "$SBRW_SHA"
 
 if [ ! -d "$FIXTURES/jpetstore-6/target/classes" ]; then
   (cd "$FIXTURES/jpetstore-6" && mvn -q -s "$ROOT/scripts/maven-settings.xml" -DskipTests package)
