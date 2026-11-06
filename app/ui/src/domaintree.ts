@@ -157,3 +157,9 @@ export function aggregateImpact(
   }
   return { changed, impacted };
 }
+
+/** Impact mapped onto view cells (see `aggregateImpact`). */
+export interface ImpactView {
+  changed: ReadonlySet<string>;
+  impacted: ReadonlyMap<string, number>;
+}
