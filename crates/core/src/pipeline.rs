@@ -243,7 +243,40 @@ fn drain_grace(
     }
 }
 
-fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result<(), String> {
+/// Build-tool specific advice appended to indexer failures. Pure: only checks marker files in `root`.
+fn indexer_hint(root: &Path, lang: Language) -> Option<String> {
+    if !matches!(lang, Language::Java) {
+        return None;
+    }
+    let has = |n: &str| root.join(n).is_file();
+    if has("pom.xml") {
+        return Some("Maven project: check ~/.m2/settings.xml (unreachable repository?) and try `mvn -q compile` in the project".into());
+    }
+    let gradle = [
+        "build.gradle",
+        "build.gradle.kts",
+        "settings.gradle",
+        "settings.gradle.kts",
+    ];
+    if gradle.iter().any(|f| has(f)) {
+        let cmd = if has("gradlew") {
+            "./gradlew help"
+        } else {
+            "gradle help"
+        };
+        return Some(format!(
+            "Gradle project: run `{cmd}` in the project to see the build error (toolchain/plugin resolution?)"
+        ));
+    }
+    None
+}
+
+fn run_indexer(
+    root: &Path,
+    mut cmd: Command,
+    progress: IndexProgress,
+    hint: Option<&str>,
+) -> Result<(), String> {
     use std::collections::VecDeque;
     use std::process::Stdio;
     use std::sync::mpsc::{RecvTimeoutError, channel};
@@ -286,8 +319,9 @@ fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(format!(
-                    "timed out after {} min; check ~/.m2/settings.xml (unreachable repository?) or run the indexer manually",
-                    INDEX_TIMEOUT_SECS / 60
+                    "timed out after {} min; {}",
+                    INDEX_TIMEOUT_SECS / 60,
+                    hint.unwrap_or("run the indexer manually")
                 ));
             }
             Ok(None) => {}
@@ -330,10 +364,11 @@ fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result
         );
         return Ok(());
     }
-    Err(format!(
-        "{} ({status}); for Java also check ~/.m2/settings.xml",
-        tail.iter().cloned().collect::<Vec<_>>().join(" | ")
-    ))
+    let tail = tail.iter().cloned().collect::<Vec<_>>().join(" | ");
+    Err(match hint {
+        Some(h) => format!("{tail} ({status}); {h}"),
+        None => format!("{tail} ({status})"),
+    })
 }
 
 const INDEX_TIMEOUT_SECS: u64 = 600;
@@ -434,7 +469,7 @@ pub fn ensure_index_with_progress(
         warn("no SCIP indexer found (scip-java/cs/npx); using tree-sitter only".into());
         return Ok(None);
     };
-    match run_indexer(root, cmd, progress) {
+    match run_indexer(root, cmd, progress, indexer_hint(root, lang).as_deref()) {
         Ok(()) if index.is_file() => Ok(Some(index)),
         Ok(()) => {
             warn("indexer succeeded but produced no index.scip; using tree-sitter only".into());
@@ -1044,6 +1079,47 @@ mod tests {
         let imp = impact_at(&root, Some(&c1), Some(&c2), &no_scip(), &|_| {}).unwrap();
         assert!(imp.changed_symbols.is_empty(), "{imp:?}");
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    fn hint_dir(tag: &str, files: &[&str]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("structure-hint-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in files {
+            std::fs::write(dir.join(f), "").unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn indexer_hint_maven() {
+        let dir = hint_dir("mvn", &["pom.xml"]);
+        let h = indexer_hint(&dir, Language::Java).unwrap();
+        assert!(
+            h.contains("~/.m2/settings.xml") && h.contains("mvn -q compile"),
+            "{h}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn indexer_hint_gradle_with_and_without_wrapper() {
+        let dir = hint_dir("gw", &["build.gradle", "gradlew"]);
+        let h = indexer_hint(&dir, Language::Java).unwrap();
+        assert!(h.contains("./gradlew help") && !h.contains(".m2"), "{h}");
+        let _ = std::fs::remove_dir_all(&dir);
+        let dir = hint_dir("gn", &["settings.gradle.kts"]);
+        let h = indexer_hint(&dir, Language::Java).unwrap();
+        assert!(h.contains("`gradle help`"), "{h}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn indexer_hint_typescript_and_unknown_none() {
+        let dir = hint_dir("ts", &["tsconfig.json"]);
+        assert!(indexer_hint(&dir, Language::TypeScript).is_none());
+        assert!(indexer_hint(&dir, Language::Java).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
