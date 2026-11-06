@@ -46,16 +46,15 @@ fn run_analysis(path: &Path, reindex: bool, no_scip: bool) -> Result<Analysis> {
         use_scip: !no_scip,
     };
     let t = Instant::now();
-    let last = std::cell::Cell::new(Instant::now());
+    // (step name, start) of the step in progress; its duration is printed
+    // when the next step starts.
+    let current = std::cell::RefCell::new(None::<(String, Instant)>);
     let analysis = pipeline::analyze(path, &opts, &|p: Progress| {
         let now = Instant::now();
-        let prev = last.replace(now);
-        eprintln!(
-            "[{:>3}%] {} (+{} ms since previous step)",
-            p.pct,
-            p.step,
-            now.duration_since(prev).as_millis()
-        );
+        if let Some((step, start)) = current.replace(Some((p.step.clone(), now))) {
+            eprintln!("  {step}: {} ms", now.duration_since(start).as_millis());
+        }
+        eprintln!("[{:>3}%] {}", p.pct, p.step);
     })?;
     let m = &analysis.matrix;
     eprintln!(

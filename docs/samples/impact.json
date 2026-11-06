@@ -21,7 +21,7 @@
     },
     {
       "id": "entry:order",
-      "distance": 2
+      "distance": 3
     }
   ],
   "impacted_symbols": [
@@ -30,12 +30,12 @@
       "distance": 1
     },
     {
-      "id": "org.mybatis.jpetstore.web.actions.AccountActionBean",
+      "id": "org.mybatis.jpetstore.web.controllers.AccountController",
       "distance": 2
     },
     {
-      "id": "org.mybatis.jpetstore.web.actions.OrderActionBean",
-      "distance": 2
+      "id": "org.mybatis.jpetstore.web.controllers.OrderController",
+      "distance": 3
     }
   ]
 }

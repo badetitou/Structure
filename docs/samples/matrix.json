@@ -5,13 +5,16 @@
     "entry",
     "business",
     "persistence",
-    "model"
+    "model",
+    "util"
   ],
   "domains": [
     "account",
+    "cart",
     "catalog",
     "order",
-    "cart"
+    "root",
+    "staxfactoryinitializationlistener"
   ],
   "cells": [
     {
@@ -21,35 +24,9 @@
       "size": 1,
       "symbols": [
         {
-          "id": "org.mybatis.jpetstore.web.actions.AccountActionBean",
-          "name": "AccountActionBean",
-          "file": "src/main/java/org/mybatis/jpetstore/web/actions/AccountActionBean.java"
-        }
-      ]
-    },
-    {
-      "id": "entry:catalog",
-      "layer": "entry",
-      "domain": "catalog",
-      "size": 1,
-      "symbols": [
-        {
-          "id": "org.mybatis.jpetstore.web.actions.CatalogActionBean",
-          "name": "CatalogActionBean",
-          "file": "src/main/java/org/mybatis/jpetstore/web/actions/CatalogActionBean.java"
-        }
-      ]
-    },
-    {
-      "id": "entry:order",
-      "layer": "entry",
-      "domain": "order",
-      "size": 1,
-      "symbols": [
-        {
-          "id": "org.mybatis.jpetstore.web.actions.OrderActionBean",
-          "name": "OrderActionBean",
-          "file": "src/main/java/org/mybatis/jpetstore/web/actions/OrderActionBean.java"
+          "id": "org.mybatis.jpetstore.web.controllers.AccountController",
+          "name": "AccountController",
+          "file": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java"
         }
       ]
     },
@@ -60,9 +37,48 @@
       "size": 1,
       "symbols": [
         {
-          "id": "org.mybatis.jpetstore.web.actions.CartActionBean",
-          "name": "CartActionBean",
-          "file": "src/main/java/org/mybatis/jpetstore/web/actions/CartActionBean.java"
+          "id": "org.mybatis.jpetstore.web.controllers.CartController",
+          "name": "CartController",
+          "file": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java"
+        }
+      ]
+    },
+    {
+      "id": "entry:catalog",
+      "layer": "entry",
+      "domain": "catalog",
+      "size": 1,
+      "symbols": [
+        {
+          "id": "org.mybatis.jpetstore.web.controllers.CatalogController",
+          "name": "CatalogController",
+          "file": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java"
+        }
+      ]
+    },
+    {
+      "id": "entry:order",
+      "layer": "entry",
+      "domain": "order",
+      "size": 1,
+      "symbols": [
+        {
+          "id": "org.mybatis.jpetstore.web.controllers.OrderController",
+          "name": "OrderController",
+          "file": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java"
+        }
+      ]
+    },
+    {
+      "id": "entry:root",
+      "layer": "entry",
+      "domain": "root",
+      "size": 1,
+      "symbols": [
+        {
+          "id": "org.mybatis.jpetstore.web.controllers.RootController",
+          "name": "RootController",
+          "file": "src/main/java/org/mybatis/jpetstore/web/controllers/RootController.java"
         }
       ]
     },
@@ -125,6 +141,11 @@
       "size": 3,
       "symbols": [
         {
+          "id": "org.mybatis.jpetstore.mapper.CategoryMapper",
+          "name": "CategoryMapper",
+          "file": "src/main/java/org/mybatis/jpetstore/mapper/CategoryMapper.java"
+        },
+        {
           "id": "org.mybatis.jpetstore.mapper.ItemMapper",
           "name": "ItemMapper",
           "file": "src/main/java/org/mybatis/jpetstore/mapper/ItemMapper.java"
@@ -133,11 +154,6 @@
           "id": "org.mybatis.jpetstore.mapper.ProductMapper",
           "name": "ProductMapper",
           "file": "src/main/java/org/mybatis/jpetstore/mapper/ProductMapper.java"
-        },
-        {
-          "id": "org.mybatis.jpetstore.mapper.CategoryMapper",
-          "name": "CategoryMapper",
-          "file": "src/main/java/org/mybatis/jpetstore/mapper/CategoryMapper.java"
         }
       ]
     },
@@ -145,17 +161,22 @@
       "id": "persistence:order",
       "layer": "persistence",
       "domain": "order",
-      "size": 2,
+      "size": 3,
       "symbols": [
+        {
+          "id": "org.mybatis.jpetstore.mapper.LineItemMapper",
+          "name": "LineItemMapper",
+          "file": "src/main/java/org/mybatis/jpetstore/mapper/LineItemMapper.java"
+        },
         {
           "id": "org.mybatis.jpetstore.mapper.OrderMapper",
           "name": "OrderMapper",
           "file": "src/main/java/org/mybatis/jpetstore/mapper/OrderMapper.java"
         },
         {
-          "id": "org.mybatis.jpetstore.mapper.LineItemMapper",
-          "name": "LineItemMapper",
-          "file": "src/main/java/org/mybatis/jpetstore/mapper/LineItemMapper.java"
+          "id": "org.mybatis.jpetstore.mapper.SequenceMapper",
+          "name": "SequenceMapper",
+          "file": "src/main/java/org/mybatis/jpetstore/mapper/SequenceMapper.java"
         }
       ]
     },
@@ -169,42 +190,6 @@
           "id": "org.mybatis.jpetstore.domain.Account",
           "name": "Account",
           "file": "src/main/java/org/mybatis/jpetstore/domain/Account.java"
-        }
-      ]
-    },
-    {
-      "id": "model:catalog",
-      "layer": "model",
-      "domain": "catalog",
-      "size": 2,
-      "symbols": [
-        {
-          "id": "org.mybatis.jpetstore.domain.Item",
-          "name": "Item",
-          "file": "src/main/java/org/mybatis/jpetstore/domain/Item.java"
-        },
-        {
-          "id": "org.mybatis.jpetstore.domain.Product",
-          "name": "Product",
-          "file": "src/main/java/org/mybatis/jpetstore/domain/Product.java"
-        }
-      ]
-    },
-    {
-      "id": "model:order",
-      "layer": "model",
-      "domain": "order",
-      "size": 2,
-      "symbols": [
-        {
-          "id": "org.mybatis.jpetstore.domain.Order",
-          "name": "Order",
-          "file": "src/main/java/org/mybatis/jpetstore/domain/Order.java"
-        },
-        {
-          "id": "org.mybatis.jpetstore.domain.LineItem",
-          "name": "LineItem",
-          "file": "src/main/java/org/mybatis/jpetstore/domain/LineItem.java"
         }
       ]
     },
@@ -225,84 +210,218 @@
           "file": "src/main/java/org/mybatis/jpetstore/domain/CartItem.java"
         }
       ]
+    },
+    {
+      "id": "model:catalog",
+      "layer": "model",
+      "domain": "catalog",
+      "size": 3,
+      "symbols": [
+        {
+          "id": "org.mybatis.jpetstore.domain.Category",
+          "name": "Category",
+          "file": "src/main/java/org/mybatis/jpetstore/domain/Category.java"
+        },
+        {
+          "id": "org.mybatis.jpetstore.domain.Item",
+          "name": "Item",
+          "file": "src/main/java/org/mybatis/jpetstore/domain/Item.java"
+        },
+        {
+          "id": "org.mybatis.jpetstore.domain.Product",
+          "name": "Product",
+          "file": "src/main/java/org/mybatis/jpetstore/domain/Product.java"
+        }
+      ]
+    },
+    {
+      "id": "model:order",
+      "layer": "model",
+      "domain": "order",
+      "size": 3,
+      "symbols": [
+        {
+          "id": "org.mybatis.jpetstore.domain.LineItem",
+          "name": "LineItem",
+          "file": "src/main/java/org/mybatis/jpetstore/domain/LineItem.java"
+        },
+        {
+          "id": "org.mybatis.jpetstore.domain.Order",
+          "name": "Order",
+          "file": "src/main/java/org/mybatis/jpetstore/domain/Order.java"
+        },
+        {
+          "id": "org.mybatis.jpetstore.domain.Sequence",
+          "name": "Sequence",
+          "file": "src/main/java/org/mybatis/jpetstore/domain/Sequence.java"
+        }
+      ]
+    },
+    {
+      "id": "util:staxfactoryinitializationlistener",
+      "layer": "util",
+      "domain": "staxfactoryinitializationlistener",
+      "size": 1,
+      "symbols": [
+        {
+          "id": "org.mybatis.jpetstore.web.configuration.StaxFactoryInitializationListener",
+          "name": "StaxFactoryInitializationListener",
+          "file": "src/main/java/org/mybatis/jpetstore/web/configuration/StaxFactoryInitializationListener.java"
+        }
+      ]
     }
   ],
   "edges": [
     {
-      "from": "entry:account",
-      "to": "business:account",
-      "weight": 14
-    },
-    {
-      "from": "entry:catalog",
-      "to": "business:catalog",
-      "weight": 9
-    },
-    {
-      "from": "entry:order",
-      "to": "business:order",
-      "weight": 11
-    },
-    {
-      "from": "entry:order",
-      "to": "business:account",
-      "weight": 2
-    },
-    {
-      "from": "entry:cart",
-      "to": "model:cart",
-      "weight": 18
-    },
-    {
-      "from": "entry:cart",
-      "to": "business:catalog",
-      "weight": 3
+      "from": "business:account",
+      "to": "model:account",
+      "weight": 5
     },
     {
       "from": "business:account",
       "to": "persistence:account",
-      "weight": 5
+      "weight": 11
+    },
+    {
+      "from": "business:catalog",
+      "to": "model:catalog",
+      "weight": 7
     },
     {
       "from": "business:catalog",
       "to": "persistence:catalog",
-      "weight": 12
+      "weight": 17
     },
     {
       "from": "business:order",
-      "to": "persistence:order",
-      "weight": 7
+      "to": "model:catalog",
+      "weight": 2
+    },
+    {
+      "from": "business:order",
+      "to": "model:order",
+      "weight": 16
     },
     {
       "from": "business:order",
       "to": "persistence:catalog",
-      "weight": 3
-    },
-    {
-      "from": "persistence:account",
-      "to": "model:account",
-      "weight": 4
-    },
-    {
-      "from": "persistence:catalog",
-      "to": "model:catalog",
-      "weight": 8
-    },
-    {
-      "from": "persistence:order",
-      "to": "model:order",
       "weight": 6
     },
     {
       "from": "business:order",
+      "to": "persistence:order",
+      "weight": 17
+    },
+    {
+      "from": "entry:account",
+      "to": "business:account",
+      "weight": 6
+    },
+    {
+      "from": "entry:account",
+      "to": "business:catalog",
+      "weight": 4
+    },
+    {
+      "from": "entry:account",
+      "to": "model:account",
+      "weight": 13
+    },
+    {
+      "from": "entry:account",
+      "to": "model:catalog",
+      "weight": 5
+    },
+    {
+      "from": "entry:cart",
+      "to": "business:catalog",
+      "weight": 4
+    },
+    {
+      "from": "entry:cart",
+      "to": "model:cart",
+      "weight": 12
+    },
+    {
+      "from": "entry:cart",
+      "to": "model:catalog",
+      "weight": 3
+    },
+    {
+      "from": "entry:catalog",
+      "to": "business:catalog",
+      "weight": 8
+    },
+    {
+      "from": "entry:catalog",
+      "to": "model:catalog",
+      "weight": 8
+    },
+    {
+      "from": "entry:order",
+      "to": "business:order",
+      "weight": 5
+    },
+    {
+      "from": "entry:order",
+      "to": "entry:account",
+      "weight": 12
+    },
+    {
+      "from": "entry:order",
+      "to": "model:account",
+      "weight": 2
+    },
+    {
+      "from": "entry:order",
       "to": "model:cart",
       "weight": 2
+    },
+    {
+      "from": "entry:order",
+      "to": "model:order",
+      "weight": 44
+    },
+    {
+      "from": "model:cart",
+      "to": "model:catalog",
+      "weight": 10
+    },
+    {
+      "from": "model:order",
+      "to": "model:account",
+      "weight": 10
+    },
+    {
+      "from": "model:order",
+      "to": "model:cart",
+      "weight": 9
+    },
+    {
+      "from": "model:order",
+      "to": "model:catalog",
+      "weight": 8
+    },
+    {
+      "from": "persistence:account",
+      "to": "model:account",
+      "weight": 8
+    },
+    {
+      "from": "persistence:catalog",
+      "to": "model:catalog",
+      "weight": 7
+    },
+    {
+      "from": "persistence:order",
+      "to": "model:order",
+      "weight": 8
     }
   ],
   "stats": {
-    "files": 24,
-    "symbols": 187,
-    "edges": 96,
-    "elapsed_ms": 1840
+    "files": 25,
+    "symbols": 395,
+    "edges": 1092,
+    "elapsed_ms": 161
   }
 }

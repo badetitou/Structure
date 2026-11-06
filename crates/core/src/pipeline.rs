@@ -265,5 +265,14 @@ pub fn impact(
     base: Option<&str>,
     head: Option<&str>,
 ) -> anyhow::Result<Impact> {
-    impact::analyze(root, &analysis.graph, &analysis.classification, base, head)
+    let mut changes = impact::changed_lines(root, base, head)?;
+    // The SCIP index we write into the project is a build artefact, not a change.
+    changes.retain(|c| c.file != "index.scip");
+    Ok(impact::compute(
+        &analysis.graph,
+        &analysis.classification,
+        &changes,
+        base.unwrap_or("HEAD"),
+        head,
+    ))
 }
