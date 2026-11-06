@@ -8,13 +8,12 @@
   import ProjectHeader from "./ProjectHeader.svelte";
   import SidePanel from "./SidePanel.svelte";
   import Toolbar from "./Toolbar.svelte";
-  import type { MatrixController } from "../../matrixview";
   import { app } from "../../state.svelte";
 
   // Analyses `path`, shows the progress, then the matrix with its panels.
   let { path, onExit }: { path: string; onExit: (error?: string) => void } = $props();
 
-  let matrix = $state<MatrixController | null>(null);
+  let matrix = $state<ReturnType<typeof MatrixView> | null>(null);
 
   onMount(() => {
     let live = true;
@@ -30,7 +29,7 @@
   {#if app.phase === "ready" && app.work}
     <Tooltip.Provider>
       <ProjectHeader matrix={app.work} onClose={() => onExit()} />
-      <Toolbar onZoomIn={() => matrix?.zoomIn()} onZoomOut={() => matrix?.zoomOut()} onFit={() => matrix?.fit()} />
+      <Toolbar onZoomIn={() => matrix?.zoomIn()} onZoomOut={() => matrix?.zoomOut()} onFit={() => matrix?.fitView()} />
       {#if app.warnings.length > 0}
         <div class="flex-none border-b border-(--warn-border) bg-(--warn-bg) px-4 py-1.5 text-[13px] text-(--warn-fg)">
           {#each app.warnings as w}<div>⚠ {w}</div>{/each}
@@ -42,7 +41,9 @@
             <HistorySidebar />
           </SidePanel>
         {/if}
-        <MatrixView bind:controller={matrix} />
+        {#if app.matrix}
+          <MatrixView bind:this={matrix} matrix={app.matrix} />
+        {/if}
         <SidePanel
           side="right"
           panel={app.panels.right}
