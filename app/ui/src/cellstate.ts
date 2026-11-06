@@ -1,11 +1,11 @@
-export const CHANGED = "#dc2626";
-export const DEFAULT_FILL = "#cbd5e1";
+export const CHANGED = "var(--changed)";
+export const DEFAULT_FILL = "var(--cell)";
 
-/** distance 1 = darkest orange, fading with distance. */
+/** distance 1 = strongest step of the `--impact-*` token ramp, fading to step 5. */
 export function impactColor(distance: number): string {
-  const t = Math.min(Math.max(distance - 1, 0) / 4, 1);
-  const l = 40 + t * 40;
-  return `hsl(25 90% ${l}%)`;
+  if (!Number.isFinite(distance)) return "var(--impact-5)";
+  const step = Math.min(Math.max(Math.round(distance), 1), 5);
+  return `var(--impact-${step})`;
 }
 
 export interface CellPaint {
