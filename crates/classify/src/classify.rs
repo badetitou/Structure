@@ -5,7 +5,9 @@
 //! rule (file order) decides the layer. Without a match, a structural fallback
 //! applies (DTO-like class -> `model`, else `unknown`).
 
+use crate::matrix::{id_index, top_level_indices};
 use anyhow::Context;
+use rayon::prelude::*;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use structure_ir::ir::{EdgeKind, Graph, Symbol, SymbolKind};
@@ -158,13 +160,11 @@ fn simple(s: &str) -> &str {
     s.rsplit('.').next().unwrap_or(s)
 }
 
-fn rule_matches(r: &Rule, f: &Facts) -> bool {
+fn rule_matches(r: &Rule, f: &Facts, path: &str, pkg: Option<&str>) -> bool {
     let s = f.sym;
     let any = |list: &[String], pred: &dyn Fn(&str) -> bool| {
         list.is_empty() || list.iter().any(|x| pred(x))
     };
-    let path = format!("/{}", s.file);
-    let pkg = s.package.as_deref().map(|p| format!(".{p}."));
     (r.kind.is_empty() || r.kind.contains(&s.kind))
         && any(&r.any_annotation, &|a| s.annotations.iter().any(|x| x == a))
         && any(&r.any_supertype, &|a| {
@@ -174,9 +174,7 @@ fn rule_matches(r: &Rule, f: &Facts) -> bool {
         && any(&r.name_prefix, &|x| s.name.starts_with(x))
         && any(&r.name_contains, &|x| s.name.contains(x))
         && any(&r.path_contains, &|x| path.contains(x))
-        && any(&r.package_contains, &|x| {
-            pkg.as_deref().is_some_and(|p| p.contains(x))
-        })
+        && any(&r.package_contains, &|x| pkg.is_some_and(|p| p.contains(x)))
         && any(&r.uses, &|x| f.uses.contains(x))
 }
 
@@ -302,25 +300,15 @@ fn domain_of(spec: &DomainSpec, s: &Symbol) -> String {
 
 /// One placement per top-level symbol (kind Class/Interface/Enum/Function).
 pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Classification {
-    let by_id: HashMap<&str, &Symbol> = graph.symbols.iter().map(|s| (s.id.as_str(), s)).collect();
-    let top_of = |id: &str| -> Option<&str> {
-        let mut cur = *by_id.get(id)?;
-        for _ in 0..=graph.symbols.len() {
-            match cur.container.as_deref().and_then(|c| by_id.get(c)) {
-                Some(p) => cur = p,
-                None => return Some(cur.id.as_str()),
-            }
-        }
-        None
-    };
+    let by_id = id_index(graph);
 
-    let mut facts: BTreeMap<&str, Facts> = BTreeMap::new();
+    let mut facts_by_id: BTreeMap<&str, Facts> = BTreeMap::new();
     for s in graph
         .symbols
         .iter()
         .filter(|s| s.container.is_none() && is_top_kind(s.kind))
     {
-        facts.insert(
+        facts_by_id.insert(
             s.id.as_str(),
             Facts {
                 sym: s,
@@ -332,23 +320,38 @@ pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Class
     }
     for s in &graph.symbols {
         if matches!(s.kind, SymbolKind::Method | SymbolKind::Constructor)
-            && let Some(f) = s.container.as_deref().and_then(|c| facts.get_mut(c))
+            && let Some(f) = s.container.as_deref().and_then(|c| facts_by_id.get_mut(c))
         {
             f.members.push(s);
         }
     }
+    // Facts in id order, addressed by slot from here on.
+    let (fact_ids, mut facts): (Vec<&str>, Vec<Facts>) = facts_by_id.into_iter().unzip();
+    let slot_of_id: HashMap<&str, usize> = fact_ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (*id, i))
+        .collect();
+    // Facts slot of each symbol's top-level ancestor (computed once).
+    let slot_of_symbol: Vec<Option<usize>> = top_level_indices(graph, &by_id)
+        .into_iter()
+        .map(|t| t.and_then(|t| slot_of_id.get(graph.symbols[t].id.as_str()).copied()))
+        .collect();
     for e in &graph.edges {
-        let Some(top) = top_of(&e.from) else { continue };
-        let Some(f) = facts.get_mut(top) else {
+        let Some(&from) = by_id.get(e.from.as_str()) else {
             continue;
         };
+        let Some(slot) = slot_of_symbol[from] else {
+            continue;
+        };
+        let f = &mut facts[slot];
         match e.kind {
             EdgeKind::Call => f.has_calls = true,
             EdgeKind::Uses => {
                 if let Some(x) = e.to.strip_prefix("ext:") {
                     f.uses.insert(x);
-                } else if let Some(t) = by_id.get(e.to.as_str()) {
-                    f.uses.insert(t.name.as_str());
+                } else if let Some(&t) = by_id.get(e.to.as_str()) {
+                    f.uses.insert(graph.symbols[t].name.as_str());
                 }
             }
             EdgeKind::Extends | EdgeKind::Implements => {}
@@ -356,10 +359,23 @@ pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Class
     }
 
     let default_spec = rules.domain.clone().unwrap_or_default();
+    // First matching rule per fact (matching is independent per fact).
+    let hits: Vec<Option<&Rule>> = facts
+        .par_iter()
+        .map(|f| {
+            let path = format!("/{}", f.sym.file);
+            let pkg = f.sym.package.as_deref().map(|p| format!(".{p}."));
+            rules
+                .rules
+                .iter()
+                .find(|r| rule_matches(r, f, &path, pkg.as_deref()))
+        })
+        .collect();
     let mut placements: BTreeMap<String, Placement> = facts
         .iter()
-        .map(|(id, f)| {
-            let hit = rules.rules.iter().find(|r| rule_matches(r, f));
+        .zip(&hits)
+        .zip(&fact_ids)
+        .map(|((f, hit), id)| {
             let layer = match hit {
                 Some(r) => r.layer,
                 None if is_dto(f) => Layer::Model,
@@ -372,16 +388,11 @@ pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Class
         .collect();
     let mut domain_tree = None;
     if default_spec.strategy == Strategy::Auto {
-        let auto_ids: Vec<&str> = facts
+        let auto_ids: Vec<&str> = hits
             .iter()
-            .filter(|(_, f)| {
-                rules
-                    .rules
-                    .iter()
-                    .find(|r| rule_matches(r, f))
-                    .is_none_or(|r| r.domain.is_none())
-            })
-            .map(|(id, _)| *id)
+            .zip(&fact_ids)
+            .filter(|(hit, _)| hit.is_none_or(|r| r.domain.is_none()))
+            .map(|(_, id)| *id)
             .collect();
         let mut per_domain: HashMap<&str, usize> = HashMap::new();
         for id in &auto_ids {
@@ -394,7 +405,11 @@ pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Class
             let sep = module_separator;
             let members: Vec<(&str, Vec<String>)> = auto_ids
                 .iter()
-                .filter_map(|id| facts.get(id).map(|f| (*id, module_path(f.sym, sep))))
+                .filter_map(|id| {
+                    slot_of_id
+                        .get(id)
+                        .map(|&i| (*id, module_path(facts[i].sym, sep)))
+                })
                 .collect();
             let (domains, tree) = module_domains(&members, sep, &default_spec.fallback);
             for (id, d) in domains {
@@ -483,15 +498,23 @@ fn module_domains<'a>(
             .join(&sep.to_string())
             .to_lowercase()
     };
+    // For each suffix length, how many distinct modules share each suffix.
+    let longest = modules.iter().map(|m| m.len()).max().unwrap_or(0);
+    let shared: Vec<HashMap<String, usize>> = (1..=longest)
+        .map(|k| {
+            let mut c: HashMap<String, usize> = HashMap::new();
+            for m in &modules {
+                *c.entry(suffix(m, k)).or_default() += 1;
+            }
+            c
+        })
+        .collect();
     let name_of = |m: &Vec<String>| -> String {
         if m.is_empty() {
             return fallback.to_string();
         }
         let k = (1..=m.len())
-            .find(|k| {
-                let mine = suffix(m, *k);
-                modules.iter().all(|o| *o == m || suffix(o, *k) != mine)
-            })
+            .find(|k| shared[k - 1].get(&suffix(m, *k)).is_some_and(|n| *n == 1))
             .unwrap_or(m.len());
         suffix(m, k)
     };
@@ -1449,5 +1472,52 @@ aliases = { billing = ["invoices"] }
         // no package -> default module (fallback), not the file directory
         let tree = c.domain_tree.unwrap();
         assert_eq!(tree[0].domain.as_deref(), Some("misc"));
+    }
+
+    /// Several rules match: the earliest decides layer and domain spec, per
+    /// symbol, whatever the rest.
+    #[test]
+    fn earliest_matching_rule_decides_per_symbol() {
+        let rs = RuleSet::from_toml_str(
+            "[[rule]]\nlayer=\"entry\"\nname_suffix=[\"Api\"]\n\
+             [[rule]]\nlayer=\"business\"\nname_contains=[\"Foo\"]\n\
+             [[rule]]\nlayer=\"util\"\npath_contains=[\"/a/\"]\n",
+        )
+        .unwrap();
+        let syms = vec![
+            java("FooApi", SymbolKind::Class, "a"),
+            java("FooBar", SymbolKind::Class, "a"),
+            java("Other", SymbolKind::Class, "a"),
+            java("Other2", SymbolKind::Class, "z"),
+        ];
+        let c = classify(&graph(Language::Java, syms, vec![]), &rs);
+        assert_eq!(p(&c, "a.FooApi").0, Layer::Entry);
+        assert_eq!(p(&c, "a.FooBar").0, Layer::Business);
+        assert_eq!(p(&c, "a.Other").0, Layer::Util);
+        assert_ne!(p(&c, "z.Other2").0, Layer::Util);
+    }
+
+    fn mods(paths: &[&[&str]]) -> Vec<(&'static str, Vec<String>)> {
+        const IDS: [&str; 4] = ["m0", "m1", "m2", "m3"];
+        paths
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (IDS[i], m.iter().map(|x| x.to_string()).collect()))
+            .collect()
+    }
+
+    /// Shortest suffix that is unique among modules; a module that is a
+    /// suffix of another keeps its full (shorter) path.
+    #[test]
+    fn module_domains_shared_unique_and_nested_suffixes() {
+        let members = mods(&[&["x"], &["a", "x"], &["b", "y"], &["a", "b", "y"]]);
+        let (out, _) = module_domains(&members, '.', "misc");
+        let names: Vec<&str> = out.iter().map(|(_, d)| d.as_str()).collect();
+        // `x` is also the last segment of `a.x`; `b.y` is a suffix of `a.b.y`.
+        assert_eq!(names, ["x", "a.x", "b.y", "a.b.y"]);
+        let members = mods(&[&["a", "x"], &["b", "x"], &["c", "y"]]);
+        let (out, _) = module_domains(&members, '.', "misc");
+        let names: Vec<&str> = out.iter().map(|(_, d)| d.as_str()).collect();
+        assert_eq!(names, ["a.x", "b.x", "y"]);
     }
 }
