@@ -422,10 +422,19 @@ pub fn snapshot(root: &Path, rev: &str) -> anyhow::Result<PathBuf> {
 
 fn snapshot_bounded(root: &Path, rev: &str, max: usize) -> anyhow::Result<PathBuf> {
     let spec = format!("{rev}^{{commit}}");
-    let sha = impact::git(root, &["rev-parse", "--verify", "--quiet", &spec])
-        .with_context(|| format!("unknown revision: {rev}"))?
-        .trim()
-        .to_string();
+    let sha = impact::git(
+        root,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+            &spec,
+        ],
+    )
+    .with_context(|| format!("unknown revision: {rev}"))?
+    .trim()
+    .to_string();
     let prefix = impact::git(root, &["rev-parse", "--show-prefix"])?
         .trim()
         .to_string();
@@ -439,7 +448,9 @@ fn snapshot_bounded(root: &Path, rev: &str, max: usize) -> anyhow::Result<PathBu
     let valid = dir.join(".git").exists()
         && impact::git(&dir, &["rev-parse", "--show-toplevel"])
             .is_ok_and(|t| Path::new(t.trim()).canonicalize().ok() == dir.canonicalize().ok())
-        && impact::git(&dir, &["rev-parse", "HEAD"]).is_ok_and(|h| h.trim() == sha);
+        && impact::git(&dir, &["rev-parse", "HEAD"]).is_ok_and(|h| h.trim() == sha)
+        // Tracked files deleted from the checkout; untracked ones (index.scip, builds) are fine.
+        && impact::git(&dir, &["ls-files", "-d"]).is_ok_and(|d| d.trim().is_empty());
     if !valid {
         let _ = impact::git(root, &["worktree", "remove", "--force", &dir_str]);
         let _ = std::fs::remove_dir_all(&dir);
@@ -447,12 +458,15 @@ fn snapshot_bounded(root: &Path, rev: &str, max: usize) -> anyhow::Result<PathBu
         impact::git(root, &["worktree", "add", "--detach", &dir_str, &sha])
             .with_context(|| format!("creating snapshot of {rev}"))?;
     }
-    // Mark as recently used.
-    if let Ok(f) = std::fs::File::open(&dir) {
-        let _ = f.set_modified(std::time::SystemTime::now());
-    }
+    // Mark as recently used, with a marker outside the worktree (the indexer
+    // writes inside it, which would change the dir's mtime).
+    let _ = std::fs::write(marker(&snaps, &sha), "");
     prune_snapshots(root, &snaps, max, &sha);
     Ok(dir.join(prefix))
+}
+
+fn marker(snaps: &Path, sha: &str) -> PathBuf {
+    snaps.join(format!("{sha}.used"))
 }
 
 /// Remove least recently used snapshots beyond `max`, never `keep`.
@@ -463,7 +477,14 @@ fn prune_snapshots(root: &Path, snaps: &Path, max: usize, keep: &str) {
     let mut all: Vec<(std::time::SystemTime, PathBuf)> = rd
         .filter_map(Result::ok)
         .filter(|e| e.path().is_dir())
-        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .map(|e| {
+            let used = e.file_name().to_str().map(|n| marker(snaps, n));
+            let t = used
+                .and_then(|m| std::fs::metadata(m).ok())
+                .and_then(|m| m.modified().ok())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            (t, e.path())
+        })
         .collect();
     if all.len() <= max {
         return;
@@ -480,6 +501,9 @@ fn prune_snapshots(root: &Path, snaps: &Path, max: usize, keep: &str) {
             &["worktree", "remove", "--force", &p.to_string_lossy()],
         );
         let _ = std::fs::remove_dir_all(&p);
+        if let Some(n) = p.file_name().and_then(|n| n.to_str()) {
+            let _ = std::fs::remove_file(marker(snaps, n));
+        }
     }
     let _ = impact::git(root, &["worktree", "prune"]);
 }
@@ -493,16 +517,27 @@ pub fn impact_at(
     opts: &Options,
     progress: &dyn Fn(Progress),
 ) -> anyhow::Result<Impact> {
+    if head.is_some() && base.is_none() {
+        bail!("head requires base");
+    }
     let Some(h) = head else {
         let analysis = analyze(root, opts, progress)?;
         return impact(root, &analysis, base, None);
     };
     let base_sha = match base {
         Some(b) => Some(
-            impact::git(root, &["rev-parse", "--verify", &format!("{b}^{{commit}}")])
-                .with_context(|| format!("unknown revision: {b}"))?
-                .trim()
-                .to_string(),
+            impact::git(
+                root,
+                &[
+                    "rev-parse",
+                    "--verify",
+                    "--end-of-options",
+                    &format!("{b}^{{commit}}"),
+                ],
+            )
+            .with_context(|| format!("unknown revision: {b}"))?
+            .trim()
+            .to_string(),
         ),
         None => None,
     };
@@ -614,6 +649,55 @@ mod tests {
         std::fs::remove_file(top.join(".git")).unwrap();
         let b = snapshot(&root, &c2).unwrap();
         assert!(top.join(".git").exists() && b.join("src/A.java").is_file());
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn damaged_snapshot_is_recreated() {
+        let (repo, c1, _) = temp_repo("damaged");
+        let root = repo.join("app");
+        let a = snapshot(&root, &c1).unwrap();
+        std::fs::write(a.join("index.scip"), "x").unwrap();
+        snapshot(&root, &c1).unwrap();
+        assert!(
+            a.join("index.scip").is_file(),
+            "untracked files do not invalidate"
+        );
+        std::fs::remove_file(a.join("src/A.java")).unwrap();
+        let b = snapshot(&root, &c1).unwrap();
+        assert!(b.join("src/A.java").is_file());
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn reuse_refreshes_recency_for_pruning() {
+        let (repo, c1, c2) = temp_repo("lru");
+        let root = repo.join("app");
+        let c0 = format!("{c1}^");
+        let nap = || std::thread::sleep(Duration::from_millis(30));
+        let s1 = snapshot_bounded(&root, &c1, 2).unwrap();
+        nap();
+        let s2 = snapshot_bounded(&root, &c2, 2).unwrap();
+        nap();
+        snapshot_bounded(&root, &c1, 2).unwrap();
+        nap();
+        let s0 = snapshot_bounded(&root, &c0, 2).unwrap();
+        assert!(s1.exists() && s0.exists());
+        assert!(!s2.exists(), "least recently used snapshot pruned");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn rejects_option_like_revs_and_head_without_base() {
+        let (repo, c1, _) = temp_repo("args");
+        let root = repo.join("app");
+        assert!(snapshot(&root, "--all").is_err());
+        let e = impact_at(&root, None, Some(&c1), &no_scip(), &|_| {}).unwrap_err();
+        assert!(e.to_string().contains("head requires base"), "{e}");
+        assert!(
+            !repo.join(".git/structure/snapshots").join(&c1).exists(),
+            "no snapshot created"
+        );
         let _ = std::fs::remove_dir_all(&repo);
     }
 
