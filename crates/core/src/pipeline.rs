@@ -80,26 +80,139 @@ fn find_cs() -> Option<PathBuf> {
     })
 }
 
-fn run_indexer(root: &Path, mut cmd: Command) -> Result<(), String> {
-    use std::io::Read;
+/// Reports `(pct, detail)` while the indexer runs.
+type IndexProgress<'a> = &'a mut dyn FnMut(u8, String);
+
+const INDEX_PCT_START: u8 = 5;
+const INDEX_PCT_CAP: u8 = 34;
+const DETAIL_MAX_CHARS: usize = 120;
+
+/// Strips ANSI escapes, trims, and drops blank or download-noise lines;
+/// caps the length. `None` when the line is not worth showing.
+fn clean_line(raw: &str) -> Option<String> {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for n in chars.by_ref() {
+                    if n.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else if c != '\r' {
+            out.push(c);
+        }
+    }
+    let line = out.trim();
+    if line.is_empty() || line.contains("Download") || line.contains("Progress (") {
+        return None;
+    }
+    Some(if line.chars().count() > DETAIL_MAX_CHARS {
+        let cut: String = line.chars().take(DETAIL_MAX_CHARS - 1).collect();
+        format!("{cut}…")
+    } else {
+        line.to_string()
+    })
+}
+
+/// Maven reactor counter: `[INFO] Building foo 1.0 [3/12]` gives `(3, 12)`.
+fn reactor_counter(line: &str) -> Option<(u32, u32)> {
+    if !line.contains("Building ") {
+        return None;
+    }
+    let inner = line.trim_end().strip_suffix(']')?;
+    let (_, counter) = inner.rsplit_once('[')?;
+    let (a, b) = counter.split_once('/')?;
+    let (a, b) = (a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?);
+    (b > 0 && a <= b).then_some((a, b))
+}
+
+/// Monotonic percentage inside the indexing band (5..=34).
+#[derive(Debug, Default)]
+struct IndexPct {
+    last: u8,
+    reactor: Option<(u32, u32)>,
+}
+
+impl IndexPct {
+    fn update(&mut self, line: Option<&str>, elapsed_secs: u64) -> u8 {
+        if let Some(c) = line.and_then(reactor_counter) {
+            self.reactor = Some(c);
+        }
+        let band = u64::from(INDEX_PCT_CAP - INDEX_PCT_START);
+        let candidate = match self.reactor {
+            // Module `a` has started: `a - 1` modules are done.
+            Some((a, b)) => u64::from(a.saturating_sub(1)) * band / u64::from(b),
+            // One point every 6 s.
+            None => elapsed_secs / 6,
+        };
+        let pct = (u64::from(INDEX_PCT_START) + candidate).min(u64::from(INDEX_PCT_CAP)) as u8;
+        self.last = self.last.max(pct);
+        self.last
+    }
+}
+
+fn spawn_line_reader<R: std::io::Read + Send + 'static>(
+    r: R,
+    tx: std::sync::mpsc::Sender<String>,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        let mut r = std::io::BufReader::new(r);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            match r.read_until(b'\n', &mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    if tx.send(String::from_utf8_lossy(&buf).into_owned()).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result<(), String> {
+    use std::collections::VecDeque;
     use std::process::Stdio;
+    use std::sync::mpsc::{RecvTimeoutError, channel};
     use std::time::Duration;
+    let started = Instant::now();
     let mut child = cmd
         .current_dir(root)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("cannot start {:?}: {e}", cmd.get_program()))?;
-    let mut stderr = child.stderr.take();
-    let reader = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(s) = stderr.as_mut() {
-            let _ = s.read_to_end(&mut buf);
+    let (tx, rx) = channel::<String>();
+    let mut readers = Vec::new();
+    if let Some(s) = child.stdout.take() {
+        readers.push(spawn_line_reader(s, tx.clone()));
+    }
+    if let Some(s) = child.stderr.take() {
+        readers.push(spawn_line_reader(s, tx.clone()));
+    }
+    drop(tx);
+    let mut tail: VecDeque<String> = VecDeque::new();
+    let mut keep = |line: &str| {
+        if !line.trim().is_empty() {
+            if tail.len() == 8 {
+                tail.pop_front();
+            }
+            tail.push_back(line.trim_end().to_string());
         }
-        buf
-    });
-    let deadline = Instant::now() + Duration::from_secs(INDEX_TIMEOUT_SECS);
+    };
+    let mut pct = IndexPct::default();
+    let mut last_line = String::from("starting indexer");
+    let mut last_emit: Option<Instant> = None;
+    let mut disconnected = false;
+    let deadline = started + Duration::from_secs(INDEX_TIMEOUT_SECS);
     let status = loop {
         match child.try_wait() {
             Ok(Some(st)) => break st,
@@ -111,20 +224,44 @@ fn run_indexer(root: &Path, mut cmd: Command) -> Result<(), String> {
                     INDEX_TIMEOUT_SECS / 60
                 ));
             }
-            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Ok(None) => {}
             Err(e) => return Err(format!("waiting for indexer: {e}")),
+        }
+        let mut cleaned: Option<String> = None;
+        if disconnected {
+            std::thread::sleep(Duration::from_millis(100));
+        } else {
+            match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(raw) => {
+                    keep(&raw);
+                    cleaned = clean_line(&raw);
+                    if let Some(c) = &cleaned {
+                        last_line = c.clone();
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => disconnected = true,
+            }
+        }
+        let elapsed = started.elapsed().as_secs();
+        let p = pct.update(cleaned.as_deref(), elapsed);
+        if last_emit.is_none_or(|t| t.elapsed() >= Duration::from_secs(1)) {
+            last_emit = Some(Instant::now());
+            progress(p, format!("{last_line} · {elapsed}s"));
         }
     };
     if status.success() {
         return Ok(());
     }
-    let buf = reader.join().unwrap_or_default();
-    let err = String::from_utf8_lossy(&buf);
-    let mut tail: Vec<&str> = err.lines().rev().take(8).collect();
-    tail.reverse();
+    for r in readers {
+        let _ = r.join();
+    }
+    for raw in rx.try_iter() {
+        keep(&raw);
+    }
     Err(format!(
         "{} ({status}); for Java also check ~/.m2/settings.xml",
-        tail.join(" | ")
+        tail.iter().cloned().collect::<Vec<_>>().join(" | ")
     ))
 }
 
@@ -172,6 +309,17 @@ pub fn ensure_index(
     opts: &Options,
     warn: &mut dyn FnMut(String),
 ) -> anyhow::Result<Option<PathBuf>> {
+    ensure_index_with_progress(root, lang, opts, warn, &mut |_, _| {})
+}
+
+/// Like [`ensure_index`], reporting `(pct, detail)` while the indexer runs.
+pub fn ensure_index_with_progress(
+    root: &Path,
+    lang: Language,
+    opts: &Options,
+    warn: &mut dyn FnMut(String),
+    progress: &mut dyn FnMut(u8, String),
+) -> anyhow::Result<Option<PathBuf>> {
     let index = root.join("index.scip");
     if index.is_file() && !opts.reindex {
         let stale = newer_sources(root, lang, &index);
@@ -215,7 +363,7 @@ pub fn ensure_index(
         warn("no SCIP indexer found (scip-java/cs/npx); using tree-sitter only".into());
         return Ok(None);
     };
-    match run_indexer(root, cmd) {
+    match run_indexer(root, cmd, progress) {
         Ok(()) if index.is_file() => Ok(Some(index)),
         Ok(()) => {
             warn("indexer succeeded but produced no index.scip; using tree-sitter only".into());
@@ -246,6 +394,7 @@ pub fn analyze(
         progress(Progress {
             step: s.into(),
             pct,
+            detail: None,
         })
     };
     if !root.is_dir() {
@@ -256,7 +405,19 @@ pub fn analyze(
 
     step("indexing", 5);
     let index_path = if opts.use_scip {
-        ensure_index(root, lang, opts, &mut |w| warnings.push(w))?
+        ensure_index_with_progress(
+            root,
+            lang,
+            opts,
+            &mut |w| warnings.push(w),
+            &mut |pct, detail| {
+                progress(Progress {
+                    step: "indexing".into(),
+                    pct,
+                    detail: Some(detail),
+                })
+            },
+        )?
     } else {
         None
     };
@@ -415,6 +576,44 @@ pub fn impact(
 mod tests {
     use super::*;
     use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn clean_line_filters_and_caps() {
+        assert_eq!(clean_line("   \n"), None);
+        assert_eq!(clean_line("[INFO] Downloading from central: x.pom"), None);
+        assert_eq!(
+            clean_line("\u{1b}[1m> Task :app:compileJava\u{1b}[0m\r\n").as_deref(),
+            Some("> Task :app:compileJava")
+        );
+        let long = "x".repeat(500);
+        assert_eq!(clean_line(&long).unwrap().chars().count(), DETAIL_MAX_CHARS);
+    }
+
+    #[test]
+    fn reactor_counter_parses_maven_lines() {
+        assert_eq!(
+            reactor_counter("[INFO] Building foo 1.0 [3/12]"),
+            Some((3, 12))
+        );
+        assert_eq!(reactor_counter("[INFO] Building foo 1.0"), None);
+        assert_eq!(reactor_counter("> Task :x"), None);
+        assert_eq!(reactor_counter("Building x [5/4]"), None);
+    }
+
+    #[test]
+    fn index_pct_is_bounded_and_monotonic() {
+        let mut p = IndexPct::default();
+        assert_eq!(p.update(Some("> Task :x"), 0), 5);
+        assert_eq!(p.update(None, 60), 15);
+        let a = p.update(Some("[INFO] Building a 1 [6/12]"), 61);
+        assert_eq!(a, 17);
+        // Reactor says earlier module: never goes backwards.
+        assert_eq!(p.update(Some("[INFO] Building b 1 [1/12]"), 62), 17);
+        assert_eq!(p.update(Some("[INFO] Building z 1 [12/12]"), 63), 31);
+        assert_eq!(p.update(None, 100_000), 31);
+        let mut q = IndexPct::default();
+        assert_eq!(q.update(None, 100_000), INDEX_PCT_CAP);
+    }
 
     fn touch(p: &Path, t: SystemTime) {
         std::fs::write(p, "x").unwrap();

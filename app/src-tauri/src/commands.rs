@@ -13,13 +13,18 @@ use tauri::{AppHandle, Emitter, Manager};
 pub struct Cache(pub Mutex<HashMap<String, Analysis>>);
 
 fn emit_progress(app: &AppHandle, step: &str, pct: u8) {
-    let _ = app.emit(
-        "analysis-progress",
+    emit_progress_event(
+        app,
         Progress {
             step: step.to_string(),
             pct,
+            detail: None,
         },
     );
+}
+
+fn emit_progress_event(app: &AppHandle, p: Progress) {
+    let _ = app.emit("analysis-progress", p);
 }
 
 fn canonical(path: &str) -> Result<(PathBuf, String), String> {
@@ -33,7 +38,7 @@ fn canonical(path: &str) -> Result<(PathBuf, String), String> {
 /// Analyze (warnings travel in `Matrix::warnings`), emit progress, and cache
 /// the result.
 fn run_analyze(app: &AppHandle, path: &Path, key: &str, opts: &Options) -> Result<Matrix, String> {
-    let a = pipeline::analyze(path, opts, &|p| emit_progress(app, &p.step, p.pct))
+    let a = pipeline::analyze(path, opts, &|p| emit_progress_event(app, p))
         .map_err(|e| format!("{e:#}"))?;
     let matrix = a.matrix.clone();
     app.state::<Cache>()
