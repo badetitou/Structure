@@ -5,8 +5,8 @@ use std::path::Path;
 
 use anyhow::Context;
 use protobuf::CodedInputStream;
-#[cfg(test)]
 use protobuf::Message;
+use rayon::prelude::*;
 use scip::types::{self, descriptor::Suffix};
 
 use structure_ir::ir::Range;
@@ -96,21 +96,24 @@ pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<ScipIndex> {
 fn decode(input: &mut CodedInputStream) -> anyhow::Result<ScipIndex> {
     let mut out = ScipIndex::default();
     let mut external: Vec<types::SymbolInformation> = Vec::new();
+    let mut batch: Vec<Vec<u8>> = Vec::new();
+    let mut batch_bytes = 0usize;
     while let Some(tag) = input
         .read_raw_tag_or_eof()
         .context("invalid SCIP protobuf")?
     {
         match tag >> 3 {
             2 => {
-                let doc: types::Document = input.read_message().context("invalid SCIP protobuf")?;
-                for info in &doc.symbols {
-                    add_symbol(&mut out.symbols, info);
+                // Raw document bytes are batched, then decoded in parallel
+                // (in order); only one batch of raw bytes is ever resident.
+                let len = input.read_raw_varint32().context("invalid SCIP protobuf")?;
+                let raw = input.read_raw_bytes(len).context("invalid SCIP protobuf")?;
+                batch_bytes += raw.len();
+                batch.push(raw);
+                if batch_bytes >= BATCH_BYTES {
+                    flush(&mut batch, &mut out)?;
+                    batch_bytes = 0;
                 }
-                out.documents.push(ScipDocument {
-                    relative_path: doc.relative_path,
-                    language: doc.language,
-                    occurrences: doc.occurrences.iter().filter_map(convert_occ).collect(),
-                });
             }
             3 => external.push(input.read_message().context("invalid SCIP protobuf")?),
             _ => {
@@ -119,10 +122,41 @@ fn decode(input: &mut CodedInputStream) -> anyhow::Result<ScipIndex> {
             }
         }
     }
+    flush(&mut batch, &mut out)?;
     for info in &external {
         add_symbol(&mut out.symbols, info);
     }
     Ok(out)
+}
+
+/// Raw document bytes decoded per parallel batch.
+const BATCH_BYTES: usize = 64 << 20;
+
+fn flush(batch: &mut Vec<Vec<u8>>, out: &mut ScipIndex) -> anyhow::Result<()> {
+    let decoded: Vec<anyhow::Result<(ScipDocument, Vec<types::SymbolInformation>)>> = batch
+        .par_iter()
+        .map(|raw| {
+            let doc = types::Document::parse_from_bytes(raw).context("invalid SCIP protobuf")?;
+            let occurrences = doc.occurrences.iter().filter_map(convert_occ).collect();
+            Ok((
+                ScipDocument {
+                    relative_path: doc.relative_path,
+                    language: doc.language,
+                    occurrences,
+                },
+                doc.symbols,
+            ))
+        })
+        .collect();
+    batch.clear();
+    for d in decoded {
+        let (doc, symbols) = d?;
+        for info in &symbols {
+            add_symbol(&mut out.symbols, info);
+        }
+        out.documents.push(doc);
+    }
+    Ok(())
 }
 
 fn add_symbol(map: &mut HashMap<String, ScipSymbol>, info: &types::SymbolInformation) {

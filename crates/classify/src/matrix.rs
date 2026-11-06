@@ -1,7 +1,7 @@
 //! Quotient graph: symbol-level graph + classification -> layer x domain matrix.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use structure_ir::ir::{EdgeKind, Graph, Symbol};
+use structure_ir::ir::{EdgeKind, Graph};
 use structure_ir::model::{
     Cell, CellSymbol, CellSymbols, Classification, EdgeGroup, Layer, Matrix, Stats,
 };
@@ -16,24 +16,50 @@ pub fn cell_of(graph: &Graph, cls: &Classification, symbol_id: &str) -> Option<S
 /// Symbol edges lifted to top-level ids, deduped with counts, self-loops and
 /// edges with an unresolved endpoint removed. Sorted by (from, to, kind).
 pub fn class_edges(graph: &Graph) -> Vec<(String, String, EdgeKind, u32)> {
-    let by_id: HashMap<&str, &Symbol> = graph.symbols.iter().map(|s| (s.id.as_str(), s)).collect();
-    let lift = |id: &str| -> Option<String> {
-        let mut cur = *by_id.get(id)?;
-        for _ in 0..=graph.symbols.len() {
-            match cur.container.as_deref().and_then(|c| by_id.get(c)) {
-                Some(p) => cur = p,
-                None => return Some(cur.id.clone()),
+    let id = |i: usize| graph.symbols[i].id.as_str();
+    let mut out = class_edge_indices(graph);
+    out.sort_unstable_by(|a, b| (id(a.0), id(a.1), a.2).cmp(&(id(b.0), id(b.1), b.2)));
+    out.into_iter()
+        .map(|(f, t, _, k, n)| (id(f).to_string(), id(t).to_string(), k, n))
+        .collect()
+}
+
+/// `class_edges` on symbol indices (into `graph.symbols`) as
+/// (from, to, kind rank, kind, count), unordered.
+fn class_edge_indices(graph: &Graph) -> Vec<(usize, usize, u8, EdgeKind, u32)> {
+    // Symbol id -> index (the last symbol wins on duplicate ids).
+    let by_id: HashMap<&str, usize> = graph
+        .symbols
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.id.as_str(), i))
+        .collect();
+    // Top-level ancestor of every symbol, computed once.
+    let top: Vec<Option<usize>> = (0..graph.symbols.len())
+        .map(|i| {
+            let mut cur = i;
+            for _ in 0..=graph.symbols.len() {
+                match graph.symbols[cur]
+                    .container
+                    .as_deref()
+                    .and_then(|c| by_id.get(c))
+                {
+                    Some(&p) => cur = p,
+                    None => return Some(cur),
+                }
             }
-        }
-        None
-    };
+            None
+        })
+        .collect();
+    let lift = |id: &str| -> Option<usize> { top[*by_id.get(id)?] };
     let kind_rank = |k: EdgeKind| match k {
         EdgeKind::Call => 0u8,
         EdgeKind::Implements => 1,
         EdgeKind::Extends => 2,
         EdgeKind::Uses => 3,
     };
-    let mut counts: BTreeMap<(String, String, u8), (EdgeKind, u32)> = BTreeMap::new();
+    // Counted on indices; ids are only ordered and cloned once per distinct edge.
+    let mut counts: HashMap<(usize, usize, u8), (EdgeKind, u32)> = HashMap::new();
     for e in &graph.edges {
         let (Some(f), Some(t)) = (lift(&e.from), lift(&e.to)) else {
             continue;
@@ -48,7 +74,7 @@ pub fn class_edges(graph: &Graph) -> Vec<(String, String, EdgeKind, u32)> {
     }
     counts
         .into_iter()
-        .map(|((f, t, _), (k, n))| (f, t, k, n))
+        .map(|((f, t, r), (k, n))| (f, t, r, k, n))
         .collect()
 }
 
@@ -133,19 +159,23 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
         .map(|(i, c)| (c.id.as_str(), i))
         .collect();
 
-    let cell_of_top = |id: &str| -> Option<String> {
-        let p = cls.placements.get(id)?;
-        Some(Cell::id_for(p.layer, &p.domain))
-    };
+    // Cell index of every symbol that has a placement (top-level ones).
+    let cell_of_symbol: Vec<Option<usize>> = graph
+        .symbols
+        .iter()
+        .map(|s| {
+            let p = cls.placements.get(&s.id)?;
+            index
+                .get(Cell::id_for(p.layer, &p.domain).as_str())
+                .copied()
+        })
+        .collect();
     let mut weights: BTreeMap<(usize, usize), u32> = BTreeMap::new();
-    for (f, t, kind, n) in class_edges(graph) {
+    for (f, t, _, kind, n) in class_edge_indices(graph) {
         if !matches!(kind, EdgeKind::Call | EdgeKind::Uses) {
             continue;
         }
-        let (Some(cf), Some(ct)) = (cell_of_top(&f), cell_of_top(&t)) else {
-            continue;
-        };
-        let (Some(&i), Some(&j)) = (index.get(cf.as_str()), index.get(ct.as_str())) else {
+        let (Some(i), Some(j)) = (cell_of_symbol[f], cell_of_symbol[t]) else {
             continue;
         };
         if i != j {
@@ -186,7 +216,7 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
 #[cfg(test)]
 mod tests {
     use super::*;
-    use structure_ir::ir::{Edge, Language, Range, SymbolKind};
+    use structure_ir::ir::{Edge, Language, Range, Symbol, SymbolKind};
     use structure_ir::model::Placement;
 
     fn sym(id: &str, name: &str, kind: SymbolKind, container: Option<&str>, file: &str) -> Symbol {

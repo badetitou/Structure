@@ -3,6 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use rayon::prelude::*;
+
 use crate::scip::{self, ScipIndex};
 use structure_ir::ir::{Edge, EdgeKind, Graph, Range, Symbol, SymbolKind};
 
@@ -56,11 +58,19 @@ fn contains(r: &Range, p: (u32, u32)) -> bool {
     (r.start_line, r.start_col) <= p && p < (r.end_line, r.end_col)
 }
 
-struct FileIndex {
+struct FileIndex<'a> {
     /// Symbol indices sorted by range start.
     by_start: Vec<usize>,
     /// name_range start line -> symbol indices.
     by_line: HashMap<u32, Vec<usize>>,
+    /// name -> symbol indices, in `by_start` order.
+    by_name: HashMap<&'a str, Vec<usize>>,
+}
+
+/// Edge target before ids are materialised as strings.
+enum Target {
+    Sym(usize),
+    Ext(String),
 }
 
 fn edge_order(a: &Edge, b: &Edge) -> std::cmp::Ordering {
@@ -71,11 +81,12 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
     let mut graph = graph;
     let mut stats = LinkStats::default();
 
-    let mut files: HashMap<&str, FileIndex> = HashMap::new();
+    let mut files: HashMap<&str, FileIndex<'_>> = HashMap::new();
     for (i, s) in graph.symbols.iter().enumerate() {
         let f = files.entry(s.file.as_str()).or_insert_with(|| FileIndex {
             by_start: vec![],
             by_line: HashMap::new(),
+            by_name: HashMap::new(),
         });
         f.by_start.push(i);
         f.by_line
@@ -92,17 +103,22 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
                 std::cmp::Reverse((r.end_line, r.end_col)),
             )
         });
+        for &i in &f.by_start {
+            f.by_name
+                .entry(graph.symbols[i].name.as_str())
+                .or_default()
+                .push(i);
+        }
     }
 
     // 1. SCIP symbol -> ir symbol index.
     let name_matches = |s: &Symbol, name: &str| {
         s.name == name || (s.kind == SymbolKind::Constructor && is_ctor_name(name))
     };
-    let mut map: HashMap<&str, usize> = HashMap::new();
     // Every symbol the project defines, in any document (tests included).
     let mut project: HashSet<&str> = HashSet::new();
-    // Symbols defined in documents that the frontend parsed.
-    let mut defined: Vec<&str> = Vec::new();
+    // First definition of each symbol in a document the frontend parsed.
+    let mut defs: Vec<(&FileIndex, &scip::ScipOccurrence)> = Vec::new();
     for doc in &index.documents {
         let fi = files.get(doc.relative_path.as_str());
         for o in &doc.occurrences {
@@ -112,11 +128,18 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
             if !project.insert(o.symbol.as_str()) {
                 continue;
             }
-            let Some(fi) = fi else { continue };
-            defined.push(o.symbol.as_str());
-            let Some(name) = scip::simple_name(&o.symbol) else {
-                continue;
-            };
+            if let Some(fi) = fi {
+                defs.push((fi, o));
+            }
+        }
+    }
+    let defined: Vec<&str> = defs.iter().map(|(_, o)| o.symbol.as_str()).collect();
+    // Matching is independent per definition; the ordered collect keeps it
+    // deterministic.
+    let mapped: Vec<Option<usize>> = defs
+        .par_iter()
+        .map(|&(fi, o)| {
+            let name = scip::simple_name(&o.symbol)?;
             // Same identifier line (columns differ: bytes vs UTF-16)...
             let on_line = fi.by_line.get(&o.range.start_line).and_then(|c| {
                 c.iter()
@@ -132,98 +155,155 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
             // ...or a same-named symbol whose extent starts at or before the
             // occurrence and whose identifier comes after it (scip-java puts
             // method definitions on the leading annotation line).
-            let best = on_line.or_else(|| {
+            on_line.or_else(|| {
                 let p = (o.range.start_line, o.range.start_col);
-                fi.by_start.iter().rev().copied().find(|&i| {
+                let ok = |&i: &usize| {
                     let s = &graph.symbols[i];
                     name_matches(s, &name)
                         && contains(&s.range, p)
                         && (s.name_range.start_line, s.name_range.start_col) >= p
-                })
-            });
-            if let Some(i) = best {
-                map.insert(o.symbol.as_str(), i);
-            }
+                };
+                if is_ctor_name(&name) {
+                    // Constructors match under any ctor spelling. Only
+                    // symbols starting at or before `p` can contain it.
+                    let end = fi.by_start.partition_point(|&i| {
+                        let r = &graph.symbols[i].range;
+                        (r.start_line, r.start_col) <= p
+                    });
+                    fi.by_start[..end].iter().rev().copied().find(ok)
+                } else {
+                    let c = fi.by_name.get(name.as_str())?;
+                    c.iter().rev().copied().find(ok)
+                }
+            })
+        })
+        .collect();
+    let mut map: HashMap<&str, usize> = HashMap::new();
+    for (&sym, m) in defined.iter().zip(&mapped) {
+        if let Some(i) = *m {
+            map.insert(sym, i);
         }
     }
     stats.mapped_symbols = map.len();
     // Attribute the rest to their nearest mapped ancestor (`User#email.` →
     // `User#`, `C#m().(p)lit:x.` → `C#m().`, implicit `C#<init>().` → `C#`).
-    let mut lifted: HashMap<&str, usize> = HashMap::new();
-    for &sym in &defined {
-        if map.contains_key(sym) {
-            continue;
-        }
-        let mut cur = scip::parent_symbol(sym);
-        while let Some(p) = cur {
-            if let Some(&i) = map.get(p.as_str()) {
-                lifted.insert(sym, i);
-                break;
+    let lifted_of: Vec<Option<usize>> = defined
+        .par_iter()
+        .map(|&sym| {
+            if map.contains_key(sym) {
+                return None;
             }
-            cur = scip::parent_symbol(&p);
-        }
-        if !lifted.contains_key(sym) {
-            stats.unmapped_definitions += 1;
+            let mut cur = scip::parent_symbol(sym);
+            while let Some(p) = cur {
+                if let Some(&i) = map.get(p.as_str()) {
+                    return Some(i);
+                }
+                cur = scip::parent_symbol(&p);
+            }
+            None
+        })
+        .collect();
+    let mut lifted: HashMap<&str, usize> = HashMap::new();
+    for (&sym, l) in defined.iter().zip(&lifted_of) {
+        match *l {
+            Some(i) => {
+                lifted.insert(sym, i);
+            }
+            None if !map.contains_key(sym) => stats.unmapped_definitions += 1,
+            None => {}
         }
     }
     stats.lifted_symbols = lifted.len();
     let resolve = |sym: &str| map.get(sym).or_else(|| lifted.get(sym)).copied();
 
-    // 2. References.
+    // 2. References, one document per task. Edges stay compact (symbol index
+    // or external name) and are deduplicated per document before any id
+    // string is cloned; the ordered collect keeps the result deterministic.
+    type Found = (usize, Target, EdgeKind);
+    let per_doc: Vec<(usize, Vec<Found>)> = index
+        .documents
+        .par_iter()
+        .map(|doc| {
+            let mut refs = 0usize;
+            let mut found: Vec<Found> = Vec::new();
+            let Some(fi) = files.get(doc.relative_path.as_str()) else {
+                return (refs, found);
+            };
+            for o in &doc.occurrences {
+                if o.is_definition || scip::is_local(&o.symbol) || is_noise(&o.symbol) {
+                    continue;
+                }
+                refs += 1;
+                let p = (o.range.start_line, o.range.start_col);
+                let end = fi.by_start.partition_point(|&i| {
+                    let r = &graph.symbols[i].range;
+                    (r.start_line, r.start_col) <= p
+                });
+                let Some(src) = fi.by_start[..end]
+                    .iter()
+                    .rev()
+                    .copied()
+                    .find(|&i| contains(&graph.symbols[i].range, p))
+                else {
+                    continue;
+                };
+                let src_id = &graph.symbols[src].id;
+                let (to, kind) = match resolve(o.symbol.as_str()) {
+                    Some(t) => {
+                        let k = if is_callable(graph.symbols[t].kind)
+                            && map.contains_key(o.symbol.as_str())
+                        {
+                            EdgeKind::Call
+                        } else {
+                            EdgeKind::Uses
+                        };
+                        if &graph.symbols[t].id == src_id {
+                            continue;
+                        }
+                        (Target::Sym(t), k)
+                    }
+                    // A project symbol the frontend doesn't model (file-level
+                    // constant, test class): not an external dependency.
+                    None if project.contains(o.symbol.as_str()) => continue,
+                    None => {
+                        let name = scip::owner_type_name(&o.symbol)
+                            .or_else(|| scip::simple_name(&o.symbol));
+                        let Some(name) = name else { continue };
+                        let k = if o.symbol.ends_with(").") {
+                            EdgeKind::Call
+                        } else {
+                            EdgeKind::Uses
+                        };
+                        let to = format!("ext:{name}");
+                        if &to == src_id {
+                            continue;
+                        }
+                        (Target::Ext(to), k)
+                    }
+                };
+                found.push((src, to, kind));
+            }
+            fn key(e: &Found) -> (usize, usize, &str, u8) {
+                match &e.1 {
+                    Target::Sym(i) => (e.0, *i, "", rank(e.2)),
+                    Target::Ext(n) => (e.0, usize::MAX, n.as_str(), rank(e.2)),
+                }
+            }
+            found.sort_unstable_by(|a, b| key(a).cmp(&key(b)));
+            found.dedup_by(|a, b| key(a) == key(b));
+            (refs, found)
+        })
+        .collect();
     let mut new_edges: Vec<Edge> = Vec::new();
-    for doc in &index.documents {
-        let Some(fi) = files.get(doc.relative_path.as_str()) else {
-            continue;
-        };
-        for o in &doc.occurrences {
-            if o.is_definition || scip::is_local(&o.symbol) || is_noise(&o.symbol) {
-                continue;
-            }
-            stats.references += 1;
-            let p = (o.range.start_line, o.range.start_col);
-            let end = fi.by_start.partition_point(|&i| {
-                let r = &graph.symbols[i].range;
-                (r.start_line, r.start_col) <= p
-            });
-            let Some(src) = fi.by_start[..end]
-                .iter()
-                .rev()
-                .copied()
-                .find(|&i| contains(&graph.symbols[i].range, p))
-            else {
-                continue;
+    for (refs, found) in per_doc {
+        stats.references += refs;
+        for (src, to, kind) in found {
+            let to = match to {
+                Target::Sym(t) => graph.symbols[t].id.clone(),
+                Target::Ext(n) => n,
             };
-            let src_id = &graph.symbols[src].id;
-            let (to, kind) = match resolve(o.symbol.as_str()) {
-                Some(t) => {
-                    let ts = &graph.symbols[t];
-                    let k = if is_callable(ts.kind) && map.contains_key(o.symbol.as_str()) {
-                        EdgeKind::Call
-                    } else {
-                        EdgeKind::Uses
-                    };
-                    (ts.id.clone(), k)
-                }
-                // A project symbol the frontend doesn't model (file-level
-                // constant, test class): not an external dependency.
-                None if project.contains(o.symbol.as_str()) => continue,
-                None => {
-                    let name =
-                        scip::owner_type_name(&o.symbol).or_else(|| scip::simple_name(&o.symbol));
-                    let Some(name) = name else { continue };
-                    let k = if o.symbol.ends_with(").") {
-                        EdgeKind::Call
-                    } else {
-                        EdgeKind::Uses
-                    };
-                    (format!("ext:{name}"), k)
-                }
-            };
-            if &to == src_id {
-                continue;
-            }
             new_edges.push(Edge {
-                from: src_id.clone(),
+                from: graph.symbols[src].id.clone(),
                 to,
                 kind,
             });
@@ -292,7 +372,7 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
 
     // 4. Merge, dedupe, sort.
     graph.edges.extend(new_edges);
-    graph.edges.sort_by(edge_order);
+    graph.edges.par_sort_unstable_by(edge_order);
     graph.edges.dedup();
     for e in &graph.edges {
         match e.kind {
