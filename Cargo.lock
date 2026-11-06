@@ -457,6 +457,7 @@ name = "structure-classify"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "rayon",
  "serde",
  "serde_json",
  "structure-ir",
@@ -536,6 +537,7 @@ dependencies = [
  "anyhow",
  "libc",
  "protobuf",
+ "rayon",
  "scip",
  "structure-ir",
 ]
