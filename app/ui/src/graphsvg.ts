@@ -1,4 +1,4 @@
-import { s as el } from "./svgattr";
+import { s } from "./svgattr";
 import type { LaneRow, Segment } from "./lanes";
 
 export const ROW_H = 40;
@@ -13,7 +13,7 @@ function link(x1: number, y1: number, x2: number, y2: number, color: string): SV
   const my = (y1 + y2) / 2;
   const d =
     x1 === x2 ? `M${x1},${y1} L${x2},${y2}` : `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;
-  return el("path", { d, stroke: color, fill: "none", "stroke-width": 2 });
+  return s("path", { d, stroke: color, fill: "none", "stroke-width": 2 });
 }
 
 /** One row of the commit graph: fixed `ROW_H` height so consecutive rows connect. */
@@ -22,7 +22,7 @@ export function rowSvg(
   width: number,
   opts: { hollow?: boolean; lineAbove?: string; lineBelow?: string } = {},
 ): SVGElement {
-  const svg = el("svg", { width: Math.max(1, width) * LANE_W, height: ROW_H, class: "graph" });
+  const svg = s("svg", { width: Math.max(1, width) * LANE_W, height: ROW_H, class: "graph" });
   const lane = row?.lane ?? 0;
   const draw = (segs: Segment[], f: (s: Segment) => SVGElement) => {
     for (const sg of segs) svg.append(f(sg));
@@ -36,7 +36,7 @@ export function rowSvg(
   if (opts.lineBelow) svg.append(link(x(lane), MID, x(lane), ROW_H, opts.lineBelow));
   const color = row?.color ?? opts.lineBelow ?? "var(--edge)";
   svg.append(
-    el("circle", {
+    s("circle", {
       cx: x(lane),
       cy: MID,
       r: 4,

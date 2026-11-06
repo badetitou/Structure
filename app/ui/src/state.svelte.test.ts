@@ -160,10 +160,86 @@ describe("AppState", () => {
     expect(s.symbols).toBeNull();
   });
 
-  it("toggles dense mode", () => {
+  it("toggles dense mode and persists it, whatever the stored value was", () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    });
+    try {
+      const s = new AppState();
+      expect(s.mode).toBe("normal");
+      s.toggleMode();
+      expect(s.mode).toBe("dense");
+      expect(store.get("structure.matrix.mode")).toBe("dense");
+      s.toggleMode();
+      expect(store.get("structure.matrix.mode")).toBe("normal");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("ignores a superseded load, whether it resolves or rejects", async () => {
+    mocked.history.mockResolvedValue({ dirty: false, commits: [] });
     const s = new AppState();
-    const before = s.mode;
-    s.toggleMode();
-    expect(s.mode).not.toBe(before);
+    let resolveA: (m: Matrix) => void = () => {};
+    mocked.analyze.mockReturnValueOnce(new Promise<Matrix>((r) => (resolveA = r)));
+    const loadA = s.load("/a");
+    mocked.analyze.mockResolvedValueOnce(mx("B"));
+    await s.load("/b");
+    resolveA(mx("A"));
+    await expect(loadA).resolves.toBeUndefined();
+    expect(s.matrix?.project).toBe("B");
+    expect(s.project).toBe("/b");
+
+    let rejectC: (e: unknown) => void = () => {};
+    mocked.analyze.mockReturnValueOnce(new Promise<Matrix>((_, r) => (rejectC = r)));
+    const loadC = s.load("/c");
+    s.reset();
+    rejectC(new Error("late"));
+    await expect(loadC).resolves.toBeUndefined();
+  });
+
+  it("busy and error belong to the latest impact request", async () => {
+    const s = await loaded();
+    let resolveOld: (i: Impact) => void = () => {};
+    mocked.impact.mockReturnValueOnce(new Promise((r) => (resolveOld = r)));
+    const old = s.runImpact("a", "b");
+    let rejectNew: (e: unknown) => void = () => {};
+    mocked.impact.mockReturnValueOnce(new Promise((_, r) => (rejectNew = r)));
+    const latest = s.runImpact("c", "d");
+    resolveOld(imp());
+    await old;
+    expect(s.impactBusy).toBe(true);
+    expect(s.impact).toBeNull();
+    rejectNew(new Error("bad ref"));
+    await latest;
+    expect(s.impactBusy).toBe(false);
+    expect(s.impactError).toContain("bad ref");
+    s.clearImpact();
+    expect(s.impactError).toBe("");
+  });
+
+  it("selects the working tree and single commits", async () => {
+    const c = (id: string, base: string) => ({ id, short: id, parents: [], base, subject: "s", author: "a", date: "", refs: [] });
+    mocked.analyze.mockResolvedValue(mx("work"));
+    mocked.history.mockResolvedValue({ dirty: true, commits: [c("c2", "c1"), c("c1", "e")] });
+    mocked.impact.mockResolvedValue(imp());
+    const s = new AppState();
+    await s.load("/p");
+    s.pickHistory({ kind: "worktree" });
+    expect(mocked.impact).toHaveBeenLastCalledWith("/p", null, null);
+    s.pickHistory({ kind: "range", newer: 1, older: 1, anchor: 1 });
+    expect(mocked.impact).toHaveBeenLastCalledWith("/p", "e", "c1");
+  });
+
+  it("lists snapshot symbols against the snapshot head", async () => {
+    const s = await loaded();
+    mocked.impact.mockResolvedValue(imp({ head: "h1", matrix: mx("snap") }));
+    await s.runImpact("a", "h1");
+    mocked.cellSymbols.mockResolvedValue({ total: 0, offset: 0, symbols: [] });
+    s.selectCell(cell);
+    await flush();
+    expect(mocked.cellSymbols).toHaveBeenLastCalledWith("/p", "h1", 7, ["m1"], 0, expect.any(Number));
   });
 });

@@ -17,8 +17,12 @@
   let matrix = $state<MatrixController | null>(null);
 
   onMount(() => {
-    app.load(path).catch((e) => onExit(`Analysis failed: ${String(e)}`));
-    return () => app.reset();
+    let live = true;
+    app.load(path).catch((e) => live && onExit(`Analysis failed: ${String(e)}`));
+    return () => {
+      live = false;
+      app.reset();
+    };
   });
 </script>
 
