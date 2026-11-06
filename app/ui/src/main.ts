@@ -32,10 +32,16 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return el;
 }
 /** Drag handle + chevron on the inner edge of a side panel: resize, collapse (chevron or dblclick). */
-function sideHandle(el: HTMLElement, side: "left" | "right", st: PanelsState): HTMLElement {
+function sideHandle(
+  el: HTMLElement,
+  side: "left" | "right",
+  st: PanelsState,
+  otherEl: HTMLElement,
+): HTMLElement {
   const state = st[side];
   const other = st[side === "left" ? "right" : "left"];
-  const otherWidth = () => (other.collapsed ? COLLAPSED_WIDTH : other.width);
+  // A hidden panel (history unavailable) takes no room.
+  const otherWidth = () => (otherEl.hidden ? 0 : other.collapsed ? COLLAPSED_WIDTH : other.width);
   const fit = (w: number) => clampWidth(w, w, window.innerWidth, otherWidth());
   const chevron = h("button", { className: "chevron", type: "button" });
   const handle = h("div", { className: `handle ${side}` }, chevron);
@@ -45,16 +51,27 @@ function sideHandle(el: HTMLElement, side: "left" | "right", st: PanelsState): H
     el.style.width = `${state.collapsed ? COLLAPSED_WIDTH : state.width}px`;
     handle.classList.toggle("is-collapsed", state.collapsed);
     chevron.textContent = state.collapsed === (side === "left") ? "›" : "‹";
-    chevron.title = state.collapsed ? "Expand panel" : "Collapse panel";
+    const label = state.collapsed ? "Expand panel" : "Collapse panel";
+    chevron.title = label;
+    chevron.setAttribute("aria-label", label);
+    chevron.setAttribute("aria-expanded", String(!state.collapsed));
   };
   const toggle = () => {
     state.collapsed = !state.collapsed;
     apply();
     savePanels(st);
   };
-  chevron.onclick = toggle;
+  // Chevron toggles; while collapsed the handle and the strip itself expand too.
+  handle.onclick = (e) => {
+    if (e.target === chevron || state.collapsed) toggle();
+  };
+  el.addEventListener("click", () => {
+    if (state.collapsed) toggle();
+  });
   chevron.ondblclick = (e) => e.stopPropagation();
-  handle.ondblclick = toggle;
+  handle.ondblclick = (e) => {
+    if (e.target !== chevron) toggle();
+  };
   handle.onpointerdown = (e) => {
     if (e.target === chevron || state.collapsed || e.button !== 0) return;
     e.preventDefault();
@@ -62,26 +79,44 @@ function sideHandle(el: HTMLElement, side: "left" | "right", st: PanelsState): H
     handle.setPointerCapture(e.pointerId);
     const x0 = e.clientX;
     const w0 = state.width;
+    let pending: number | null = null;
+    let frame = 0;
     document.body.classList.add("resizing");
     handle.onpointermove = (m) => {
       const dx = m.clientX - x0;
-      state.width = fit(side === "left" ? w0 + dx : w0 - dx);
-      apply();
+      pending = side === "left" ? w0 + dx : w0 - dx;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (pending === null) return;
+        state.width = fit(pending);
+        apply();
+      });
     };
-    handle.onpointerup = handle.onpointercancel = () => {
-      handle.onpointermove = handle.onpointerup = handle.onpointercancel = null;
+    const end = () => {
+      handle.onpointermove = handle.onpointerup = handle.onpointercancel = handle.onlostpointercapture = null;
+      if (frame) cancelAnimationFrame(frame);
+      if (pending !== null) {
+        state.width = fit(pending);
+        apply();
+      }
       document.body.classList.remove("resizing");
       savePanels(st);
     };
+    handle.onpointerup = handle.onpointercancel = handle.onlostpointercapture = end;
   };
   const onResize = () => {
-    if (!handle.isConnected) window.removeEventListener("resize", onResize);
-    else apply();
+    if (!handle.isConnected) {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener(PANELS_REFIT, onResize);
+    } else apply();
   };
   window.addEventListener("resize", onResize);
+  window.addEventListener(PANELS_REFIT, onResize);
   apply();
   return handle;
 }
+const PANELS_REFIT = "structure-panels-refit";
 function s<K extends keyof SVGElementTagNameMap>(
   tag: K,
   attrs: Record<string, string | number> = {},
@@ -514,9 +549,9 @@ function matrixView(workMatrix: Matrix) {
     "div",
     { className: "main" },
     sidebar,
-    sideHandle(sidebar, "left", panels),
+    sideHandle(sidebar, "left", panels, panel),
     view,
-    sideHandle(panel, "right", panels),
+    sideHandle(panel, "right", panels, sidebar),
     panel,
   );
   show(header, toolbar, warnBox, main);
@@ -746,6 +781,7 @@ function matrixView(workMatrix: Matrix) {
     });
     sidebar.replaceChildren(h("h3", { textContent: "History" }), ...rows);
     sidebar.hidden = false;
+    window.dispatchEvent(new Event(PANELS_REFIT));
   }
   api
     .history(projectPath)
