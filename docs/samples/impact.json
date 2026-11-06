@@ -5,7 +5,7 @@
     "src/main/java/org/mybatis/jpetstore/mapper/AccountMapper.java"
   ],
   "changed_symbols": [
-    "org.mybatis.jpetstore.mapper.AccountMapper#getAccountByUsername(1)"
+    "org.mybatis.jpetstore.mapper.AccountMapper"
   ],
   "changed_cells": [
     "persistence:account"
@@ -26,15 +26,15 @@
   ],
   "impacted_symbols": [
     {
-      "id": "org.mybatis.jpetstore.service.AccountService#getAccount(1)",
+      "id": "org.mybatis.jpetstore.service.AccountService",
       "distance": 1
     },
     {
-      "id": "org.mybatis.jpetstore.web.actions.AccountActionBean#signon(0)",
+      "id": "org.mybatis.jpetstore.web.actions.AccountActionBean",
       "distance": 2
     },
     {
-      "id": "org.mybatis.jpetstore.web.actions.OrderActionBean#newOrder(0)",
+      "id": "org.mybatis.jpetstore.web.actions.OrderActionBean",
       "distance": 2
     }
   ]

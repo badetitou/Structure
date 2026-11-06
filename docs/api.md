@@ -24,7 +24,7 @@ invoke<Impact>("impact", { path: string, base: string | null, head: string | nul
 ## Types
 
 ```ts
-type Language = "java" | "type_script";
+type Language = "java" | "typescript";
 type Layer =
   | "ui" | "state" | "api_client" | "entry" | "business"
   | "persistence" | "model" | "util" | "unknown"; // matrix rows, top to bottom
@@ -32,7 +32,7 @@ type Layer =
 interface Matrix {
   project: string;
   language: Language;
-  layers: Layer[];
+  layers: Layer[];   // only the layers present, in Layer order
   domains: string[];
   cells: Cell[];
   edges: CellEdge[];
@@ -64,4 +64,4 @@ interface ImpactedSymbol { id: string; distance: number }
 interface Progress { step: string; pct: number } // pct 0..100
 ```
 
-Note: serde `snake_case` renders `TypeScript` as `"type_script"`.
+Granularity: symbol ids in `Matrix.cells[].symbols` and in `Impact` are class-level (top-level symbol) ids.

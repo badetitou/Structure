@@ -153,6 +153,24 @@ mod tests {
     }
 
     #[test]
+    fn layer_as_str_matches_serde() {
+        use Layer::*;
+        for l in [
+            Ui,
+            State,
+            ApiClient,
+            Entry,
+            Business,
+            Persistence,
+            Model,
+            Util,
+            Unknown,
+        ] {
+            assert_eq!(serde_json::to_value(l).unwrap(), l.as_str());
+        }
+    }
+
+    #[test]
     fn layer_order_and_serde() {
         assert!(Layer::Ui < Layer::State);
         assert!(Layer::Entry < Layer::Business);
