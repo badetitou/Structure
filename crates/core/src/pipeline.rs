@@ -19,6 +19,9 @@ use crate::{java, scip, ts};
 pub const SCIP_JAVA_VERSION: &str = "0.12.3";
 pub const SCIP_TS_VERSION: &str = "0.6.1";
 
+pub const DEFAULT_INDEXER_TIMEOUT_SECS: u64 = 600;
+pub const DEFAULT_NODE_HEAP_MB: u64 = 8192;
+
 #[derive(Debug, Clone, Copy)]
 pub struct Options {
     /// Always re-run the indexer.
@@ -27,6 +30,80 @@ pub struct Options {
     /// When false, a stale index is reused with a warning.
     pub reindex_if_stale: bool,
     pub use_scip: bool,
+    /// Indexer wall-clock limit in seconds; 0 = no limit.
+    pub indexer_timeout_secs: u64,
+}
+
+/// Timeout from `STRUCTURE_INDEXER_TIMEOUT` (seconds, 0 = none), else the default.
+pub fn default_indexer_timeout() -> u64 {
+    std::env::var("STRUCTURE_INDEXER_TIMEOUT")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(DEFAULT_INDEXER_TIMEOUT_SECS)
+}
+
+/// `NODE_OPTIONS` value with a heap limit appended to any existing options.
+pub fn node_options(existing: Option<&str>, heap_mb: u64) -> String {
+    let heap = format!("--max-old-space-size={heap_mb}");
+    match existing.map(str::trim) {
+        Some(e) if !e.is_empty() => format!("{e} {heap}"),
+        _ => heap,
+    }
+}
+
+fn node_heap_mb() -> u64 {
+    std::env::var("STRUCTURE_NODE_HEAP_MB")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(DEFAULT_NODE_HEAP_MB)
+}
+
+/// Directories holding a `tsconfig.json` under `root` (relative to `root`,
+/// `"."` for the root itself), sorted. Skips the dirs the TS frontend ignores.
+/// Dirs holding sample or deliberately broken projects for tests: each would
+/// cost a full TypeScript program build, so they are not indexed as projects
+/// (their files are still parsed by tree-sitter).
+const SAMPLE_PROJECT_DIRS: &[&str] = &["fixtures", "test-workspace", "testWorkspace", "testbed"];
+
+pub fn discover_tsconfigs(root: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = ignore::WalkBuilder::new(root)
+        .filter_entry(|e| {
+            let n = e.file_name().to_string_lossy();
+            !(e.depth() > 0
+                && e.file_type().is_some_and(|t| t.is_dir())
+                && (ts::IGNORED_DIRS.contains(&n.as_ref())
+                    || SAMPLE_PROJECT_DIRS.contains(&n.as_ref())))
+        })
+        .build()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name() == "tsconfig.json" && e.file_type().is_some_and(|t| t.is_file()))
+        .filter_map(|e| {
+            let dir = e.path().parent()?.strip_prefix(root).ok()?;
+            Some(if dir.as_os_str().is_empty() {
+                PathBuf::from(".")
+            } else {
+                dir.to_path_buf()
+            })
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// Positional arguments for scip-typescript: nothing when the root has a
+/// tsconfig, every discovered project dir otherwise, `--infer-tsconfig` if none.
+pub fn ts_index_args(root: &Path) -> Vec<String> {
+    if root.join("tsconfig.json").is_file() {
+        return Vec::new();
+    }
+    let found = discover_tsconfigs(root);
+    if found.is_empty() {
+        return vec!["--infer-tsconfig".into()];
+    }
+    found
+        .into_iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect()
 }
 
 impl Default for Options {
@@ -35,6 +112,7 @@ impl Default for Options {
             reindex: false,
             reindex_if_stale: true,
             use_scip: true,
+            indexer_timeout_secs: default_indexer_timeout(),
         }
     }
 }
@@ -245,7 +323,12 @@ fn drain_grace(
     }
 }
 
-fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result<(), String> {
+fn run_indexer(
+    root: &Path,
+    mut cmd: Command,
+    timeout_secs: u64,
+    progress: IndexProgress,
+) -> Result<(), String> {
     use std::collections::VecDeque;
     use std::process::Stdio;
     use std::sync::mpsc::{RecvTimeoutError, channel};
@@ -280,16 +363,15 @@ fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result
     let mut last_line = String::from("starting indexer");
     let mut last_emit: Option<Instant> = None;
     let mut disconnected = false;
-    let deadline = started + Duration::from_secs(INDEX_TIMEOUT_SECS);
+    let deadline = (timeout_secs > 0).then(|| started + Duration::from_secs(timeout_secs));
     let status = loop {
         match child.try_wait() {
             Ok(Some(st)) => break st,
-            Ok(None) if Instant::now() >= deadline => {
+            Ok(None) if deadline.is_some_and(|d| Instant::now() >= d) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(format!(
-                    "timed out after {} min; check ~/.m2/settings.xml (unreachable repository?) or run the indexer manually",
-                    INDEX_TIMEOUT_SECS / 60
+                    "indexer timed out after {timeout_secs} s; raise the limit with --indexer-timeout <secs> or STRUCTURE_INDEXER_TIMEOUT (0 = none), or run the indexer manually (Java: check ~/.m2/settings.xml)"
                 ));
             }
             Ok(None) => {}
@@ -337,8 +419,6 @@ fn run_indexer(root: &Path, mut cmd: Command, progress: IndexProgress) -> Result
         tail.iter().cloned().collect::<Vec<_>>().join(" | ")
     ))
 }
-
-const INDEX_TIMEOUT_SECS: u64 = 600;
 
 /// Number of source files modified after `index` was written.
 fn newer_sources(root: &Path, lang: Language, index: &Path) -> usize {
@@ -428,7 +508,13 @@ pub fn ensure_index_with_progress(
             let mut c = Command::new(p);
             c.args(["-y"])
                 .arg(format!("@sourcegraph/scip-typescript@{SCIP_TS_VERSION}"))
-                .args(["index", "--output", "index.scip"]);
+                .args(["index", "--output", "index.scip"])
+                .args(ts_index_args(root));
+            let existing = std::env::var("NODE_OPTIONS").ok();
+            c.env(
+                "NODE_OPTIONS",
+                node_options(existing.as_deref(), node_heap_mb()),
+            );
             c
         }),
     };
@@ -436,7 +522,7 @@ pub fn ensure_index_with_progress(
         warn("no SCIP indexer found (scip-java/cs/npx); using tree-sitter only".into());
         return Ok(None);
     };
-    match run_indexer(root, cmd, progress) {
+    match run_indexer(root, cmd, opts.indexer_timeout_secs, progress) {
         Ok(()) if index.is_file() => Ok(Some(index)),
         Ok(()) => {
             warn("indexer succeeded but produced no index.scip; using tree-sitter only".into());
@@ -824,6 +910,45 @@ pub fn impact_at(
 mod tests {
     use super::*;
     use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn tsconfig_discovery_and_args() {
+        let dir = std::env::temp_dir().join(format!("structure-tsc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for d in [
+            "src",
+            "build",
+            "node_modules/x",
+            "ext/a/dist",
+            "ext/a/test/fixtures/p1",
+        ] {
+            std::fs::create_dir_all(dir.join(d)).unwrap();
+        }
+        assert_eq!(ts_index_args(&dir), vec!["--infer-tsconfig"]);
+        for d in [
+            "src",
+            "build",
+            "node_modules/x",
+            "ext/a/dist",
+            "ext/a",
+            "ext/a/test/fixtures/p1",
+        ] {
+            std::fs::write(dir.join(d).join("tsconfig.json"), "{}").unwrap();
+        }
+        assert_eq!(ts_index_args(&dir), vec!["build", "ext/a", "src"]);
+        std::fs::write(dir.join("tsconfig.json"), "{}").unwrap();
+        assert!(ts_index_args(&dir).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn node_options_appends() {
+        assert_eq!(node_options(None, 8192), "--max-old-space-size=8192");
+        assert_eq!(
+            node_options(Some("--foo"), 1),
+            "--foo --max-old-space-size=1"
+        );
+    }
 
     #[test]
     fn drain_grace_returns_when_sender_stays_open() {

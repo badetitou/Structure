@@ -26,6 +26,7 @@ fn offline() -> Options {
         reindex: false,
         reindex_if_stale: false,
         use_scip: true,
+        ..Options::default()
     }
 }
 

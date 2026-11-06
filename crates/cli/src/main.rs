@@ -26,6 +26,10 @@ enum Command {
         /// Tree-sitter only.
         #[arg(long)]
         no_scip: bool,
+        /// Indexer time limit in seconds (0 = none). Default 600 or
+        /// STRUCTURE_INDEXER_TIMEOUT.
+        #[arg(long)]
+        indexer_timeout: Option<u64>,
     },
     /// Compute the impact of a diff.
     Impact {
@@ -46,11 +50,13 @@ fn run_analysis(
     reindex: bool,
     reindex_if_stale: bool,
     no_scip: bool,
+    indexer_timeout: Option<u64>,
 ) -> Result<Analysis> {
     let opts = Options {
         reindex,
         reindex_if_stale,
         use_scip: !no_scip,
+        indexer_timeout_secs: indexer_timeout.unwrap_or_else(pipeline::default_indexer_timeout),
     };
     let t = Instant::now();
     let analysis = pipeline::analyze(path, &opts, &|p: Progress| {
@@ -154,8 +160,9 @@ fn main() -> Result<()> {
             output,
             reindex,
             no_scip,
+            indexer_timeout,
         } => {
-            let a = run_analysis(&path, reindex, true, no_scip)?;
+            let a = run_analysis(&path, reindex, true, no_scip, indexer_timeout)?;
             print_table(&a.matrix);
             write_json(&a.matrix, &output)
         }
@@ -167,7 +174,7 @@ fn main() -> Result<()> {
             no_scip,
         } => {
             // A stale index is fine for impact (symbol ranges come from tree-sitter).
-            let a = run_analysis(&path, false, false, no_scip)?;
+            let a = run_analysis(&path, false, false, no_scip, None)?;
             let t = Instant::now();
             let i = pipeline::impact(&path, &a, base.as_deref(), head.as_deref())?;
             eprintln!("impact: {} ms", t.elapsed().as_millis());
