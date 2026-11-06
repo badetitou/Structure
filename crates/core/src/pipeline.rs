@@ -12,6 +12,7 @@ use crate::impact;
 use crate::ir::{Graph, Language};
 use crate::link::{LinkStats, link};
 use crate::matrix;
+use crate::metrics::Metrics;
 use crate::model::{Classification, Commit, History, Impact, Matrix, Progress};
 use crate::{java, scip, ts};
 
@@ -44,6 +45,7 @@ pub struct Analysis {
     pub classification: Classification,
     pub matrix: Matrix,
     pub link_stats: Option<LinkStats>,
+    pub metrics: Metrics,
     pub warnings: Vec<String>,
 }
 
@@ -473,8 +475,11 @@ pub fn analyze(
     }
     let lang = detect_language(root)?;
     let mut warnings: Vec<String> = Vec::new();
+    let mut metrics = Metrics::default();
+    let ran_indexer = std::cell::Cell::new(false);
 
     step("indexing", 5);
+    let t = Instant::now();
     let index_path = if opts.use_scip {
         ensure_index_with_progress(
             root,
@@ -482,6 +487,7 @@ pub fn analyze(
             opts,
             &mut |w| warnings.push(w),
             &mut |pct, detail| {
+                ran_indexer.set(true);
                 progress(Progress {
                     step: "indexing".into(),
                     pct,
@@ -493,32 +499,47 @@ pub fn analyze(
         None
     };
 
+    let note = match (opts.use_scip, ran_indexer.get()) {
+        (false, _) => "skipped (--no-scip)",
+        (true, true) => "ran indexer",
+        (true, false) => "reused index.scip",
+    };
+    metrics.phase("indexer", t, Some(note));
+
     step("parsing", 35);
+    let t = Instant::now();
     let graph = match lang {
         Language::Java => java::parse_project(root),
         Language::TypeScript => ts::parse_project(root),
     }
     .with_context(|| format!("parsing {}", root.display()))?;
+    metrics.phase("parse", t, None);
 
     step("linking", 60);
-    let (graph, link_stats) = match index_path {
-        Some(p) => match scip::load(&p) {
-            Ok(idx) => {
-                let (g, st) = link(graph, &idx);
-                (g, Some(st))
-            }
-            Err(e) => {
-                warnings.push(format!(
-                    "cannot read {}: {e:#}; using tree-sitter only",
-                    p.display()
-                ));
-                (graph, None)
-            }
-        },
+    let t = Instant::now();
+    let loaded = index_path.map(|p| (scip::load(&p), p));
+    metrics.phase("scip load", t, None);
+    let t = Instant::now();
+    let (graph, link_stats) = match loaded {
+        Some((Ok(idx), _)) => {
+            metrics.record_scip(&idx);
+            let (g, st) = link(graph, &idx);
+            (g, Some(st))
+        }
+        Some((Err(e), p)) => {
+            warnings.push(format!(
+                "cannot read {}: {e:#}; using tree-sitter only",
+                p.display()
+            ));
+            (graph, None)
+        }
         None => (graph, None),
     };
+    metrics.phase("link", t, None);
+    metrics.record_edges(&graph);
 
     step("classifying", 80);
+    let t = Instant::now();
     let mut rules = RuleSet::builtin(lang)?;
     let custom = root.join(".structure/rules.toml");
     if custom.is_file() {
@@ -529,11 +550,14 @@ pub fn analyze(
         rules = rules.merge(user);
     }
     let classification = classify(&graph, &rules);
+    metrics.phase("classify", t, None);
 
     step("building matrix", 95);
+    let t = Instant::now();
     let elapsed = started.elapsed().as_millis() as u64;
     let mut matrix = matrix::build(&graph, &classification, &project_name(root), elapsed);
     matrix.warnings = warnings.clone();
+    metrics.phase("matrix", t, None);
     step("done", 100);
 
     Ok(Analysis {
@@ -541,6 +565,7 @@ pub fn analyze(
         classification,
         matrix,
         link_stats,
+        metrics,
         warnings,
     })
 }

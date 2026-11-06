@@ -18,3 +18,4 @@ tree-sitter-typescript.workspace = true
 tree-sitter-java.workspace = true
 rayon.workspace = true
 ignore.workspace = true
+libc.workspace = true
