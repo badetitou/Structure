@@ -1,0 +1,188 @@
+# Hand-written oracle for angular-realworld @ d426ec8.
+# UserService both holds BehaviorSubject auth state and uses HttpClient: classified state.
+# Interceptors are plain functions (HttpInterceptorFn), not classes, so they are not listed.
+
+[[class]]
+name = "src/app/app.component.ts#AppComponent"
+layer = "ui"
+domain = "core"
+
+[[class]]
+name = "src/app/core/auth/auth.component.ts#AuthComponent"
+layer = "ui"
+domain = "auth"
+
+[[class]]
+name = "src/app/core/auth/if-authenticated.directive.ts#IfAuthenticatedDirective"
+layer = "util"
+domain = "auth"
+
+[[class]]
+name = "src/app/core/auth/services/jwt.service.ts#JwtService"
+layer = "state"
+domain = "auth"
+
+[[class]]
+name = "src/app/core/auth/services/user.service.ts#UserService"
+layer = "state"
+domain = "auth"
+
+[[class]]
+name = "src/app/core/auth/user.model.ts#User"
+layer = "model"
+domain = "auth"
+
+[[class]]
+name = "src/app/core/layout/footer.component.ts#FooterComponent"
+layer = "ui"
+domain = "core"
+
+[[class]]
+name = "src/app/core/layout/header.component.ts#HeaderComponent"
+layer = "ui"
+domain = "core"
+
+[[class]]
+name = "src/app/core/models/errors.model.ts#Errors"
+layer = "model"
+domain = "core"
+
+[[class]]
+name = "src/app/core/models/loading-state.model.ts#LoadingState"
+layer = "model"
+domain = "core"
+
+[[class]]
+name = "src/app/features/article/components/article-comment.component.ts#ArticleCommentComponent"
+layer = "ui"
+domain = "article"
+
+[[class]]
+name = "src/app/features/article/components/article-list.component.ts#ArticleListComponent"
+layer = "ui"
+domain = "article"
+
+[[class]]
+name = "src/app/features/article/components/article-meta.component.ts#ArticleMetaComponent"
+layer = "ui"
+domain = "article"
+
+[[class]]
+name = "src/app/features/article/components/article-preview.component.ts#ArticlePreviewComponent"
+layer = "ui"
+domain = "article"
+
+[[class]]
+name = "src/app/features/article/components/favorite-button.component.ts#FavoriteButtonComponent"
+layer = "ui"
+domain = "article"
+
+[[class]]
+name = "src/app/features/article/models/article-list-config.model.ts#ArticleListConfig"
+layer = "model"
+domain = "article"
+
+[[class]]
+name = "src/app/features/article/models/article.model.ts#Article"
+layer = "model"
+domain = "article"
+
+[[class]]
+name = "src/app/features/article/models/comment.model.ts#Comment"
+layer = "model"
+domain = "article"
+
+[[class]]
+name = "src/app/features/article/pages/article/article.component.ts#ArticleComponent"
+layer = "ui"
+domain = "article"
+
+[[class]]
+name = "src/app/features/article/pages/editor/editor.component.ts#EditorComponent"
+layer = "ui"
+domain = "editor"
+
+[[class]]
+name = "src/app/features/article/pages/home/home.component.ts#HomeComponent"
+layer = "ui"
+domain = "home"
+
+[[class]]
+name = "src/app/features/article/services/articles.service.ts#ArticlesService"
+layer = "api_client"
+domain = "article"
+
+[[class]]
+name = "src/app/features/article/services/comments.service.ts#CommentsService"
+layer = "api_client"
+domain = "article"
+
+[[class]]
+name = "src/app/features/article/services/tags.service.ts#TagsService"
+layer = "api_client"
+domain = "article"
+
+[[class]]
+name = "src/app/features/profile/components/follow-button.component.ts#FollowButtonComponent"
+layer = "ui"
+domain = "profile"
+
+[[class]]
+name = "src/app/features/profile/components/profile-articles.component.ts#ProfileArticlesComponent"
+layer = "ui"
+domain = "profile"
+
+[[class]]
+name = "src/app/features/profile/components/profile-favorites.component.ts#ProfileFavoritesComponent"
+layer = "ui"
+domain = "profile"
+
+[[class]]
+name = "src/app/features/profile/models/profile.model.ts#Profile"
+layer = "model"
+domain = "profile"
+
+[[class]]
+name = "src/app/features/profile/pages/profile/profile.component.ts#ProfileComponent"
+layer = "ui"
+domain = "profile"
+
+[[class]]
+name = "src/app/features/profile/services/profile.service.ts#ProfileService"
+layer = "api_client"
+domain = "profile"
+
+[[class]]
+name = "src/app/features/settings/settings.component.ts#SettingsComponent"
+layer = "ui"
+domain = "settings"
+
+[[class]]
+name = "src/app/shared/components/list-errors.component.ts#ListErrorsComponent"
+layer = "ui"
+domain = "shared"
+
+[[class]]
+name = "src/app/shared/pipes/default-image.pipe.ts#DefaultImagePipe"
+layer = "util"
+domain = "shared"
+
+[[class]]
+name = "src/app/shared/pipes/markdown.pipe.ts#MarkdownPipe"
+layer = "util"
+domain = "shared"
+
+[[path]]
+chain = ["src/app/features/article/pages/article/article.component.ts#ArticleComponent", "src/app/core/auth/services/user.service.ts#UserService", "src/app/core/auth/services/jwt.service.ts#JwtService"]
+
+[[path]]
+chain = ["src/app/features/article/pages/article/article.component.ts#ArticleComponent", "src/app/features/article/services/comments.service.ts#CommentsService"]
+
+[[path]]
+chain = ["src/app/features/article/components/article-list.component.ts#ArticleListComponent", "src/app/features/article/services/articles.service.ts#ArticlesService"]
+
+[[path]]
+chain = ["src/app/features/article/pages/home/home.component.ts#HomeComponent", "src/app/features/article/services/tags.service.ts#TagsService"]
+
+[[path]]
+chain = ["src/app/core/auth/auth.component.ts#AuthComponent", "src/app/core/auth/services/user.service.ts#UserService", "src/app/core/auth/services/jwt.service.ts#JwtService"]
