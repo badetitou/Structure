@@ -59,8 +59,12 @@ fn check(name: &str, fixture_dir: &str) {
     let Some(root) = fixture(fixture_dir) else {
         return;
     };
+    check_with(name, &root, &offline(), true);
+}
+
+fn check_with(name: &str, root: &Path, opts: &Options, expect_scip: bool) {
     let t = Instant::now();
-    let a: Analysis = pipeline::analyze(&root, &offline(), &|_| {}).expect("analyze");
+    let a: Analysis = pipeline::analyze(root, opts, &|_| {}).expect("analyze");
     let total = t.elapsed();
     eprintln!(
         "{name}: analyze {total:?}; {} symbols, {} edges, link {:?}, warnings {:?}",
@@ -69,7 +73,11 @@ fn check(name: &str, fixture_dir: &str) {
         a.link_stats,
         a.warnings
     );
-    assert!(a.link_stats.is_some(), "{name}: index.scip was not linked");
+    if expect_scip {
+        assert!(a.link_stats.is_some(), "{name}: index.scip was not linked");
+    } else {
+        assert!(a.link_stats.is_none(), "{name}: unexpected SCIP link");
+    }
     assert!(total.as_secs() < 10, "{name}: analysis too slow: {total:?}");
 
     let Some(g) = golden(name) else {
@@ -161,6 +169,26 @@ fn e2e_jpetstore() {
 #[test]
 fn e2e_realworld() {
     check("realworld", "angular-realworld");
+}
+
+#[test]
+fn e2e_realworld_java() {
+    check("realworld-java", "spring-boot-realworld-example-app");
+}
+
+/// Gradle project; needs no `index.scip`: proves detection and classification.
+#[test]
+fn e2e_realworld_java_tree_sitter() {
+    let root = fixtures().join("spring-boot-realworld-example-app");
+    if !root.join("build.gradle").is_file() {
+        eprintln!("skipping: {} not found", root.display());
+        return;
+    }
+    let opts = Options {
+        use_scip: false,
+        ..offline()
+    };
+    check_with("realworld-java", &root, &opts, false);
 }
 
 fn git(dir: &Path, args: &[&str]) {

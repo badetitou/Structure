@@ -35,6 +35,29 @@ if [ "${FORCE:-0}" = 1 ] || [ ! -f "$J/index.scip" ]; then
 fi
 report java "$J/index.scip"
 
+# Gradle 7.4 wrapper cannot run on JDK 21: needs a JDK 17 (JAVA17_HOME, brew openjdk@17, java_home).
+G="$FIXTURES/spring-boot-realworld-example-app"
+if [ -d "$G" ]; then
+  J17=""
+  for cand in "${JAVA17_HOME:-}" \
+      "$(brew --prefix openjdk@17 2>/dev/null)/libexec/openjdk.jdk/Contents/Home" \
+      "$(/usr/libexec/java_home -v 17 2>/dev/null || true)"; do
+    # java_home -v 17 may fall back to a newer JDK: always check the real version.
+    if [ -n "$cand" ] && [ -x "$cand/bin/java" ] &&
+      "$cand/bin/java" -version 2>&1 | head -1 | grep -Eq '"17[."]'; then
+      J17="$cand"; break
+    fi
+  done
+  if [ "${FORCE:-0}" = 1 ] || [ ! -f "$G/index.scip" ]; then
+    if [ -n "$J17" ]; then
+      (cd "$G" && JAVA_HOME="$J17" cs launch "com.sourcegraph:scip-java_2.13:$SCIP_JAVA_VERSION" -- index --output index.scip)
+    else
+      echo "skipping spring-boot-realworld-example-app: JDK 17 not found (set JAVA17_HOME)" >&2
+    fi
+  fi
+  if [ -f "$G/index.scip" ]; then report java-gradle "$G/index.scip"; fi
+fi
+
 T="$FIXTURES/angular-realworld"
 if [ "${FORCE:-0}" = 1 ] || [ ! -f "$T/index.scip" ]; then
   (cd "$T" && npx -y "@sourcegraph/scip-typescript@$SCIP_TS_VERSION" index --output index.scip)

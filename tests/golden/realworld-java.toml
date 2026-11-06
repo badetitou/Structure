@@ -1,0 +1,85 @@
+# Hand-written oracle for gothinkster/spring-boot-realworld-example-app @ ee17e31 (Gradle, Java 11).
+# Layers: classes the rules cannot place (core.* domain entities/ports, graphql @DgsComponent)
+# are left out rather than weakened; domains are not asserted by the e2e test and
+# several (ArticleApi, ...QueryService) are not reachable with the name_root strategy.
+# Expectations come from reading the code, not from analyzer output.
+
+[[class]]
+name = "io.spring.api.ArticleApi"
+layer = "entry"
+domain = "article"
+
+[[class]]
+name = "io.spring.api.UsersApi"
+layer = "entry"
+domain = "user"
+
+[[class]]
+name = "io.spring.api.CommentsApi"
+layer = "entry"
+domain = "comment"
+
+[[class]]
+name = "io.spring.api.security.WebSecurityConfig"
+layer = "util"
+domain = "security"
+
+[[class]]
+name = "io.spring.application.ArticleQueryService"
+layer = "business"
+domain = "article"
+
+[[class]]
+name = "io.spring.application.article.ArticleCommandService"
+layer = "business"
+domain = "article"
+
+[[class]]
+name = "io.spring.application.user.UserService"
+layer = "business"
+domain = "user"
+
+[[class]]
+name = "io.spring.application.data.ArticleData"
+layer = "model"
+domain = "article"
+
+[[class]]
+name = "io.spring.core.comment.Comment"
+layer = "model"
+domain = "comment"
+
+[[class]]
+name = "io.spring.core.user.UserRepository"
+layer = "persistence"
+domain = "user"
+
+[[class]]
+name = "io.spring.core.service.JwtService"
+layer = "business"
+domain = "jwt"
+
+[[class]]
+name = "io.spring.infrastructure.service.DefaultJwtService"
+layer = "business"
+domain = "jwt"
+
+[[class]]
+name = "io.spring.infrastructure.repository.MyBatisArticleRepository"
+layer = "persistence"
+domain = "article"
+
+[[class]]
+name = "io.spring.infrastructure.mybatis.mapper.ArticleMapper"
+layer = "persistence"
+domain = "article"
+
+[[class]]
+name = "io.spring.infrastructure.mybatis.mapper.CommentMapper"
+layer = "persistence"
+domain = "comment"
+
+[[class]]
+name = "io.spring.infrastructure.mybatis.readservice.UserReadService"
+layer = "persistence"
+domain = "user"
