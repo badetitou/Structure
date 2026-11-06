@@ -4,12 +4,55 @@
     {
       "id": "71be231a1b2c3d4e5f60718293a4b5c6d7e8f901",
       "short": "71be231",
-      "parents": ["03016fa0123456789abcdef0123456789abcdef0"],
-      "base": "03016fa0123456789abcdef0123456789abcdef0",
+      "parents": ["5d2c9e4a1b2c3d4e5f60718293a4b5c6d7e8f902"],
+      "base": "5d2c9e4a1b2c3d4e5f60718293a4b5c6d7e8f902",
       "subject": "Add order cancellation",
       "author": "Jane Doe",
       "date": "2026-11-05T14:02:11+01:00",
       "refs": ["HEAD -> main", "origin/main"]
+    },
+    {
+      "id": "5d2c9e4a1b2c3d4e5f60718293a4b5c6d7e8f902",
+      "short": "5d2c9e4",
+      "parents": [
+        "e1370c2a1b2c3d4e5f60718293a4b5c6d7e8f903",
+        "a94f1b7a1b2c3d4e5f60718293a4b5c6d7e8f904"
+      ],
+      "base": "e1370c2a1b2c3d4e5f60718293a4b5c6d7e8f903",
+      "subject": "Merge branch 'feature/invoices'",
+      "author": "Jane Doe",
+      "date": "2026-11-04T17:45:00+01:00",
+      "refs": []
+    },
+    {
+      "id": "e1370c2a1b2c3d4e5f60718293a4b5c6d7e8f903",
+      "short": "e1370c2",
+      "parents": ["b6a8d35a1b2c3d4e5f60718293a4b5c6d7e8f905"],
+      "base": "b6a8d35a1b2c3d4e5f60718293a4b5c6d7e8f905",
+      "subject": "Fix customer lookup",
+      "author": "Jane Doe",
+      "date": "2026-11-03T16:10:00+01:00",
+      "refs": []
+    },
+    {
+      "id": "a94f1b7a1b2c3d4e5f60718293a4b5c6d7e8f904",
+      "short": "a94f1b7",
+      "parents": ["b6a8d35a1b2c3d4e5f60718293a4b5c6d7e8f905"],
+      "base": "b6a8d35a1b2c3d4e5f60718293a4b5c6d7e8f905",
+      "subject": "Add invoice export",
+      "author": "John Roe",
+      "date": "2026-11-04T11:20:00+01:00",
+      "refs": ["feature/invoices"]
+    },
+    {
+      "id": "b6a8d35a1b2c3d4e5f60718293a4b5c6d7e8f905",
+      "short": "b6a8d35",
+      "parents": ["03016fa0123456789abcdef0123456789abcdef0"],
+      "base": "03016fa0123456789abcdef0123456789abcdef0",
+      "subject": "Add customer service",
+      "author": "Jane Doe",
+      "date": "2026-11-02T10:00:00+01:00",
+      "refs": []
     },
     {
       "id": "03016fa0123456789abcdef0123456789abcdef0",

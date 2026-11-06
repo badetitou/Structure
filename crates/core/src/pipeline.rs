@@ -313,7 +313,7 @@ pub fn analyze(
     })
 }
 
-/// Recent commits reachable from HEAD (newest first) plus the dirty flag.
+/// Recent commits reachable from HEAD (`--topo-order`, newest first) plus the dirty flag.
 pub fn history(root: &Path, limit: u32) -> anyhow::Result<History> {
     const FMT: &str = "--format=%H%x1f%h%x1f%P%x1f%an%x1f%aI%x1f%D%x1f%s%x1e";
     let n = format!("-n{}", limit.max(1));
@@ -325,6 +325,7 @@ pub fn history(root: &Path, limit: u32) -> anyhow::Result<History> {
             "log",
             "--no-show-signature",
             "--no-color",
+            "--topo-order",
             &n,
             FMT,
             "HEAD",
