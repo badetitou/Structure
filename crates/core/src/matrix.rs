@@ -172,6 +172,7 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
         cells,
         edges,
         warnings: vec![],
+        generation: 0,
         domain_tree: cls.domain_tree.clone(),
         stats: Stats {
             files: files.len(),

@@ -12,7 +12,7 @@ invoke<Matrix>("analyze", { path: string });
 invoke<Impact>("impact", { path: string, base: string | null, head: string | null });
 invoke<History>("history", { path: string, limit: number | null });
 invoke<CellSymbols>("cell_symbols", {
-  path: string, head: string | null, cells: string[],
+  path: string, head: string | null, generation: number, cells: string[],
   offset: number | null, limit: number | null,
 });
 ```
@@ -29,13 +29,20 @@ invoke<CellSymbols>("cell_symbols", {
   `index.scip`. The result then carries `matrix`, the snapshot's matrix: show
   it instead of the working-tree one (cells as of that commit; the impact ids
   refer to it). With `head = null`, `matrix` is absent.
-- `cell_symbols(path, head, cells, offset, limit)`: the top-level symbols of
+- `cell_symbols(path, head, generation, cells, offset, limit)`: the top-level symbols of
   the given cell ids (the matrix carries counts only), sorted by (name, id),
   concatenated in the order of `cells`. `head = null` reads the working-tree
-  analysis, otherwise the snapshot of that commit (the one whose `matrix` was
-  shown). Paged: `offset` default 0, `limit` default 500, at most 2000.
-  Reads the analyses cached by `analyze` / `impact`; errors when none exists
-  yet for that project/head.
+  analysis, otherwise the snapshot of that commit: pass the full SHA of
+  `Impact.head` (the backend resolves any `head` you gave `impact` to a full
+  SHA, and snapshots are cached under it). `generation` is `Matrix.generation`
+  of the matrix on screen; if the cached analysis was replaced since (for
+  example `impact` re-parsed an edited working tree), the call fails with
+  `analysis changed, re-run Analyze`. Paged: `offset` default 0, `limit` default 500, at most 2000.
+  Reads the analyses cached by `analyze` / `impact`; same error when none
+  exists. The cache keeps each project's working-tree analysis and at most 2
+  commit snapshots (vscode: ~3.5 GB each); snapshots never evict working trees.
+  `docs/samples/cell-symbols.json` maps cell ids to their symbols, the data
+  the browser-only dev mode serves for `cell_symbols`.
 - `impact` reuses the cached analysis instead of re-analysing: a commit
   snapshot is immutable, so `impact(path, base, head)` analyses `head` once;
   for the working tree the cached analysis is reused while the working tree
@@ -72,6 +79,7 @@ interface Matrix {
   cells: Cell[];     // non-empty cells only, sorted by (layer, domain)
   edges: EdgeGroup[]; // cell-to-cell calls/uses, grouped by source cell
   stats: Stats;
+  generation?: number; // set by the app: id of the cached analysis; pass to `cell_symbols`
   warnings?: string[]; // only when non-empty: indexing failed, stale index...
   // Only when domains are modules (package / directory) instead of name roots:
   // module trie, single-child chains without own classes collapsed. Every entry
@@ -104,7 +112,7 @@ interface Stats { files: number; symbols: number; edges: number; elapsed_ms: num
 
 interface Impact {
   base: string;
-  head: string | null;
+  head: string | null; // full SHA when a commit was analysed (as resolved from the request)
   changed_files: string[];
   changed_symbols: string[];
   changed_cells: string[];

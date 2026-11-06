@@ -279,7 +279,7 @@ function matrixView(workMatrix: Matrix) {
     symList = base;
     renderPanel();
     try {
-      const page = await api.cellSymbols(projectPath, shownHead(), cell.members, base.items.length, PAGE);
+      const page = await api.cellSymbols(projectPath, shownHead(), m.generation ?? 0, cell.members, base.items.length, PAGE);
       if (req !== symReq) return;
       symList = appendPage(base, page);
     } catch (e) {
