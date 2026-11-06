@@ -1,9 +1,9 @@
 ---
 id: 25
 title: Matrix UI stays responsive with thousands of cells and symbols
-status: todo
+status: done
 parent: 20
-branch: null
+branch: 39-svelte-matrix
 remote: null
 created: 2026-11-06
 ---

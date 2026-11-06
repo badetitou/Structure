@@ -1,9 +1,9 @@
 ---
 id: 39
 title: Matrix view is a Svelte component that updates incrementally
-status: todo
+status: done
 parent: 36
-branch: null
+branch: 39-svelte-matrix
 remote: null
 created: 2026-11-06
 ---
