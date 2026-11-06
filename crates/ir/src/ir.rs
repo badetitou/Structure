@@ -63,6 +63,18 @@ pub enum EdgeKind {
     Uses,
 }
 
+impl EdgeKind {
+    /// Stable order used wherever edges are sorted or keyed.
+    pub fn rank(self) -> u8 {
+        match self {
+            EdgeKind::Call => 0,
+            EdgeKind::Implements => 1,
+            EdgeKind::Extends => 2,
+            EdgeKind::Uses => 3,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Edge {
     pub from: String,

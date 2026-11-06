@@ -24,18 +24,20 @@ pub fn class_edges(graph: &Graph) -> Vec<(String, String, EdgeKind, u32)> {
         .collect()
 }
 
-/// `class_edges` on symbol indices (into `graph.symbols`) as
-/// (from, to, kind rank, kind, count), unordered.
-fn class_edge_indices(graph: &Graph) -> Vec<(usize, usize, u8, EdgeKind, u32)> {
-    // Symbol id -> index (the last symbol wins on duplicate ids).
-    let by_id: HashMap<&str, usize> = graph
+/// Symbol id -> index into `graph.symbols` (the last symbol wins on duplicate ids).
+pub(crate) fn id_index(graph: &Graph) -> HashMap<&str, usize> {
+    graph
         .symbols
         .iter()
         .enumerate()
         .map(|(i, s)| (s.id.as_str(), i))
-        .collect();
-    // Top-level ancestor of every symbol, computed once.
-    let top: Vec<Option<usize>> = (0..graph.symbols.len())
+        .collect()
+}
+
+/// Index of every symbol's top-level ancestor (itself when it has no
+/// container); `None` on a container cycle.
+pub(crate) fn top_level_indices(graph: &Graph, by_id: &HashMap<&str, usize>) -> Vec<Option<usize>> {
+    (0..graph.symbols.len())
         .map(|i| {
             let mut cur = i;
             for _ in 0..=graph.symbols.len() {
@@ -50,14 +52,15 @@ fn class_edge_indices(graph: &Graph) -> Vec<(usize, usize, u8, EdgeKind, u32)> {
             }
             None
         })
-        .collect();
+        .collect()
+}
+
+/// `class_edges` on symbol indices (into `graph.symbols`) as
+/// (from, to, kind rank, kind, count), unordered.
+fn class_edge_indices(graph: &Graph) -> Vec<(usize, usize, u8, EdgeKind, u32)> {
+    let by_id = id_index(graph);
+    let top = top_level_indices(graph, &by_id);
     let lift = |id: &str| -> Option<usize> { top[*by_id.get(id)?] };
-    let kind_rank = |k: EdgeKind| match k {
-        EdgeKind::Call => 0u8,
-        EdgeKind::Implements => 1,
-        EdgeKind::Extends => 2,
-        EdgeKind::Uses => 3,
-    };
     // Counted on indices; ids are only ordered and cloned once per distinct edge.
     let mut counts: HashMap<(usize, usize, u8), (EdgeKind, u32)> = HashMap::new();
     for e in &graph.edges {
@@ -67,10 +70,7 @@ fn class_edge_indices(graph: &Graph) -> Vec<(usize, usize, u8, EdgeKind, u32)> {
         if f == t {
             continue;
         }
-        counts
-            .entry((f, t, kind_rank(e.kind)))
-            .or_insert((e.kind, 0))
-            .1 += 1;
+        counts.entry((f, t, e.kind.rank())).or_insert((e.kind, 0)).1 += 1;
     }
     counts
         .into_iter()
@@ -406,5 +406,58 @@ mod tests {
         let s = serde_json::to_string(&m).unwrap();
         let back: Matrix = serde_json::from_str(&s).unwrap();
         assert_eq!(m, back);
+    }
+
+    /// Duplicate edges are counted, self-edges dropped, and an endpoint
+    /// without a placement (or an unknown id) never reaches the matrix.
+    #[test]
+    fn duplicates_self_edges_and_unclassified_endpoints() {
+        use SymbolKind::*;
+        let symbols = vec![
+            sym("A", "A", Class, None, "A.java"),
+            sym("A#m", "m", Method, Some("A"), "A.java"),
+            sym("B", "B", Class, None, "B.java"),
+            sym("B#n", "n", Method, Some("B"), "B.java"),
+            sym("U", "U", Class, None, "U.java"),
+        ];
+        let edges = vec![
+            edge("A#m", "B#n", EdgeKind::Call),
+            edge("A#m", "B#n", EdgeKind::Call),
+            edge("A", "B", EdgeKind::Call),
+            edge("A#m", "B", EdgeKind::Uses),
+            edge("B#n", "B", EdgeKind::Uses),   // self
+            edge("A", "U", EdgeKind::Uses),     // unclassified endpoint
+            edge("A", "ghost", EdgeKind::Uses), // unresolved endpoint
+        ];
+        let mut cls = Classification::default();
+        for (id, layer) in [("A", Layer::Entry), ("B", Layer::Business)] {
+            cls.placements.insert(
+                id.into(),
+                Placement {
+                    layer,
+                    domain: "x".into(),
+                },
+            );
+        }
+        let g = Graph {
+            root: ".".into(),
+            language: Language::Java,
+            symbols,
+            edges,
+        };
+        assert_eq!(
+            class_edges(&g),
+            vec![
+                ("A".to_string(), "B".to_string(), EdgeKind::Call, 3),
+                ("A".to_string(), "B".to_string(), EdgeKind::Uses, 1),
+                ("A".to_string(), "U".to_string(), EdgeKind::Uses, 1),
+            ]
+        );
+        let m = build(&g, &cls, "p", 0);
+        let sizes: Vec<_> = m.cells.iter().map(|c| (c.id.as_str(), c.size)).collect();
+        assert_eq!(sizes, [("entry:x", 1), ("business:x", 1)]);
+        assert_eq!(m.edges.len(), 1);
+        assert_eq!(m.edges[0].from, 0);
+        assert_eq!(m.edges[0].targets, vec![(1, 4)]);
     }
 }

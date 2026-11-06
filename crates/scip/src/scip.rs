@@ -82,18 +82,18 @@ pub fn load(path: &Path) -> anyhow::Result<ScipIndex> {
     let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut reader = std::io::BufReader::with_capacity(1 << 20, file);
     let mut input = CodedInputStream::new(&mut reader);
-    // Documents are decoded and converted one at a time, so the raw protobuf
-    // never sits in memory next to the model.
-    decode(&mut input).with_context(|| format!("decoding {}", path.display()))
+    // Documents are decoded in batches, so only a bounded amount of raw
+    // protobuf sits in memory next to the model.
+    decode(&mut input, BATCH_BYTES).with_context(|| format!("decoding {}", path.display()))
 }
 
 pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<ScipIndex> {
-    decode(&mut CodedInputStream::from_bytes(bytes))
+    decode(&mut CodedInputStream::from_bytes(bytes), BATCH_BYTES)
 }
 
 /// Streams the top-level `Index` message (`documents` = 2,
 /// `external_symbols` = 3; metadata and unknown fields are skipped).
-fn decode(input: &mut CodedInputStream) -> anyhow::Result<ScipIndex> {
+fn decode(input: &mut CodedInputStream, batch_limit: usize) -> anyhow::Result<ScipIndex> {
     let mut out = ScipIndex::default();
     let mut external: Vec<types::SymbolInformation> = Vec::new();
     let mut batch: Vec<Vec<u8>> = Vec::new();
@@ -110,8 +110,8 @@ fn decode(input: &mut CodedInputStream) -> anyhow::Result<ScipIndex> {
                 let raw = input.read_raw_bytes(len).context("invalid SCIP protobuf")?;
                 batch_bytes += raw.len();
                 batch.push(raw);
-                if batch_bytes >= BATCH_BYTES {
-                    flush(&mut batch, &mut out)?;
+                if batch_bytes >= batch_limit {
+                    decode_batch(&mut batch, &mut out)?;
                     batch_bytes = 0;
                 }
             }
@@ -122,17 +122,20 @@ fn decode(input: &mut CodedInputStream) -> anyhow::Result<ScipIndex> {
             }
         }
     }
-    flush(&mut batch, &mut out)?;
+    decode_batch(&mut batch, &mut out)?;
     for info in &external {
         add_symbol(&mut out.symbols, info);
     }
     Ok(out)
 }
 
-/// Raw document bytes decoded per parallel batch.
+/// Raw (still encoded) document bytes per parallel batch; the decoded batch
+/// is larger than this.
 const BATCH_BYTES: usize = 64 << 20;
 
-fn flush(batch: &mut Vec<Vec<u8>>, out: &mut ScipIndex) -> anyhow::Result<()> {
+/// Decodes the batched documents in parallel and appends them to `out` in
+/// their original order, then empties the batch.
+fn decode_batch(batch: &mut Vec<Vec<u8>>, out: &mut ScipIndex) -> anyhow::Result<()> {
     let decoded: Vec<anyhow::Result<(ScipDocument, Vec<types::SymbolInformation>)>> = batch
         .par_iter()
         .map(|raw| {
@@ -449,5 +452,65 @@ mod tests {
         assert_eq!(simple_name("local 12"), None);
         assert!(is_local("local 12"));
         assert!(!is_local(JAVA));
+    }
+
+    fn many_docs_index(n: usize) -> Vec<u8> {
+        let mut idx = Index::new();
+        for i in 0..n {
+            let mut d = Document::new();
+            d.relative_path = format!("F{i}.java");
+            d.language = "java".into();
+            for j in 0..=(i % 3) {
+                d.occurrences
+                    .push(occ(JAVA, vec![j as i32, 0, 5], (j % 2) as i32));
+            }
+            let mut info = SymbolInformation::new();
+            info.symbol = format!("{JAVA}{i}");
+            d.symbols.push(info);
+            idx.documents.push(d);
+        }
+        idx.write_to_bytes().unwrap()
+    }
+
+    fn summary(m: &ScipIndex) -> (Vec<(String, usize)>, usize) {
+        (
+            m.documents
+                .iter()
+                .map(|d| (d.relative_path.clone(), d.occurrences.len()))
+                .collect(),
+            m.symbols.len(),
+        )
+    }
+
+    /// A tiny batch limit forces many batches (and a final partial one); the
+    /// result, document order included, matches the single-batch decode.
+    #[test]
+    fn batched_decode_matches_single_batch() {
+        let bytes = many_docs_index(11);
+        let one = decode(&mut CodedInputStream::from_bytes(&bytes), usize::MAX).unwrap();
+        for limit in [1, 40, 100, 100_000] {
+            let m = decode(&mut CodedInputStream::from_bytes(&bytes), limit).unwrap();
+            assert_eq!(summary(&m), summary(&one), "limit {limit}");
+        }
+        let names: Vec<&str> = one
+            .documents
+            .iter()
+            .map(|d| d.relative_path.as_str())
+            .collect();
+        let want: Vec<String> = (0..11).map(|i| format!("F{i}.java")).collect();
+        assert_eq!(names, want.iter().map(String::as_str).collect::<Vec<_>>());
+        assert_eq!(one.symbols.len(), 11);
+    }
+
+    /// A valid frame around an undecodable document is an error, not a panic.
+    #[test]
+    fn corrupt_document_body_is_an_error() {
+        let mut bytes = many_docs_index(2);
+        // Field 2 (document), length 3, then a truncated varint / bad tag.
+        bytes.extend_from_slice(&[0x12, 0x03, 0x0A, 0xFF, 0xFF]);
+        for limit in [1, usize::MAX] {
+            let r = decode(&mut CodedInputStream::from_bytes(&bytes), limit);
+            assert!(r.is_err(), "limit {limit}");
+        }
     }
 }
