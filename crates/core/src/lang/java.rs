@@ -81,4 +81,15 @@ impl LanguageFrontend for JavaFrontend {
     fn parse_project(&self, root: &Path) -> anyhow::Result<Graph> {
         java::parse_project(root)
     }
+
+    fn default_rules(&self) -> (&'static str, &'static str) {
+        (
+            include_str!("../../../../rules/java.toml"),
+            "rules/java.toml",
+        )
+    }
+
+    fn module_separator(&self) -> char {
+        '.'
+    }
 }

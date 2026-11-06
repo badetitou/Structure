@@ -480,8 +480,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ignore",
- "serde",
- "serde_json",
  "structure-classify",
  "structure-git",
  "structure-ir",

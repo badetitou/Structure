@@ -97,7 +97,8 @@ mod tests {
     /// Repo with a Java project in `app/` and two commits; returns the repo
     /// dir and the first commit's SHA.
     fn temp_repo(tag: &str) -> (PathBuf, String, String) {
-        let dir = std::env::temp_dir().join(format!("structure-refs-{}-{tag}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("structure-git-refs-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("app/src")).unwrap();
         git_ok(&dir, &["init", "-q"]);

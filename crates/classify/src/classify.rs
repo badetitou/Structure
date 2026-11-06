@@ -8,7 +8,7 @@
 use anyhow::Context;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use structure_ir::ir::{EdgeKind, Graph, Language, Symbol, SymbolKind};
+use structure_ir::ir::{EdgeKind, Graph, Symbol, SymbolKind};
 use structure_ir::model::{Classification, DomainNode, Layer, Placement};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -116,34 +116,14 @@ pub struct RuleSet {
     pub domain: Option<DomainSpec>,
 }
 
-/// Embedded default rules of a language: `(toml, display name)`.
-fn default_rules(lang: Language) -> (&'static str, &'static str) {
-    match lang {
-        Language::Java => (include_str!("../../../rules/java.toml"), "rules/java.toml"),
-        Language::TypeScript => (
-            include_str!("../../../rules/typescript.toml"),
-            "rules/typescript.toml",
-        ),
-    }
-}
-
-/// Separator of module paths in symbol ids (domain inference).
-fn module_separator(lang: Language) -> char {
-    match lang {
-        Language::Java => '.',
-        Language::TypeScript => '/',
-    }
-}
-
 impl RuleSet {
     pub fn from_toml_str(s: &str) -> anyhow::Result<RuleSet> {
         toml::from_str(s).context("invalid classification rules")
     }
 
-    /// Embedded rules for a language.
-    pub fn builtin(lang: Language) -> anyhow::Result<RuleSet> {
-        let (toml, name) = default_rules(lang);
-        Self::from_toml_str(toml).context(name)
+    /// Rules from embedded TOML text; `name` labels parse errors.
+    pub fn from_embedded(toml: &str, name: &str) -> anyhow::Result<RuleSet> {
+        Self::from_toml_str(toml).context(name.to_string())
     }
 
     /// `other` takes priority: its rules come first, and its domain spec
@@ -321,7 +301,7 @@ fn domain_of(spec: &DomainSpec, s: &Symbol) -> String {
 }
 
 /// One placement per top-level symbol (kind Class/Interface/Enum/Function).
-pub fn classify(graph: &Graph, rules: &RuleSet) -> Classification {
+pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Classification {
     let by_id: HashMap<&str, &Symbol> = graph.symbols.iter().map(|s| (s.id.as_str(), s)).collect();
     let top_of = |id: &str| -> Option<&str> {
         let mut cur = *by_id.get(id)?;
@@ -411,7 +391,7 @@ pub fn classify(graph: &Graph, rules: &RuleSet) -> Classification {
         }
         let alone = per_domain.values().filter(|n| **n == 1).count();
         if !auto_ids.is_empty() && alone * 4 >= auto_ids.len() * 3 {
-            let sep = module_separator(graph.language);
+            let sep = module_separator;
             let members: Vec<(&str, Vec<String>)> = auto_ids
                 .iter()
                 .filter_map(|id| facts.get(id).map(|f| (*id, module_path(f.sym, sep))))
@@ -553,7 +533,31 @@ fn module_domains<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use structure_ir::ir::{Edge, Range};
+
+    fn builtin(lang: Language) -> anyhow::Result<RuleSet> {
+        let (toml, name, _) = match lang {
+            Language::Java => (
+                include_str!("../../../rules/java.toml"),
+                "rules/java.toml",
+                '.',
+            ),
+            Language::TypeScript => (
+                include_str!("../../../rules/typescript.toml"),
+                "rules/typescript.toml",
+                '/',
+            ),
+        };
+        RuleSet::from_embedded(toml, name)
+    }
+
+    fn classify(graph: &Graph, rules: &RuleSet) -> Classification {
+        let sep = match graph.language {
+            Language::Java => '.',
+            Language::TypeScript => '/',
+        };
+        super::classify(graph, rules, sep)
+    }
+    use structure_ir::ir::{Edge, Language, Range};
 
     const R: Range = Range {
         start_line: 0,
@@ -657,7 +661,7 @@ mod tests {
         stripes.supertypes = vec!["ActionBean".into()];
         syms.push(stripes);
         let g = graph(Language::Java, syms, vec![]);
-        let c = classify(&g, &RuleSet::builtin(Language::Java).unwrap());
+        let c = classify(&g, &builtin(Language::Java).unwrap());
         let id = |n: &str, sub: &str| format!("{base}.{sub}.{n}");
         assert_eq!(
             p(&c, &id("AccountActionBean", "web.actions")),
@@ -763,7 +767,7 @@ mod tests {
             vec![cmp, api, store, biz, model, guard],
             edges,
         );
-        let c = classify(&g, &RuleSet::builtin(Language::TypeScript).unwrap());
+        let c = classify(&g, &builtin(Language::TypeScript).unwrap());
         assert_eq!(p(&c, &ids[0]), (Layer::Ui, "cart".into()));
         assert_eq!(p(&c, &ids[1]), (Layer::ApiClient, "cart".into()));
         assert_eq!(p(&c, &ids[2]), (Layer::State, "cart".into()));
@@ -859,7 +863,7 @@ aliases = { order = ["LineItem"] }
             vec![a, t],
             vec![edge("x.Dao", "y.SqlSession", EdgeKind::Uses)],
         );
-        let c = classify(&g, &RuleSet::builtin(Language::Java).unwrap());
+        let c = classify(&g, &builtin(Language::Java).unwrap());
         assert_eq!(c.placements["x.Dao"].layer, Layer::Persistence);
         assert!(RuleSet::from_toml_str("[[rule]]\nlayer=\"nope\"\n").is_err());
         assert!(RuleSet::from_toml_str("[[rule]]\nlayer=\"ui\"\nbogus=1\n").is_err());
@@ -867,13 +871,8 @@ aliases = { order = ["LineItem"] }
 
     #[test]
     fn builtin_rules_parse() {
-        assert!(!RuleSet::builtin(Language::Java).unwrap().rules.is_empty());
-        assert!(
-            !RuleSet::builtin(Language::TypeScript)
-                .unwrap()
-                .rules
-                .is_empty()
-        );
+        assert!(!builtin(Language::Java).unwrap().rules.is_empty());
+        assert!(!builtin(Language::TypeScript).unwrap().rules.is_empty());
     }
 
     fn ann(mut s: Symbol, anns: &[&str]) -> Symbol {
@@ -938,7 +937,7 @@ aliases = { order = ["LineItem"] }
         syms.push(l);
         let c = classify(
             &graph(Language::Java, syms, vec![]),
-            &RuleSet::builtin(Language::Java).unwrap(),
+            &builtin(Language::Java).unwrap(),
         );
         let id = |sub: &str, n: &str| format!("{base}.{sub}.{n}");
         for (n, d) in [
@@ -996,7 +995,7 @@ aliases = { order = ["LineItem"] }
 
     #[test]
     fn mapper_annotation_and_component_ordering() {
-        let rs = RuleSet::builtin(Language::Java).unwrap();
+        let rs = builtin(Language::Java).unwrap();
         let g = graph(
             Language::Java,
             vec![
@@ -1068,7 +1067,7 @@ aliases = { order = ["LineItem"] }
         ];
         let ids: Vec<String> = syms.iter().map(|s| s.id.clone()).collect();
         let g = graph(Language::TypeScript, syms, vec![]);
-        let c = classify(&g, &RuleSet::builtin(Language::TypeScript).unwrap());
+        let c = classify(&g, &builtin(Language::TypeScript).unwrap());
         let layers: Vec<Layer> = ids.iter().map(|i| c.placements[i].layer).collect();
         assert_eq!(
             layers,
@@ -1159,7 +1158,7 @@ aliases = { billing = ["invoices"] }
 
     #[test]
     fn spring_ddd_rules() {
-        let rs = RuleSet::builtin(Language::Java).unwrap();
+        let rs = builtin(Language::Java).unwrap();
         let base = "io.acme";
         let mut with_logic = java(
             "Article",
@@ -1248,7 +1247,7 @@ aliases = { billing = ["invoices"] }
 
     #[test]
     fn role_suffixes_prefixes_and_plurals() {
-        let rs = RuleSet::builtin(Language::Java).unwrap();
+        let rs = builtin(Language::Java).unwrap();
         let names = [
             ("ArticleQueryService", "article"),
             ("ArticleCommandService", "article"),
@@ -1368,7 +1367,7 @@ aliases = { billing = ["invoices"] }
     #[test]
     fn auto_switches_to_module_domains_with_tree() {
         let g = module_graph();
-        let mut rules = RuleSet::builtin(Language::Java).unwrap();
+        let mut rules = builtin(Language::Java).unwrap();
         // names are all distinct: every class alone -> modules
         let c = classify(&g, &rules);
         assert_eq!(p(&c, "org.x.model.famix.traits.A").1, "traits");
@@ -1408,7 +1407,7 @@ aliases = { billing = ["invoices"] }
         }
         let c = classify(
             &graph(Language::Java, syms, vec![]),
-            &RuleSet::builtin(Language::Java).unwrap(),
+            &builtin(Language::Java).unwrap(),
         );
         assert!(c.domain_tree.is_none());
         assert_eq!(p(&c, "a.one.UserService").1, "user");
@@ -1416,7 +1415,7 @@ aliases = { billing = ["invoices"] }
 
     #[test]
     fn auto_switches_at_exactly_75_percent_alone() {
-        let rules = RuleSet::builtin(Language::Java).unwrap();
+        let rules = builtin(Language::Java).unwrap();
         // `n` distinct names alone, plus two classes sharing one name root.
         let run = |alone: &[&str]| {
             let mut syms: Vec<Symbol> = alone
@@ -1443,7 +1442,7 @@ aliases = { billing = ["invoices"] }
         c_sym[2].package = None;
         let c = classify(
             &graph(Language::Java, c_sym, vec![]),
-            &RuleSet::builtin(Language::Java).unwrap(),
+            &builtin(Language::Java).unwrap(),
         );
         assert_eq!(p(&c, "a.Utils.A").1, "a.utils");
         assert_eq!(p(&c, "b.utils.B").1, "b.utils");

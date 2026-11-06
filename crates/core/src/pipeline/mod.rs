@@ -174,7 +174,10 @@ pub fn analyze(
 
     step("classifying", 80);
     let t = Instant::now();
-    let mut rules = RuleSet::builtin(lang)?;
+    let mut rules = {
+        let (toml, name) = crate::lang::frontend(lang).default_rules();
+        RuleSet::from_embedded(toml, name)?
+    };
     let custom = root.join(".structure/rules.toml");
     if custom.is_file() {
         let text = std::fs::read_to_string(&custom)
@@ -183,7 +186,11 @@ pub fn analyze(
             .with_context(|| format!("parsing {}", custom.display()))?;
         rules = rules.merge(user);
     }
-    let classification = classify(&graph, &rules);
+    let classification = classify(
+        &graph,
+        &rules,
+        crate::lang::frontend(lang).module_separator(),
+    );
     metrics.phase("classify", t, None);
 
     step("building matrix", 95);

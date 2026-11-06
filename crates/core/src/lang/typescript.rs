@@ -51,4 +51,15 @@ impl LanguageFrontend for TypeScriptFrontend {
     fn parse_project(&self, root: &Path) -> anyhow::Result<Graph> {
         ts::parse_project(root)
     }
+
+    fn default_rules(&self) -> (&'static str, &'static str) {
+        (
+            include_str!("../../../../rules/typescript.toml"),
+            "rules/typescript.toml",
+        )
+    }
+
+    fn module_separator(&self) -> char {
+        '/'
+    }
 }
