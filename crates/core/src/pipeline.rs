@@ -71,18 +71,54 @@ fn find_cs() -> Option<PathBuf> {
 }
 
 fn run_indexer(root: &Path, mut cmd: Command) -> Result<(), String> {
-    let out = cmd
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::time::Duration;
+    let mut child = cmd
         .current_dir(root)
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("cannot start {:?}: {e}", cmd.get_program()))?;
-    if out.status.success() {
+    let mut stderr = child.stderr.take();
+    let reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(s) = stderr.as_mut() {
+            let _ = s.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let deadline = Instant::now() + Duration::from_secs(INDEX_TIMEOUT_SECS);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break st,
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "timed out after {} min; check ~/.m2/settings.xml (unreachable repository?) or run the indexer manually",
+                    INDEX_TIMEOUT_SECS / 60
+                ));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Err(e) => return Err(format!("waiting for indexer: {e}")),
+        }
+    };
+    if status.success() {
         return Ok(());
     }
-    let err = String::from_utf8_lossy(&out.stderr);
+    let buf = reader.join().unwrap_or_default();
+    let err = String::from_utf8_lossy(&buf);
     let mut tail: Vec<&str> = err.lines().rev().take(8).collect();
     tail.reverse();
-    Err(format!("{} ({})", tail.join(" | "), out.status))
+    Err(format!(
+        "{} ({status}); for Java also check ~/.m2/settings.xml",
+        tail.join(" | ")
+    ))
 }
+
+const INDEX_TIMEOUT_SECS: u64 = 600;
 
 /// Returns the path of an up-to-date `index.scip`, or `Ok(None)` (with a
 /// warning through `warn`) if it could not be produced.
