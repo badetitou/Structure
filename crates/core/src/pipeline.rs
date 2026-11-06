@@ -411,6 +411,105 @@ pub fn impact(
     Ok(result)
 }
 
+/// Most snapshots kept per repository; the least recently used are removed.
+pub const MAX_SNAPSHOTS: usize = 8;
+
+/// Project root of a detached worktree of `rev`, created on first use and
+/// reused afterwards. The user's working tree, index, HEAD and stash are untouched.
+pub fn snapshot(root: &Path, rev: &str) -> anyhow::Result<PathBuf> {
+    snapshot_bounded(root, rev, MAX_SNAPSHOTS)
+}
+
+fn snapshot_bounded(root: &Path, rev: &str, max: usize) -> anyhow::Result<PathBuf> {
+    let spec = format!("{rev}^{{commit}}");
+    let sha = impact::git(root, &["rev-parse", "--verify", "--quiet", &spec])
+        .with_context(|| format!("unknown revision: {rev}"))?
+        .trim()
+        .to_string();
+    let prefix = impact::git(root, &["rev-parse", "--show-prefix"])?
+        .trim()
+        .to_string();
+    let common = impact::git(root, &["rev-parse", "--git-common-dir"])?;
+    let snaps = root.join(common.trim()).join("structure").join("snapshots");
+    std::fs::create_dir_all(&snaps).with_context(|| format!("creating {}", snaps.display()))?;
+    let snaps = snaps.canonicalize().unwrap_or(snaps);
+    let dir = snaps.join(&sha);
+    let dir_str = dir.to_string_lossy().into_owned();
+
+    let valid =
+        dir.is_dir() && impact::git(&dir, &["rev-parse", "HEAD"]).is_ok_and(|h| h.trim() == sha);
+    if !valid {
+        let _ = impact::git(root, &["worktree", "remove", "--force", &dir_str]);
+        let _ = std::fs::remove_dir_all(&dir);
+        impact::git(root, &["worktree", "prune"])?;
+        impact::git(root, &["worktree", "add", "--detach", &dir_str, &sha])
+            .with_context(|| format!("creating snapshot of {rev}"))?;
+    }
+    // Mark as recently used.
+    if let Ok(f) = std::fs::File::open(&dir) {
+        let _ = f.set_modified(std::time::SystemTime::now());
+    }
+    prune_snapshots(root, &snaps, max, &sha);
+    Ok(dir.join(prefix))
+}
+
+/// Remove least recently used snapshots beyond `max`, never `keep`.
+fn prune_snapshots(root: &Path, snaps: &Path, max: usize, keep: &str) {
+    let Ok(rd) = std::fs::read_dir(snaps) else {
+        return;
+    };
+    let mut all: Vec<(std::time::SystemTime, PathBuf)> = rd
+        .filter_map(Result::ok)
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .collect();
+    if all.len() <= max {
+        return;
+    }
+    all.sort();
+    let excess = all.len() - max;
+    for (_, p) in all
+        .into_iter()
+        .filter(|(_, p)| p.file_name().is_none_or(|n| n != keep))
+        .take(excess)
+    {
+        let _ = impact::git(
+            root,
+            &["worktree", "remove", "--force", &p.to_string_lossy()],
+        );
+        let _ = std::fs::remove_dir_all(&p);
+    }
+    let _ = impact::git(root, &["worktree", "prune"]);
+}
+
+/// Impact of `base..head`. With a `head`, the commit is analysed exactly in
+/// its snapshot; without, the working tree is used as in [`impact`].
+pub fn impact_at(
+    root: &Path,
+    base: Option<&str>,
+    head: Option<&str>,
+    opts: &Options,
+    progress: &dyn Fn(Progress),
+) -> anyhow::Result<Impact> {
+    let Some(h) = head else {
+        let analysis = analyze(root, opts, progress)?;
+        return impact(root, &analysis, base, None);
+    };
+    let snap = snapshot(root, h)?;
+    let analysis = analyze(&snap, opts, progress)?;
+    let mut changes = impact::changed_lines(&snap, base, head)?;
+    changes.retain(|c| c.file != "index.scip");
+    let mut result = impact::compute(
+        &analysis.graph,
+        &analysis.classification,
+        &changes,
+        base.unwrap_or("HEAD"),
+        head,
+    );
+    result.warnings = analysis.warnings;
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,6 +523,106 @@ mod tests {
             .unwrap()
             .set_modified(t)
             .unwrap();
+    }
+
+    fn git_ok(dir: &Path, args: &[&str]) -> Option<String> {
+        let cfg = [
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+        ];
+        let all: Vec<&str> = cfg.iter().chain(args.iter()).copied().collect();
+        impact::git(dir, &all).ok()
+    }
+
+    /// Repo with a Java project in `app/`. c0: class A (line 1); c1 adds class B
+    /// (line 2); c2 prepends a comment line, so B moves to line 3.
+    fn temp_repo(tag: &str) -> Option<(PathBuf, String, String)> {
+        let dir = std::env::temp_dir().join(format!("structure-snap-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("app/src")).ok()?;
+        git_ok(&dir, &["init", "-q"])?;
+        std::fs::write(dir.join("app/pom.xml"), "<project/>").ok()?;
+        let f = dir.join("app/src/A.java");
+        std::fs::write(&f, "class A { void a() {} }\n").ok()?;
+        git_ok(&dir, &["add", "."])?;
+        git_ok(&dir, &["commit", "-q", "-m", "c0"])?;
+        std::fs::write(&f, "class A { void a() {} }\nclass B { void b() {} }\n").ok()?;
+        git_ok(&dir, &["commit", "-q", "-am", "c1"])?;
+        let c1 = git_ok(&dir, &["rev-parse", "HEAD"])?.trim().to_string();
+        std::fs::write(
+            &f,
+            "// h\nclass A { void a() {} }\nclass B { void b() {} }\n",
+        )
+        .ok()?;
+        git_ok(&dir, &["commit", "-q", "-am", "c2"])?;
+        let c2 = git_ok(&dir, &["rev-parse", "HEAD"])?.trim().to_string();
+        Some((dir, c1, c2))
+    }
+
+    fn no_scip() -> Options {
+        Options {
+            use_scip: false,
+            ..Options::default()
+        }
+    }
+
+    #[test]
+    fn snapshot_created_reused_and_invalid_rev() {
+        let Some((repo, c1, _)) = temp_repo("reuse") else {
+            return;
+        };
+        let root = repo.join("app");
+        let before = git_ok(&repo, &["status", "--porcelain"]);
+        let head = git_ok(&repo, &["rev-parse", "HEAD"]);
+        let a = snapshot(&root, &c1).unwrap();
+        assert!(a.ends_with("app") && a.join("pom.xml").is_file());
+        assert!(a.join("src/A.java").is_file());
+        std::fs::write(a.join("marker"), "").unwrap();
+        let b = snapshot(&root, &c1[..8]).unwrap();
+        assert_eq!(a, b);
+        assert!(b.join("marker").is_file(), "snapshot reused, not recreated");
+        // Broken snapshot is recreated.
+        std::fs::remove_dir_all(a.parent().unwrap()).unwrap();
+        let c = snapshot(&root, &c1).unwrap();
+        assert!(c.join("src/A.java").is_file());
+        assert!(snapshot(&root, "no-such-rev").is_err());
+        assert_eq!(git_ok(&repo, &["status", "--porcelain"]), before);
+        assert_eq!(git_ok(&repo, &["rev-parse", "HEAD"]), head);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn snapshots_pruned_to_bound() {
+        let Some((repo, c1, c2)) = temp_repo("prune") else {
+            return;
+        };
+        let root = repo.join("app");
+        let s1 = snapshot_bounded(&root, &c1, 1).unwrap();
+        let s2 = snapshot_bounded(&root, &c2, 1).unwrap();
+        assert!(!s1.exists(), "oldest snapshot removed");
+        assert!(s2.exists());
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn impact_at_uses_that_commits_lines() {
+        let Some((repo, c1, c2)) = temp_repo("impact") else {
+            return;
+        };
+        let root = repo.join("app");
+        // Line 2 is class B in c1 but class A in the working tree (c2).
+        let base = format!("{c1}^");
+        let imp = impact_at(&root, Some(&base), Some(&c1), &no_scip(), &|_| {}).unwrap();
+        assert_eq!(imp.changed_symbols, vec!["B".to_string()], "{imp:?}");
+        assert!(imp.warnings.iter().all(|w| !w.contains("checked out")));
+        // c2 only touches the new comment line: no symbol changed.
+        let imp = impact_at(&root, Some(&c1), Some(&c2), &no_scip(), &|_| {}).unwrap();
+        assert!(imp.changed_symbols.is_empty(), "{imp:?}");
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
