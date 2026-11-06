@@ -26,7 +26,11 @@ report() { echo "$1: $(du -h "$2" | cut -f1) ($2)"; }
 
 J="$FIXTURES/jpetstore-6"
 if [ "${FORCE:-0}" = 1 ] || [ ! -f "$J/index.scip" ]; then
-  (cd "$J" && MAVEN_ARGS="-s $ROOT/scripts/maven-settings.xml -B" cs launch "com.sourcegraph:scip-java_2.13:$SCIP_JAVA_VERSION" -- index --output index.scip)
+  # mvnw ignores MAVEN_ARGS; .mvn/maven.config is read by every Maven launcher.
+  mkdir -p "$J/.mvn"
+  grep -q -- "--settings=" "$J/.mvn/maven.config" 2>/dev/null ||
+    echo "--settings=$ROOT/scripts/maven-settings.xml" >> "$J/.mvn/maven.config"
+  (cd "$J" && cs launch "com.sourcegraph:scip-java_2.13:$SCIP_JAVA_VERSION" -- index --output index.scip)
 fi
 report java "$J/index.scip"
 

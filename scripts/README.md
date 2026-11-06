@@ -15,7 +15,7 @@ Prerequisites: git, JDK 17+ (21 tested), Maven, Node 20+, curl.
 
 Known issue: a `~/.m2/settings.xml` that points to an unreachable private
 repository makes Maven hang. Both scripts therefore run Maven with
-`scripts/maven-settings.xml` (Maven Central only). For `mvnw`/scip-java this
-goes through `MAVEN_ARGS`.
+`scripts/maven-settings.xml` (Maven Central only). `index-fixtures.sh` adds it to the
+fixture's `.mvn/maven.config`, because `mvnw` ignores `MAVEN_ARGS`.
 
 Goldens for tests: `tests/golden/{jpetstore,realworld}.toml`.
