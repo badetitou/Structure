@@ -499,10 +499,11 @@ pub fn analyze(
         None
     };
 
-    let note = match (opts.use_scip, ran_indexer.get()) {
-        (false, _) => "skipped (--no-scip)",
-        (true, true) => "ran indexer",
-        (true, false) => "reused index.scip",
+    let note = match (opts.use_scip, index_path.is_some(), ran_indexer.get()) {
+        (false, _, _) => "skipped (--no-scip)",
+        (true, false, _) => "no index (tree-sitter only)",
+        (true, true, true) => "ran indexer",
+        (true, true, false) => "reused index.scip",
     };
     metrics.phase("indexer", t, Some(note));
 
