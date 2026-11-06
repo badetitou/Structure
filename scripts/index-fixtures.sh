@@ -65,6 +65,8 @@ if [ -d "$G" ]; then
     fi
   fi
   if [ -f "$G/index.scip" ]; then report java-gradle "$G/index.scip"; fi
+else
+  echo "skipping spring-boot-realworld-example-app: fixture not found (run fetch-fixtures.sh)" >&2
 fi
 
 T="$FIXTURES/angular-realworld"

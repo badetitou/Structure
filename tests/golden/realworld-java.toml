@@ -1,8 +1,9 @@
 # Hand-written oracle for gothinkster/spring-boot-realworld-example-app @ ee17e31 (Gradle, Java 11).
-# Layers: classes the rules cannot place (core.* domain entities/ports, graphql @DgsComponent)
-# are left out rather than weakened; domains are not asserted by the e2e test and
-# several (ArticleApi, ...QueryService) are not reachable with the name_root strategy.
-# Expectations come from reading the code, not from analyzer output.
+# Classes the rules and the DTO fallback cannot place (core.article.Article, core.user.User,
+# core.article.ArticleRepository, graphql @DgsComponent classes) are left out rather than weakened.
+# Comment and ArticleData are placed (model) by the DTO fallback, not by a rule.
+# Domains are informational only (not asserted by the e2e test): name_root cannot reach several
+# of them (ArticleApi, ...QueryService).
 
 [[class]]
 name = "io.spring.api.ArticleApi"
@@ -83,3 +84,16 @@ domain = "comment"
 name = "io.spring.infrastructure.mybatis.readservice.UserReadService"
 layer = "persistence"
 domain = "user"
+
+# Class-level Call/Uses chains read from field types (constructor injection).
+[[path]]
+chain = ["io.spring.api.ArticleApi", "io.spring.application.ArticleQueryService", "io.spring.infrastructure.mybatis.readservice.ArticleReadService"]
+
+[[path]]
+chain = ["io.spring.api.UsersApi", "io.spring.application.user.UserService", "io.spring.core.user.UserRepository"]
+
+[[path]]
+chain = ["io.spring.api.ArticlesApi", "io.spring.application.article.ArticleCommandService", "io.spring.core.article.ArticleRepository"]
+
+[[path]]
+chain = ["io.spring.infrastructure.repository.MyBatisArticleRepository", "io.spring.infrastructure.mybatis.mapper.ArticleMapper"]

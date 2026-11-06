@@ -189,6 +189,44 @@ fn e2e_realworld_java_tree_sitter() {
         ..offline()
     };
     check_with("realworld-java", &root, &opts, false);
+
+    // Stricter checks, tree-sitter only: every golden class is present, anchors are exact.
+    let a = pipeline::analyze(&root, &opts, &|_| {}).expect("analyze");
+    let Some(g) = golden("realworld-java") else {
+        return;
+    };
+    let classes = g
+        .get("class")
+        .and_then(|c| c.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(!classes.is_empty(), "golden has no classes");
+    for c in &classes {
+        let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            a.classification.placements.contains_key(name),
+            "golden class missing from placements: {name}"
+        );
+    }
+    for (name, layer) in [
+        ("io.spring.api.ArticleApi", "entry"),
+        ("io.spring.application.user.UserService", "business"),
+        (
+            "io.spring.infrastructure.repository.MyBatisArticleRepository",
+            "persistence",
+        ),
+        ("io.spring.api.security.WebSecurityConfig", "util"),
+    ] {
+        let p = a.classification.placements.get(name);
+        assert_eq!(p.map(|p| p.layer.as_str()), Some(layer), "{name}");
+    }
+    assert!(
+        a.graph
+            .symbols
+            .iter()
+            .all(|s| !s.file.starts_with("build/") && !s.file.contains("/build/")),
+        "symbol from a build/ path"
+    );
 }
 
 fn git(dir: &Path, args: &[&str]) {
