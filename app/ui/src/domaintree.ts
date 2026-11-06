@@ -1,0 +1,164 @@
+// Pure logic for collapsible domain columns: which tree nodes are visible
+// columns, and the matrix aggregated onto those columns.
+import type { Cell, CellEdge, DomainNode, Impact, Matrix } from "./api";
+
+export const MAX_COLUMNS = 12;
+
+export interface Column {
+  /** Leaf: the domain name. Group: `g:` + index path (`g:0/2`), unique even for same-label siblings. */
+  key: string;
+  label: string;
+  group: boolean;
+  /** Domains (leaves) aggregated in this column. */
+  domains: string[];
+}
+
+/** Header band above the columns of an expanded group. */
+export interface Band {
+  key: string;
+  label: string;
+  /** Index of the first column, number of columns, nesting depth (0 = top). */
+  start: number;
+  span: number;
+  depth: number;
+}
+
+const isGroup = (n: DomainNode) => n.children.length > 0;
+
+function nodeKey(n: DomainNode, path: string): string {
+  return isGroup(n) ? `g:${path}` : (n.domain ?? path);
+}
+const childPath = (path: string, i: number) => `${path}/${i}`;
+
+function leavesOf(n: DomainNode): string[] {
+  if (!isGroup(n)) return n.domain === undefined ? [] : [n.domain];
+  return n.children.flatMap(leavesOf);
+}
+
+/** Breadth-first expansion: expand groups while the column count stays <= max. */
+export function initialExpanded(tree: DomainNode[], max = MAX_COLUMNS): Set<string> {
+  const expanded = new Set<string>();
+  let count = tree.length;
+  let level: { n: DomainNode; path: string }[] = tree.map((n, i) => ({ n, path: String(i) }));
+  while (level.length > 0) {
+    const next: typeof level = [];
+    for (const { n, path } of level) {
+      if (!isGroup(n)) continue;
+      if (count - 1 + n.children.length > max) continue;
+      count += n.children.length - 1;
+      expanded.add(`g:${path}`);
+      n.children.forEach((c, i) => next.push({ n: c, path: childPath(path, i) }));
+    }
+    level = next;
+  }
+  return expanded;
+}
+
+/** Visible columns, left to right, for the given expanded group keys. */
+export function columns(tree: DomainNode[], expanded: ReadonlySet<string>): Column[] {
+  const out: Column[] = [];
+  const walk = (n: DomainNode, path: string) => {
+    const key = nodeKey(n, path);
+    if (isGroup(n) && expanded.has(key)) {
+      n.children.forEach((c, i) => walk(c, childPath(path, i)));
+    } else {
+      out.push({ key, label: n.label, group: isGroup(n), domains: leavesOf(n) });
+    }
+  };
+  tree.forEach((n, i) => walk(n, String(i)));
+  return out;
+}
+
+/** Bands of the expanded groups, with their column range (for collapse headers). */
+export function bands(tree: DomainNode[], expanded: ReadonlySet<string>): Band[] {
+  const out: Band[] = [];
+  let idx = 0;
+  const walk = (n: DomainNode, path: string, depth: number) => {
+    const key = nodeKey(n, path);
+    if (isGroup(n) && expanded.has(key)) {
+      const band: Band = { key, label: n.label, start: idx, span: 0, depth };
+      out.push(band);
+      n.children.forEach((c, i) => walk(c, childPath(path, i), depth + 1));
+      band.span = idx - band.start;
+    } else idx++;
+  };
+  tree.forEach((n, i) => walk(n, String(i), 0));
+  return out;
+}
+
+/** Plain columns when there is no tree: one leaf per domain. */
+export function flatColumns(domains: string[]): Column[] {
+  return domains.map((d) => ({ key: d, label: d, group: false, domains: [d] }));
+}
+
+export interface ViewCell extends Cell {
+  /** Column label (equals `domain` for leaf columns). */
+  label: string;
+}
+export interface ViewMatrix {
+  columns: Column[];
+  cells: ViewCell[];
+  edges: CellEdge[];
+  /** Original cell id -> view cell id. */
+  cellMap: Map<string, string>;
+}
+
+/** Aggregate a matrix onto columns: sizes summed, symbols united, edges re-mapped. */
+export function aggregate(m: Matrix, cols: Column[]): ViewMatrix {
+  const colOf = new Map<string, Column>();
+  for (const c of cols) for (const d of c.domains) colOf.set(d, c);
+  const cells = new Map<string, ViewCell>();
+  const seen = new Map<string, Set<string>>();
+  const cellMap = new Map<string, string>();
+  for (const c of m.cells) {
+    const col = colOf.get(c.domain);
+    if (!col) continue;
+    const id = `${c.layer}:${col.key}`;
+    cellMap.set(c.id, id);
+    let v = cells.get(id);
+    if (!v) {
+      v = { id, layer: c.layer, domain: col.key, label: col.label, size: 0, symbols: [] };
+      cells.set(id, v);
+      seen.set(id, new Set());
+    }
+    v.size += c.size;
+    const ids = seen.get(id);
+    for (const sy of c.symbols) {
+      if (ids?.has(sy.id)) continue;
+      ids?.add(sy.id);
+      v.symbols.push(sy);
+    }
+  }
+  const edges = new Map<string, CellEdge>();
+  for (const e of m.edges) {
+    const from = cellMap.get(e.from);
+    const to = cellMap.get(e.to);
+    if (from === undefined || to === undefined || from === to) continue;
+    const k = `${from}\u0000${to}`;
+    const prev = edges.get(k);
+    if (prev) prev.weight += e.weight;
+    else edges.set(k, { from, to, weight: e.weight });
+  }
+  return { columns: cols, cells: [...cells.values()], edges: [...edges.values()], cellMap };
+}
+
+/** Map impact cell ids onto view cells: changed if any leaf, min distance. */
+export function aggregateImpact(
+  impact: Impact | null,
+  cellMap: ReadonlyMap<string, string>,
+): { changed: Set<string>; impacted: Map<string, number> } {
+  const changed = new Set<string>();
+  const impacted = new Map<string, number>();
+  if (!impact) return { changed, impacted };
+  for (const id of impact.changed_cells) {
+    const v = cellMap.get(id);
+    if (v !== undefined) changed.add(v);
+  }
+  for (const x of impact.impacted_cells) {
+    const v = cellMap.get(x.id);
+    if (v === undefined) continue;
+    const d = impacted.get(v);
+    if (d === undefined || x.distance < d) impacted.set(v, x.distance);
+  }
+  return { changed, impacted };
+}

@@ -1,6 +1,8 @@
 import "./style.css";
 import * as api from "./api";
 import type { Cell, Impact, Matrix } from "./api";
+import { aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded } from "./domaintree";
+import type { ViewCell, ViewMatrix } from "./domaintree";
 import { CHANGED, DEFAULT_FILL, impactCellPaint } from "./cellstate";
 import { reach } from "./graph";
 import { clickCommit, isSelected, relativeDate, selectionDiff } from "./history";
@@ -134,6 +136,7 @@ async function runAnalysis() {
 const PITCH = 140;
 const MARGIN_L = 110;
 const MARGIN_T = 40;
+const BAND_H = 22;
 const FWD = "#16a34a";
 const BWD = "#2563eb";
 
@@ -142,15 +145,19 @@ function matrixView(m: Matrix) {
   let selected: string | null = null;
   let hovered: string | null = null;
 
-  const cellById = new Map(m.cells.map((c) => [c.id, c]));
+  const tree = m.domain_tree && m.domain_tree.length > 0 ? m.domain_tree : undefined;
+  let expanded = tree ? initialExpanded(tree) : new Set<string>();
+  let view: ViewMatrix = aggregate(m, flatColumns(m.domains));
+  let cellById = new Map<string, ViewCell>();
+  let maxSize = 1;
+  let marginT = MARGIN_T;
   const symName = new Map<string, string>();
   for (const c of m.cells) for (const sy of c.symbols) symName.set(sy.id, sy.name);
-  const maxSize = Math.max(1, ...m.cells.map((c) => c.size));
-  const col = (d: string) => m.domains.indexOf(d);
+  const col = (d: string) => view.columns.findIndex((c) => c.key === d);
   const row = (l: Cell["layer"]) => m.layers.indexOf(l);
   const center = (c: Cell): [number, number] => [
     MARGIN_L + col(c.domain) * PITCH + PITCH / 2,
-    MARGIN_T + row(c.layer) * PITCH + PITCH / 2,
+    marginT + row(c.layer) * PITCH + PITCH / 2,
   ];
   const sideOf = (c: Cell) => 20 + (PITCH - 50) * Math.sqrt(c.size / maxSize);
 
@@ -198,99 +205,143 @@ function matrixView(m: Matrix) {
   showWarnings(m.warnings ?? []);
 
   // SVG
-  const width = MARGIN_L + m.domains.length * PITCH + 20;
-  const height = MARGIN_T + m.layers.length * PITCH + 20;
-  const svg = s("svg", { viewBox: `0 0 ${width} ${height}` });
+  const svg = s("svg");
   const defs = s("defs");
   for (const [id, color] of [["a-def", "#999"], ["a-fwd", FWD], ["a-bwd", BWD], ["a-imp", CHANGED]]) {
     const mk = s("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto" });
     mk.append(s("path", { d: "M0,0 L10,5 L0,10 z", fill: color }));
     defs.append(mk);
   }
-  svg.append(defs);
 
-  m.domains.forEach((d, i) => {
-    const t = s("text", { x: MARGIN_L + i * PITCH + PITCH / 2, y: 24, "text-anchor": "middle", "font-weight": "bold" });
-    t.textContent = d;
-    svg.append(t);
-  });
-  m.layers.forEach((l, i) => {
-    const t = s("text", { x: 8, y: MARGIN_T + i * PITCH + PITCH / 2, "font-weight": "bold" });
-    t.textContent = l;
-    svg.append(t);
-  });
-  // Empty slots
-  for (const l of m.layers)
-    for (const d of m.domains) {
-      if (cellById.has(`${l}:${d}`)) continue;
-      svg.append(
-        s("rect", {
-          x: MARGIN_L + col(d) * PITCH + 20,
-          y: MARGIN_T + row(l) * PITCH + 20,
-          width: PITCH - 40,
-          height: PITCH - 40,
-          fill: "none",
-          stroke: "#ddd",
-          "stroke-dasharray": "3 3",
-          opacity: 0.6,
-        }),
-      );
+  let edgeEls: { e: Matrix["edges"][number]; el: SVGPathElement }[] = [];
+  let cellEls = new Map<string, SVGRectElement>();
+
+  // (Re)build the columns, cells and edges for the current expansion.
+  function build() {
+    view = aggregate(m, tree ? columns(tree, expanded) : flatColumns(m.domains));
+    cellById = new Map(view.cells.map((c) => [c.id, c]));
+    maxSize = Math.max(1, ...view.cells.map((c) => c.size));
+    const bs = tree ? bands(tree, expanded) : [];
+    marginT = MARGIN_T + (bs.length ? Math.max(...bs.map((b) => b.depth)) + 1 : 0) * BAND_H;
+    const width = MARGIN_L + view.columns.length * PITCH + 20;
+    const height = marginT + m.layers.length * PITCH + 20;
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.replaceChildren(defs);
+
+    for (const b of bs) {
+      const x = MARGIN_L + b.start * PITCH;
+      const g = s("g");
+      g.style.cursor = "pointer";
+      const r = s("rect", { x: x + 2, y: b.depth * BAND_H + 2, width: b.span * PITCH - 4, height: BAND_H - 4, rx: 3, fill: "#e2e8f0", stroke: "#94a3b8" });
+      const t = s("text", { x: x + (b.span * PITCH) / 2, y: b.depth * BAND_H + BAND_H / 2 + 4, "text-anchor": "middle", "font-weight": "bold" });
+      t.textContent = `\u25be ${b.label}`;
+      t.style.pointerEvents = "none";
+      g.append(r, t);
+      g.addEventListener("click", () => {
+        expanded = new Set(expanded);
+        expanded.delete(b.key);
+        rebuild();
+      });
+      svg.append(g);
+    }
+    view.columns.forEach((c, i) => {
+      const t = s("text", { x: MARGIN_L + i * PITCH + PITCH / 2, y: marginT - 16, "text-anchor": "middle", "font-weight": "bold" });
+      t.textContent = c.group ? `\u25b8 ${c.label}` : c.label;
+      if (c.group) {
+        t.style.cursor = "pointer";
+        t.addEventListener("click", () => {
+          expanded = new Set(expanded).add(c.key);
+          rebuild();
+        });
+      }
+      svg.append(t);
+    });
+    m.layers.forEach((l, i) => {
+      const t = s("text", { x: 8, y: marginT + i * PITCH + PITCH / 2, "font-weight": "bold" });
+      t.textContent = l;
+      svg.append(t);
+    });
+    // Empty slots
+    for (const l of m.layers)
+      for (const c of view.columns) {
+        if (cellById.has(`${l}:${c.key}`)) continue;
+        svg.append(
+          s("rect", {
+            x: MARGIN_L + col(c.key) * PITCH + 20,
+            y: marginT + row(l) * PITCH + 20,
+            width: PITCH - 40,
+            height: PITCH - 40,
+            fill: "none",
+            stroke: "#ddd",
+            "stroke-dasharray": "3 3",
+            opacity: 0.6,
+          }),
+        );
+      }
+
+    // Edges (under cells)
+    edgeEls = [];
+    for (const e of view.edges) {
+      const a = cellById.get(e.from);
+      const b = cellById.get(e.to);
+      if (!a || !b) continue;
+      const [x1, y1] = center(a);
+      const [x2, y2] = center(b);
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      // Stop at the square border (approx.) so arrowheads stay visible.
+      const trim = (c: Cell) => sideOf(c) / 2 + 2;
+      const sx = x1 + (dx / len) * trim(a);
+      const sy = y1 + (dy / len) * trim(a);
+      const ex = x2 - (dx / len) * trim(b);
+      const ey = y2 - (dy / len) * trim(b);
+      const bend = 0.15 * len;
+      const cx = (sx + ex) / 2 - (dy / len) * bend;
+      const cy = (sy + ey) / 2 + (dx / len) * bend;
+      const el = s("path", { d: `M${sx},${sy} Q${cx},${cy} ${ex},${ey}`, fill: "none" });
+      el.style.pointerEvents = "none";
+      svg.append(el);
+      edgeEls.push({ e, el });
     }
 
-  // Edges (under cells)
-  const edgeEls: { e: Matrix["edges"][number]; el: SVGPathElement }[] = [];
-  for (const e of m.edges) {
-    const a = cellById.get(e.from);
-    const b = cellById.get(e.to);
-    if (!a || !b) continue;
-    const [x1, y1] = center(a);
-    const [x2, y2] = center(b);
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const len = Math.hypot(dx, dy) || 1;
-    // Stop at the square border (approx.) so arrowheads stay visible.
-    const trim = (c: Cell) => sideOf(c) / 2 + 2;
-    const sx = x1 + (dx / len) * trim(a);
-    const sy = y1 + (dy / len) * trim(a);
-    const ex = x2 - (dx / len) * trim(b);
-    const ey = y2 - (dy / len) * trim(b);
-    const bend = 0.15 * len;
-    const cx = (sx + ex) / 2 - (dy / len) * bend;
-    const cy = (sy + ey) / 2 + (dx / len) * bend;
-    const el = s("path", { d: `M${sx},${sy} Q${cx},${cy} ${ex},${ey}`, fill: "none" });
-    el.style.pointerEvents = "none";
-    svg.append(el);
-    edgeEls.push({ e, el });
+    // Cells
+    cellEls = new Map();
+    for (const c of view.cells) {
+      const [cx, cy] = center(c);
+      const side = sideOf(c);
+      const g = s("g");
+      const r = s("rect", { x: cx - side / 2, y: cy - side / 2, width: side, height: side, rx: 3, stroke: "#333", "stroke-width": 1 });
+      r.style.cursor = "pointer";
+      const t = s("text", { x: cx, y: cy + side / 2 + 13, "text-anchor": "middle" });
+      t.textContent = `${c.layer}/${c.label} (${c.size})`;
+      t.style.pointerEvents = "none";
+      g.append(r, t);
+      r.addEventListener("mouseenter", () => {
+        hovered = c.id;
+        paint();
+      });
+      r.addEventListener("mouseleave", () => {
+        hovered = null;
+        paint();
+      });
+      r.addEventListener("click", () => {
+        selected = c.id;
+        paint();
+        renderPanel();
+      });
+      svg.append(g);
+      cellEls.set(c.id, r);
+    }
   }
-
-  // Cells
-  const cellEls = new Map<string, SVGRectElement>();
-  for (const c of m.cells) {
-    const [cx, cy] = center(c);
-    const side = sideOf(c);
-    const g = s("g");
-    const r = s("rect", { x: cx - side / 2, y: cy - side / 2, width: side, height: side, rx: 3, stroke: "#333", "stroke-width": 1 });
-    r.style.cursor = "pointer";
-    const t = s("text", { x: cx, y: cy + side / 2 + 13, "text-anchor": "middle" });
-    t.textContent = `${c.layer}/${c.domain} (${c.size})`;
-    t.style.pointerEvents = "none";
-    g.append(r, t);
-    r.addEventListener("mouseenter", () => {
-      hovered = c.id;
-      paint();
-    });
-    r.addEventListener("mouseleave", () => {
-      hovered = null;
-      paint();
-    });
-    r.addEventListener("click", () => {
-      selected = c.id;
-      paint();
-      renderPanel();
-    });
-    svg.append(g);
-    cellEls.set(c.id, r);
+  function rebuild() {
+    selected = null;
+    hovered = null;
+    build();
+    paint();
+    renderPanel();
   }
+  build();
 
   const panel = h("aside");
   const sidebar = h("nav", { className: "history" });
@@ -299,13 +350,12 @@ function matrixView(m: Matrix) {
   show(header, toolbar, warnBox, main);
 
   function paint() {
-    const impactById = new Map(impact?.impacted_cells.map((x) => [x.id, x.distance]));
-    const changed = new Set(impact?.changed_cells ?? []);
+    const { changed, impacted: impactById } = aggregateImpact(impact, view.cellMap);
     let fwd = new Set<string>();
     let bwd = new Set<string>();
     if (hovered) {
-      fwd = reach(hovered, m.edges, "forward");
-      bwd = reach(hovered, m.edges, "backward");
+      fwd = reach(hovered, view.edges, "forward");
+      bwd = reach(hovered, view.edges, "backward");
     }
     for (const [id, r] of cellEls) {
       let fill = DEFAULT_FILL;
@@ -376,7 +426,7 @@ function matrixView(m: Matrix) {
     const c = selected ? cellById.get(selected) : undefined;
     if (c) {
       nodes.push(
-        h("h3", { textContent: `${c.layer}/${c.domain} — ${c.symbols.length} symbols` }),
+        h("h3", { textContent: `${c.layer}/${c.label} — ${c.symbols.length} symbols` }),
         symbolList(c.symbols.map((x) => ({ name: x.name, sub: x.file }))),
       );
     } else if (!impact) {
