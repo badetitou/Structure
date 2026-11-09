@@ -15,7 +15,7 @@ pub use crate::lang::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts
 pub use crate::lang::{SCIP_JAVA_VERSION, SCIP_TS_VERSION};
 pub use history::{history, impact};
 pub use indexer::{ensure_index, ensure_index_with_progress};
-pub use multi::analyze_many;
+pub use multi::{analyze_many, expand_roots};
 pub use snapshot::{MAX_SNAPSHOTS, analyze_snapshot, impact_at, impact_in_snapshot, snapshot};
 pub use structure_git::{resolve_base, resolve_commit, worktree_fingerprint};
 
