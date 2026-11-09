@@ -27,6 +27,11 @@ export function isSelected(sel: Selection | null, index: number): boolean {
   return sel?.kind === "range" && index >= sel.newer && index <= sel.older;
 }
 
+/** Index of the commit whose snapshot `impact` computes for `sel` (the head, i.e. `newer`); null for the working tree. */
+export function headIndex(sel: Selection | null): number | null {
+  return sel?.kind === "range" ? sel.newer : null;
+}
+
 /** base/head to pass to `impact`; null when the selection does not match the commits. */
 export function selectionDiff(commits: Commit[], sel: Selection): Diff | null {
   if (sel.kind === "worktree") return { base: null, head: null };
