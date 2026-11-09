@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DOCK_KEY, loadDock, parseDock, pruneUnknown, syncVisibility } from "./dock";
+import { DOCK_KEY, loadDock, parseDock, pruneUnknown, setTabHiddenIn, syncVisibility } from "./dock";
 import type { DockLike } from "./dock";
 
-function group(ids: string[], visible = true) {
+function group(ids: string[], visible = true, active?: string) {
   const g = {
-    panels: ids.map((id) => ({ id })),
+    activePanel: active ? { id: active } : undefined,
+    activated: [] as string[],
+    panels: ids.map((id) => ({ id, api: { setActive: () => void g.activated.push(id) } })),
     api: {
       isVisible: visible,
       calls: [] as boolean[],
@@ -36,6 +38,43 @@ describe("syncVisibility", () => {
     const g = group([], true);
     syncVisibility({ groups: [g], panels: [] }, () => false);
     expect(g.api.calls).toEqual([]);
+  });
+});
+
+describe("syncVisibility with a mixed group", () => {
+  it("hides the unavailable tab, shows the others, then restores it", () => {
+    const g = group(["details", "diff"], true, "diff");
+    const tabs = new Map<string, boolean>();
+    const set = (id: string, hidden: boolean) => void tabs.set(id, hidden);
+    let diffAvailable = false;
+    const avail = (p: string) => p !== "diff" || diffAvailable;
+    syncVisibility({ groups: [g], panels: [] }, avail, set);
+    expect(tabs.get("diff")).toBe(true);
+    expect(tabs.get("details")).toBe(false);
+    expect(g.api.isVisible).toBe(true);
+    expect(g.activated).toEqual(["details"]);
+    diffAvailable = true;
+    syncVisibility({ groups: [g], panels: [] }, avail, set);
+    expect(tabs.get("diff")).toBe(false);
+    expect(g.panels.map((p) => p.id)).toEqual(["details", "diff"]);
+  });
+  it("keeps the active panel when it is available", () => {
+    const g = group(["details", "diff"], true, "details");
+    syncVisibility({ groups: [g], panels: [] }, (p) => p !== "diff");
+    expect(g.activated).toEqual([]);
+  });
+});
+
+describe("setTabHiddenIn", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("toggles the tab element of a panel", () => {
+    const tab = { style: { display: "" } };
+    const host = { querySelector: () => tab } as unknown as HTMLElement;
+    vi.stubGlobal("CSS", { escape: (s: string) => s });
+    setTabHiddenIn(host, "diff", true);
+    expect(tab.style.display).toBe("none");
+    setTabHiddenIn(host, "diff", false);
+    expect(tab.style.display).toBe("");
   });
 });
 

@@ -44,19 +44,41 @@ export class SvelteRenderer implements IContentRenderer {
 
 /** What `syncVisibility` and `pruneUnknown` need of dockview (kept small to test without a DOM). */
 export interface DockLike {
-  groups: { panels: { id: string }[]; api: { isVisible: boolean; setVisible(v: boolean): void } }[];
+  groups: {
+    panels: { id: string; api?: { setActive(): void } }[];
+    activePanel?: { id: string };
+    api: { isVisible: boolean; setVisible(v: boolean): void };
+  }[];
   panels: { id: string; api: { close(): void } }[];
 }
 
 /**
- * Hides the groups whose panels are all unavailable (e.g. history outside a git
- * repository) so they take no room, and shows the others. Only touches groups that change.
+ * Keeps unavailable panels out of sight (e.g. history outside a git repository, or for
+ * a multi-project analysis). A group whose panels are all unavailable is hidden so it
+ * takes no room. In a group that mixes both, the unavailable panels' tabs are hidden
+ * through `setTabHidden` and an available panel is activated if one was showing.
+ * The panels stay in dockview, so the saved layout keeps them and they reappear in
+ * place once available.
  */
-export function syncVisibility(dock: DockLike, available: (panel: string) => boolean): void {
+export function syncVisibility(
+  dock: DockLike,
+  available: (panel: string) => boolean,
+  setTabHidden: (panel: string, hidden: boolean) => void = () => {},
+): void {
   for (const g of dock.groups) {
     const show = g.panels.length === 0 || g.panels.some((p) => available(p.id));
     if (g.api.isVisible !== show) g.api.setVisible(show);
+    for (const p of g.panels) setTabHidden(p.id, !available(p.id));
+    if (g.activePanel && !available(g.activePanel.id)) g.panels.find((p) => available(p.id))?.api?.setActive();
   }
+}
+
+/** Hides / shows the tab of `panel` inside the dockview mounted in `host`. */
+export function setTabHiddenIn(host: HTMLElement, panel: string, hidden: boolean): void {
+  const tab = host.querySelector<HTMLElement>(`.dv-tab[data-tab-panel-id="${CSS.escape(panel)}"]`);
+  if (!tab) return;
+  const display = hidden ? "none" : "";
+  if (tab.style.display !== display) tab.style.display = display;
 }
 
 /** Closes panels no plugin provides any more (a restored layout can name a removed one). */
