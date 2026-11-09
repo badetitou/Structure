@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button } from "$lib/components/ui/button";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { httpLinks } from "../../graph";
+  import { remoteLinks } from "../../graph";
   import { hasMore } from "../../cellsymbols";
   import { initialCaps, moreLabel, showMore } from "../../symbolcap";
   import { symbolName } from "../../symbolname";
@@ -17,7 +17,10 @@
   });
   // Links between view cells (collapsed domains merged), only while the toolbar toggle is on.
   const http = $derived(
-    app.showHttp && app.selected && app.view ? httpLinks(app.view.httpEdges, [app.selected.id]) : null,
+    app.showHttp && app.selected && app.view ? remoteLinks(app.view.httpEdges, [app.selected.id]) : null,
+  );
+  const rpc = $derived(
+    app.showRpc && app.selected && app.view ? remoteLinks(app.view.rpcEdges, [app.selected.id]) : null,
   );
   const viewName = (id: string) => {
     const c = app.view?.cells.find((x) => x.id === id);
@@ -72,6 +75,17 @@
             <li>calls {viewName(l.other)} <small class="text-muted-foreground">({l.count})</small></li>
           {/each}
           {#each http.in as l (l.other)}
+            <li>called by {viewName(l.other)} <small class="text-muted-foreground">({l.count})</small></li>
+          {/each}
+        </ul>
+      {/if}
+      {#if rpc && (rpc.out.length > 0 || rpc.in.length > 0)}
+        {@render heading("RPC")}
+        <ul class="m-0 list-disc pl-4">
+          {#each rpc.out as l (l.other)}
+            <li>calls {viewName(l.other)} <small class="text-muted-foreground">({l.count})</small></li>
+          {/each}
+          {#each rpc.in as l (l.other)}
             <li>called by {viewName(l.other)} <small class="text-muted-foreground">({l.count})</small></li>
           {/each}
         </ul>

@@ -12,7 +12,7 @@
   import type { CellEdge, Matrix } from "../../api";
   import { defaultEdgeOpacity } from "../../cellstate";
   import { FLAME_MAX_COLUMNS, aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded } from "../../domaintree";
-  import { adjacency, reach, visibleEdges } from "../../graph";
+  import { adjacency, reach, visibleEdges, type RemoteKind } from "../../graph";
   import { BAND_DENSE, BAND_NORMAL, STROKE_DENSE, STROKE_NORMAL, layout } from "../../layout";
   import { app } from "../../state.svelte";
   import { fit, isFit, oneToOne, panBy, resize as resizeVb, toUser, zoomAtClamped } from "../../viewport";
@@ -65,14 +65,19 @@
   }));
   // Edges are drawn in normal mode only.
   const showHttp = $derived(app.showHttp);
-  const tiled = (list: readonly CellEdge[], http: boolean) =>
+  const showRpc = $derived(app.showRpc);
+  const tiled = (list: readonly CellEdge[], kind?: RemoteKind) =>
     list.flatMap((edge) => {
       const from = tileById.get(edge.from);
       const to = tileById.get(edge.to);
-      return from && to ? [{ edge, from, to, http, key: `${http ? "h" : "c"}${edge.from}\u0000${edge.to}` }] : [];
+      return from && to ? [{ edge, from, to, kind, key: `${kind?.[0] ?? "c"}${edge.from}\u0000${edge.to}` }] : [];
     });
   const edgeTiles = $derived(
-    lay.detailed ? [...tiled(vm.edges, false), ...(showHttp ? tiled(vm.httpEdges, true) : [])] : [],
+    lay.detailed ? [
+          ...tiled(vm.edges),
+          ...(showHttp ? tiled(vm.httpEdges, "http") : []),
+          ...(showRpc ? tiled(vm.rpcEdges, "rpc") : []),
+        ] : [],
   );
 
   // Hover: adjacency once per view matrix, then one BFS per direction per hovered cell.
@@ -83,7 +88,7 @@
     hovered && hovered.keys.every((k, i) => k === hoverKeys()[i]) ? hovered.id : null,
   );
   const setHover = (id: string | null) => (hovered = id ? { id, keys: hoverKeys() } : null);
-  const adj = $derived(adjacency(visibleEdges(vm.edges, vm.httpEdges, showHttp)));
+  const adj = $derived(adjacency(visibleEdges(vm.edges, vm.httpEdges, showHttp, vm.rpcEdges, showRpc)));
   const hover = $derived(
     hoveredId ? { id: hoveredId, fwd: reach(hoveredId, adj, "forward"), bwd: reach(hoveredId, adj, "backward") } : null,
   );
@@ -243,7 +248,7 @@
     {onclickcapture}
   >
     <defs>
-      {#each [["a-def", "var(--edge)"], ["a-fwd", "var(--fwd)"], ["a-bwd", "var(--bwd)"], ["a-imp", "var(--changed)"], ["a-http", "var(--edge-http)"]] as [id, color] (id)}
+      {#each [["a-def", "var(--edge)"], ["a-fwd", "var(--fwd)"], ["a-bwd", "var(--bwd)"], ["a-imp", "var(--changed)"], ["a-http", "var(--edge-http)"], ["a-rpc", "var(--edge-rpc)"]] as [id, color] (id)}
         <marker {id} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
           <path d="M0,0 L10,5 L0,10 z" style:fill={color} />
         </marker>
@@ -274,7 +279,7 @@
         {/each}
         <!-- Edges sit under the cells -->
         {#each edgeTiles as e (e.key)}
-          <MatrixEdge edge={e.edge} from={e.from} to={e.to} {hover} {impact} http={e.http} />
+          <MatrixEdge edge={e.edge} from={e.from} to={e.to} {hover} {impact} kind={e.kind} />
         {/each}
         {#each cellTiles as c (c.cell.id)}
           <MatrixCell

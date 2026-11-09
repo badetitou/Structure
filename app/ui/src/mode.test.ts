@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HTTP_KEY, MODE_KEY, loadMode, loadShowHttp, parseMode, parseShowHttp, saveMode, saveShowHttp } from "./mode";
+import { HTTP_KEY, MODE_KEY, RPC_KEY, loadMode, loadShowHttp, loadShowRpc, parseMode, parseShowHttp, parseShowRpc, saveMode, saveShowHttp, saveShowRpc } from "./mode";
 
 function memoryStorage() {
   const m = new Map<string, string>();
@@ -56,5 +56,24 @@ describe("http links toggle persistence", () => {
     vi.stubGlobal("localStorage", { getItem: boom, setItem: boom });
     expect(loadShowHttp()).toBe(true);
     expect(() => saveShowHttp(false)).not.toThrow();
+  });
+});
+
+describe("rpc links toggle persistence", () => {
+  it("is on unless stored as false, and round-trips", () => {
+    expect(parseShowRpc(null)).toBe(true);
+    expect(parseShowRpc("false")).toBe(false);
+    const st = memoryStorage();
+    vi.stubGlobal("localStorage", st);
+    expect(loadShowRpc()).toBe(true);
+    saveShowRpc(false);
+    expect(st.getItem(RPC_KEY)).toBe("false");
+    expect(loadShowRpc()).toBe(false);
+    const boom = () => {
+      throw new Error("blocked");
+    };
+    vi.stubGlobal("localStorage", { getItem: boom, setItem: boom });
+    expect(loadShowRpc()).toBe(true);
+    expect(() => saveShowRpc(false)).not.toThrow();
   });
 });

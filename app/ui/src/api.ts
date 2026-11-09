@@ -58,10 +58,12 @@ export interface DomainNode {
   children: DomainNode[];
 }
 /** Matrix as sent by the backend (docs/api.md). */
-export type WireMatrix = Omit<Matrix, "edges" | "httpEdges"> & {
+export type WireMatrix = Omit<Matrix, "edges" | "httpEdges" | "rpcEdges"> & {
   edges: EdgeGroup[];
   /** Same wire form as `edges`; present only for several folders, when non-empty. */
   http_edges?: EdgeGroup[];
+  /** GWT RPC links, same wire form; present only when non-empty. */
+  rpc_edges?: EdgeGroup[];
 };
 export interface ProjectInfo {
   name: string;
@@ -81,6 +83,8 @@ export interface Matrix {
   edges: CellEdge[];
   /** Front-to-back HTTP links (api client cell -> handler cell); empty unless several folders were analysed. */
   httpEdges: CellEdge[];
+  /** GWT RPC links (client caller cell -> server implementation cell); empty when absent. */
+  rpcEdges: CellEdge[];
   stats: Stats;
   /** Id of the cached analysis (pass to `cellSymbols`); set by the app. */
   generation?: number;
