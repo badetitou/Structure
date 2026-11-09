@@ -1,9 +1,9 @@
 ---
 id: 65
 title: Endpoints declared on generated OpenAPI server interfaces are linked
-status: todo
+status: in-progress
 parent: 54
-branch: null
+branch: 65-generated-api-endpoints
 remote: null
 created: 2026-11-09
 ---
