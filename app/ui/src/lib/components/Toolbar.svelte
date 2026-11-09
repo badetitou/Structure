@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
+  import { Toggle } from "$lib/components/ui/toggle";
   import * as ToggleGroup from "$lib/components/ui/toggle-group";
   import { parseMode } from "../../mode";
   import * as Tooltip from "$lib/components/ui/tooltip";
@@ -51,6 +52,21 @@
     <ToggleGroup.Item value="dense" aria-label="Dense view" class="px-2">Dense</ToggleGroup.Item>
     <ToggleGroup.Item value="flame" aria-label="Flame view: deep domains, widths by size" class="px-2">Flame</ToggleGroup.Item>
   </ToggleGroup.Root>
+  <Tooltip.Root>
+    <Tooltip.Trigger>
+      {#snippet child({ props })}
+        <Toggle
+          {...props}
+          variant="outline"
+          size="sm"
+          aria-label="Swap axes"
+          pressed={app.transposed}
+          onPressedChange={(on) => app.setTransposed(on)}>⇄ Swap axes</Toggle
+        >
+      {/snippet}
+    </Tooltip.Trigger>
+    <Tooltip.Content>{app.transposed ? "Domains as rows, layers as columns" : "Layers as rows, domains as columns"}</Tooltip.Content>
+  </Tooltip.Root>
   <Button variant="outline" size="sm" disabled={!app.impact || app.impactBusy} onclick={() => app.clearImpact()}>Clear</Button>
   <span class="text-destructive">{app.impactError}</span>
   <span class="flex items-center text-sm text-muted-foreground">
