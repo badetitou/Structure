@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { DENSE_CHAR_W, DENSE_STEP, FLAME_GAP, FLAME_MIN_W, FLAME_ROW, FLAME_TARGET_W, MARGIN_L, flameWidths, layout } from "./layout";
+import {
+  DENSE_CHAR_W,
+  DENSE_STEP,
+  FLAME_COL,
+  FLAME_GAP,
+  FLAME_MIN_W,
+  FLAME_ROW,
+  FLAME_TARGET_W,
+  LABEL_CHAR_W,
+  MARGIN_L,
+  MARGIN_T,
+  flameWidths,
+  layout,
+} from "./layout";
 
 const layers = ["api", "service", "data"];
 const domains = ["user", "order", "billing", "audit"];
@@ -108,5 +121,71 @@ describe("layout columns", () => {
     expect(n.columns[1].x).toBe(110 + 140);
     const d = layout("dense", layers, domains, cells);
     expect(d.columns.every((c) => c.w === DENSE_STEP)).toBe(true);
+  });
+});
+
+describe("layout transposed", () => {
+  const key = (t: { layer: string; domain: string }) => `${t.layer}:${t.domain}`;
+  it("puts domains on rows and layers on columns, for every mode", () => {
+    for (const mode of ["normal", "dense", "flame"] as const) {
+      const l = layout(mode, layers, domains, cells, domains, true);
+      expect(l.transposed).toBe(true);
+      const at = new Map(l.tiles.map((t) => [key(t), t]));
+      // Same domain → same row band; same layer → same column band.
+      const cx = (t?: { x: number; w: number }) => (t ? t.x + t.w / 2 : NaN);
+      const cy = (t?: { y: number; h: number }) => (t ? t.y + t.h / 2 : NaN);
+      if (mode !== "flame") {
+        expect(cy(at.get("api:order"))).toBeCloseTo(cy(at.get("data:order")));
+        expect(cx(at.get("api:user"))).toBeCloseTo(cx(at.get("api:audit")));
+      }
+      expect(cy(at.get("api:user"))).toBeLessThan(cy(at.get("api:order")));
+      expect(cx(at.get("api:user"))).toBeLessThan(cx(at.get("service:user")));
+      for (const t of l.tiles) {
+        expect(t.x + t.w).toBeLessThanOrEqual(l.width);
+        expect(t.y + t.h).toBeLessThanOrEqual(l.height);
+      }
+    }
+  });
+  it("swaps the normal geometry and leaves room for horizontal domain labels", () => {
+    const long = "averyverylongdomain";
+    const ds = ["user", long];
+    const l = layout("normal", layers, ds, cells, ds, true);
+    const left = 12 + LABEL_CHAR_W * long.length;
+    expect(l.width).toBe(left + 3 * 140 + 20);
+    expect(l.height).toBe(MARGIN_T + 2 * 140 + 20);
+    const big = l.tiles.find((t) => t.layer === "service" && t.domain === long);
+    expect(big).toMatchObject({ id: null, x: left + 140 + 20, y: MARGIN_T + 140 + 20, w: 100, h: 100 });
+    expect(l.domainLabels[1]).toMatchObject({ x: 8 });
+    expect(l.domainLabels[1].y).toBeCloseTo(MARGIN_T + 140 + 70 + 4);
+    expect(l.layerLabels[2]).toMatchObject({ x: left + 2 * 140 + 70, y: 24 });
+    expect([l.rotateDomains, l.rotateLayers]).toEqual([false, false]);
+  });
+  it("rotates the layer labels in dense mode", () => {
+    const l = layout("dense", layers, domains, cells, domains, true);
+    expect([l.rotateDomains, l.rotateLayers]).toEqual([false, true]);
+    const top = Math.min(...l.tiles.map((t) => t.y));
+    expect(top).toBeGreaterThanOrEqual(DENSE_CHAR_W * "service".length);
+  });
+  it("grows flame bars from the left of each layer column, rows sized by domain", () => {
+    const sized = [
+      { id: "api:user", layer: "api", domain: "user", size: 10 },
+      { id: "service:order", layer: "service", domain: "order", size: 40 },
+    ];
+    const l = layout("flame", layers, domains, sized, domains, true);
+    const user = l.tiles.find((t) => t.id === "api:user");
+    const order = l.tiles.find((t) => t.id === "service:order");
+    expect(l.columns[1].w / l.columns[0].w).toBeCloseTo(4);
+    expect(order?.h).toBeCloseTo(l.columns[1].w - FLAME_GAP);
+    expect(order?.w).toBeCloseTo(FLAME_COL - 2 * FLAME_GAP);
+    expect(order?.x).toBeCloseTo(l.rows[1].x + FLAME_GAP);
+    expect(user?.x).toBeCloseTo(l.rows[0].x + FLAME_GAP);
+    expect(l.rows.map((r) => r.w)).toEqual([FLAME_COL, FLAME_COL, FLAME_COL]);
+  });
+  it("leaves the default orientation untouched", () => {
+    const l = layout("normal", layers, domains, cells);
+    expect([l.transposed, l.rotateLayers]).toEqual([false, false]);
+    expect(l.rows[0]).toEqual({ x: MARGIN_T, w: 140 });
+    expect(l.layerLabels[0]).toMatchObject({ x: 8, y: MARGIN_T + 70 });
+    expect(MARGIN_L).toBe(110);
   });
 });

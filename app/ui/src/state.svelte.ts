@@ -7,7 +7,7 @@ import { selectionDiff } from "./history";
 import type { Selection } from "./history";
 import type { Mode } from "./layout";
 import { RequestGuard, shownMatrix } from "./matrixsel";
-import { loadMode, saveMode } from "./mode";
+import { loadMode, loadTransposed, saveMode, saveTransposed } from "./mode";
 import { analyzeAndRecord } from "./recent";
 
 /** The diff panel's content: the requested range and its diff once loaded. */
@@ -34,6 +34,8 @@ export class AppState {
   selected = $state.raw<ViewCell | null>(null);
   symbols = $state.raw<SymbolList | null>(null);
   mode = $state<Mode>(loadMode());
+  /** Domains as rows and layers as columns. */
+  transposed = $state(loadTransposed());
   /** Null when unavailable (not a git repo, error): the sidebar is hidden. */
   history = $state.raw<History | null>(null);
   historySel = $state.raw<Selection | null>(null);
@@ -114,6 +116,11 @@ export class AppState {
   setMode(mode: Mode) {
     this.mode = mode;
     saveMode(mode);
+  }
+
+  setTransposed(on: boolean) {
+    this.transposed = on;
+    saveTransposed(on);
   }
 
   /** Select a view cell (or none) and list its symbols. */

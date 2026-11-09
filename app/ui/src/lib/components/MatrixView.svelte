@@ -27,6 +27,7 @@
   let { matrix }: { matrix: Matrix } = $props();
 
   const mode = $derived(app.mode);
+  const transposed = $derived(app.transposed);
 
   // Collapsible columns along the domain tree (module domains), else one per domain.
   const tree = $derived(matrix.domain_tree && matrix.domain_tree.length > 0 ? matrix.domain_tree : undefined);
@@ -50,12 +51,14 @@
       cols.map((c) => c.key),
       vm.cells,
       cols.map((c) => (c.group ? `▸ ${c.label}` : c.label)),
+      transposed,
     ),
   );
   const bs = $derived(tree ? bands(tree, expanded) : []);
   const bandH = $derived(mode === "dense" ? BAND_DENSE : BAND_NORMAL);
   const top = $derived(bs.length ? (bs.reduce((d, b) => Math.max(d, b.depth), 0) + 1) * bandH : 0);
-  const content = $derived({ w: lay.width, h: lay.height + top });
+  // Bands sit above the matrix, or left of it when transposed.
+  const content = $derived(transposed ? { w: lay.width + top, h: lay.height } : { w: lay.width, h: lay.height + top });
 
   const tileById = $derived(new Map(lay.tiles.flatMap((t) => (t.id ? [[t.id, t] as const] : []))));
   const emptyTiles = $derived(lay.tiles.filter((t) => !t.id));
@@ -114,18 +117,18 @@
   let svg: SVGSVGElement | undefined = $state();
   let pane = $state.raw({ w: 1, h: 1 });
   const fitOf = (p: { w: number; h: number }) => fit(content.w, content.h, p.w, p.h);
-  // The user's view, valid only for the matrix and mode it was set under; a new matrix or
-  // mode falls back to the default view in the same render (expand / collapse keeps it).
+  // The user's view, valid only for the matrix, mode and orientation it was set under; a new
+  // matrix, mode or orientation falls back to the default view in the same render (expand / collapse keeps it).
   // Dense and flame modes start at 1:1 pixels anchored top-left; Fit shows everything.
-  let userVb = $state.raw<{ vb: ViewBox; matrix: Matrix; mode: string } | null>(null);
+  let userVb = $state.raw<{ vb: ViewBox; matrix: Matrix; mode: string; transposed: boolean } | null>(null);
   const vb = $derived(
-    userVb && userVb.matrix === matrix && userVb.mode === mode
+    userVb && userVb.matrix === matrix && userVb.mode === mode && userVb.transposed === transposed
       ? userVb.vb
       : mode !== "normal"
         ? oneToOne(pane.w, pane.h)
         : fitOf(pane),
   );
-  const setVb = (v: ViewBox) => (userVb = { vb: v, matrix, mode });
+  const setVb = (v: ViewBox) => (userVb = { vb: v, matrix, mode, transposed });
   let panning = $state(false);
   const transform = $derived(`scale(${pane.w / vb.w}) translate(${-vb.x} ${-vb.y})`);
   const measure = (h: HTMLElement) => ({ w: Math.max(h.clientWidth, 1), h: Math.max(h.clientHeight, 1) });
@@ -251,7 +254,7 @@
         oncollapse={(key) => setExpanded(key, false)}
       />
       <g
-        transform="translate(0 {top})"
+        transform={transposed ? `translate(${top} 0)` : `translate(0 ${top})`}
         class:hovering={!!hover}
         class:impacting={!hover && !!impact}
         style:--edge-opacity={defaultEdgeOpacity(!!hover, !!impact)}
