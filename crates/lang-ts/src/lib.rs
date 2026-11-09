@@ -203,6 +203,7 @@ impl Ctx<'_> {
             supertypes: s.supertypes,
             http: vec![],
             http_calls: vec![],
+            rpc_calls: vec![],
             package: self.package.clone(),
         });
     }

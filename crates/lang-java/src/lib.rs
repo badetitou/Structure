@@ -14,8 +14,12 @@ use anyhow::{Context, Result, anyhow};
 use rayon::prelude::*;
 use tree_sitter::{Node, Parser};
 
+mod rpc;
+
+pub use rpc::{RawRpcCall, Receiver};
+
 use structure_ir::ir::{
-    Edge, EdgeKind, Graph, HttpEndpoint, HttpVerb, Language, Range, Symbol, SymbolKind,
+    Edge, EdgeKind, Graph, HttpEndpoint, HttpVerb, Language, Range, RpcCall, Symbol, SymbolKind,
 };
 
 /// Result of parsing one Java source file.
@@ -32,6 +36,8 @@ pub struct FileSymbols {
     pub routes: HashMap<String, Vec<HttpEndpoint>>,
     /// Type id -> its own class-level prefixes, only when it declares a mapping.
     pub type_prefixes: HashMap<String, Vec<String>>,
+    /// Calls that may be GWT RPC calls, resolved once the project is parsed.
+    pub rpc_raw: Vec<RawRpcCall>,
 }
 
 /// Names never reported as `Uses` targets (java.lang basics and common collections).
@@ -327,6 +333,10 @@ struct Ctx<'a> {
     out: FileSymbols,
     /// Class-level path prefixes (Spring `@RequestMapping`, JAX-RS `@Path`).
     prefixes: Vec<String>,
+    /// Field receivers of the enclosing types, outermost first.
+    fields: Vec<rpc::Env>,
+    /// Inside a top-level interface (GWT service/async twins): no RPC calls.
+    in_interface: bool,
 }
 
 impl Ctx<'_> {
@@ -351,8 +361,15 @@ impl Ctx<'_> {
             package: self.package.clone(),
             http: vec![],
             http_calls: vec![],
+            rpc_calls: vec![],
         });
         self.out.symbols.len() - 1
+    }
+
+    fn rpc(&mut self, node: Node, caller: &str) {
+        if !self.in_interface {
+            rpc::collect(node, self.src, caller, &self.fields, &mut self.out.rpc_raw);
+        }
     }
 
     fn type_decl(&mut self, node: Node, container: Option<&str>, outer_tp: &[String]) {
@@ -398,6 +415,10 @@ impl Ctx<'_> {
         let mut tp = outer_tp.to_vec();
         tp.extend(type_params_of(node, self.src));
 
+        let saved_iface = self.in_interface;
+        if container.is_none() {
+            self.in_interface = kind == SymbolKind::Interface;
+        }
         let mut rec_arity = 0;
         if node.kind() == "record_declaration"
             && let Some(params) = node.child_by_field_name("parameters")
@@ -423,8 +444,11 @@ impl Ctx<'_> {
         }
 
         if let Some(body) = node.child_by_field_name("body") {
+            self.fields.push(rpc::field_env(body, self.src));
             self.members(body, &id, &tp, rec_arity);
+            self.fields.pop();
         }
+        self.in_interface = saved_iface;
         self.prefixes = saved_prefixes;
     }
 
@@ -462,6 +486,7 @@ impl Ctx<'_> {
                             text(n, self.src),
                             arity(m.child_by_field_name("parameters"))
                         );
+                        self.rpc(m, &id);
                         let idx = self.symbol(id, SymbolKind::Method, m, n, Some(tid));
                         self.out.symbols[idx].http = method_endpoints(m, self.src, &self.prefixes);
                         let raw = method_endpoints(m, self.src, &[String::new()]);
@@ -487,6 +512,7 @@ impl Ctx<'_> {
                     if let Some(n) = m.child_by_field_name("name") {
                         let params = m.child_by_field_name("parameters");
                         let id = format!("{tid}#<init>({})", arity(params));
+                        self.rpc(m, &id);
                         self.symbol(id, SymbolKind::Constructor, m, n, Some(tid));
                         let mut ctp = tp.to_vec();
                         ctp.extend(type_params_of(m, self.src));
@@ -567,6 +593,8 @@ pub fn parse_source(file: &str, src: &str) -> Result<FileSymbols> {
         package: package.clone(),
         out: FileSymbols::default(),
         prefixes: vec![String::new()],
+        fields: vec![],
+        in_interface: false,
     };
     let mut cur = root.walk();
     for n in root.children(&mut cur) {
@@ -842,6 +870,7 @@ pub fn parse_project_with_warnings(root: &Path, warnings: &mut Vec<String>) -> R
     }
 
     let mut all = all;
+    attach_rpc(&mut all, &parsed, &index);
     inherit_endpoints(&mut all, &parsed, &generated, &index, &gen_index, warnings);
     all.sort_by(|a, b| a.id.cmp(&b.id));
     edges.sort_by(|a, b| (&a.from, &a.to, a.kind as u8).cmp(&(&b.from, &b.to, b.kind as u8)));
@@ -852,6 +881,75 @@ pub fn parse_project_with_warnings(root: &Path, warnings: &mut Vec<String>) -> R
         symbols: all,
         edges,
     })
+}
+
+/// Interfaces that extend `RemoteService`, directly or through parsed interfaces.
+fn remote_services(parsed: &[FileSymbols], index: &TypeIndex) -> HashSet<String> {
+    let mut remote: HashSet<String> = HashSet::new();
+    let mut supers: Vec<(&str, Vec<String>)> = Vec::new();
+    for fs in parsed {
+        for s in fs
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Interface && index.kinds.contains_key(&s.id))
+        {
+            if s.supertypes.iter().any(|t| t == "RemoteService") {
+                remote.insert(s.id.clone());
+            } else {
+                let resolved = s
+                    .supertypes
+                    .iter()
+                    .filter_map(|t| index.resolve(fs, t))
+                    .collect();
+                supers.push((&s.id, resolved));
+            }
+        }
+    }
+    loop {
+        let before = remote.len();
+        for (id, sups) in &supers {
+            if !remote.contains(*id) && sups.iter().any(|s| remote.contains(s)) {
+                remote.insert((*id).to_string());
+            }
+        }
+        if remote.len() == before {
+            return remote;
+        }
+    }
+}
+
+/// Turn the raw RPC-shaped calls of each file into `Symbol::rpc_calls`.
+fn attach_rpc(all: &mut [Symbol], parsed: &[FileSymbols], index: &TypeIndex) {
+    if parsed.iter().all(|f| f.rpc_raw.is_empty()) {
+        return;
+    }
+    let remote = remote_services(parsed, index);
+    let by_id: HashMap<String, usize> = all
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.id.clone(), i))
+        .collect();
+    for fs in parsed {
+        for raw in &fs.rpc_raw {
+            let service = match &raw.recv {
+                Receiver::Async(n) => index
+                    .resolve(fs, n)
+                    .and_then(|id| id.strip_suffix("Async").map(str::to_string))
+                    .filter(|sync| remote.contains(sync)),
+                Receiver::Sync { name, strict } => match index.resolve(fs, name) {
+                    Some(id) => remote.contains(&id).then_some(id),
+                    None => (!strict).then(|| name.clone()),
+                },
+            };
+            if let (Some(service), Some(&i)) = (service, by_id.get(&raw.caller)) {
+                all[i].rpc_calls.push(RpcCall {
+                    service,
+                    method: raw.method.clone(),
+                    arity: raw.arity,
+                });
+            }
+        }
+    }
 }
 
 /// Give each method with no mapping of its own the endpoints of the supertype

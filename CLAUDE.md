@@ -34,7 +34,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     `all()`/`frontend()`, Java/TS indexer + detection) and `pipeline/` (`mod`
     analyze/detect, `indexer`, `process`, `progress`, `snapshot`, `history`) and
     `http_link` (matches TS `http_calls` to Java `http` endpoints → `Http` edges,
-    multi-root only).
+    multi-root only) and `rpc_link` (matches GWT `rpc_calls` to the classes
+    implementing the sync service → `Rpc` edges, one or several roots).
 - `crates/cli` — bin `structure` (`analyze`, `impact`). Keep `main` thin.
 - `app/` — Tauri 2 app: `src-tauri` (commands over `pipeline`), `ui` (Vite + Svelte
   5 + TS, vitest): `src/*.ts` state/geometry helpers, `src/workspace/` panel registry +

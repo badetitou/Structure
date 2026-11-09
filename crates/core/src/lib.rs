@@ -4,6 +4,7 @@
 pub mod http_link;
 pub mod lang;
 pub mod pipeline;
+pub mod rpc_link;
 
 pub use structure_classify::{classify, matrix};
 pub use structure_git::{diff, impact};

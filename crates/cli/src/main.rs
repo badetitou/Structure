@@ -94,6 +94,18 @@ fn run_analysis(
             eprintln!("  unmatched: {u}");
         }
     }
+    if let Some(r) = &analysis.rpc_stats {
+        eprintln!(
+            "rpc: {}/{} linked, {} no implementation, {} unresolved service",
+            r.linked, r.calls, r.no_impl, r.unresolved_service
+        );
+        for u in r.unmatched.iter().take(20) {
+            eprintln!("  unmatched: {u}");
+        }
+        if r.unmatched.len() > 20 {
+            eprintln!("  ... and {} more", r.unmatched.len() - 20);
+        }
+    }
     for w in &analysis.warnings {
         eprintln!("warning: {w}");
     }
