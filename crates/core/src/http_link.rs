@@ -58,9 +58,10 @@ fn score(call: &[&str], endpoint: &[&str]) -> Option<(usize, usize)> {
     (literal >= 1).then_some((literal, both))
 }
 
-/// Endpoints declared on a supertype method that a subtype method overrides with
-/// the same endpoint: only the implementation handles the request.
-fn overridden_endpoints(graph: &Graph) -> HashSet<(&str, HttpVerb, &str)> {
+/// Supertype methods overridden (same name and arity) by a subtype method that
+/// has endpoints: only the implementation handles the request, whatever the
+/// class-level prefixes.
+fn overridden_endpoints(graph: &Graph) -> HashSet<&str> {
     let mut supers: HashMap<&str, Vec<&str>> = HashMap::new();
     for e in &graph.edges {
         if matches!(e.kind, EdgeKind::Extends | EdgeKind::Implements) {
@@ -87,9 +88,7 @@ fn overridden_endpoints(graph: &Graph) -> HashSet<(&str, HttpVerb, &str)> {
             todo.extend(supers.get(t).into_iter().flatten());
             let mid = format!("{t}#{suffix}");
             if let Some(m) = with_http.get(mid.as_str()) {
-                for h in s.http.iter().filter(|h| m.http.contains(h)) {
-                    out.insert((m.id.as_str(), h.verb, h.path.as_str()));
-                }
+                out.insert(m.id.as_str());
             }
         }
     }
@@ -106,7 +105,7 @@ pub fn link_http(graph: &Graph) -> (Vec<Edge>, HttpLinkStats) {
             let shadowed = &shadowed;
             s.http
                 .iter()
-                .filter(move |h| !shadowed.contains(&(s.id.as_str(), h.verb, h.path.as_str())))
+                .filter(move |_| !shadowed.contains(s.id.as_str()))
                 .map(move |h| (s.id.as_str(), h.verb, segments(&h.path)))
         })
         .collect();
@@ -237,6 +236,25 @@ mod tests {
         let (e, s) = link_http(&g);
         assert_eq!(pairs(&e), [("fe", "p.Ctl#go(0)")]);
         assert_eq!((s.linked, s.ambiguous), (1, 0));
+        g.edges.clear();
+        assert_eq!(link_http(&g).1.ambiguous, 1);
+    }
+
+    #[test]
+    fn implementation_preferred_with_different_prefixes() {
+        let mut i = sym("p.Api#go(0)", vec![ep(Get, "/I/go")], vec![]);
+        i.container = Some("p.Api".into());
+        let mut c = sym("p.Ctl#go(0)", vec![ep(Get, "/C/go")], vec![]);
+        c.container = Some("p.Ctl".into());
+        let mut g = graph(vec![i, c, sym("fe", vec![], vec![ep(Get, "/{base}/go")])]);
+        g.edges.push(Edge {
+            from: "p.Ctl".into(),
+            to: "p.Api".into(),
+            kind: EdgeKind::Implements,
+        });
+        let (e, s) = link_http(&g);
+        assert_eq!(pairs(&e), [("fe", "p.Ctl#go(0)")]);
+        assert_eq!(s.ambiguous, 0);
         g.edges.clear();
         assert_eq!(link_http(&g).1.ambiguous, 1);
     }
