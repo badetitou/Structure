@@ -15,7 +15,7 @@
   import { adjacency, reach } from "../../graph";
   import { BAND_DENSE, BAND_NORMAL, STROKE_DENSE, STROKE_NORMAL, layout } from "../../layout";
   import { app } from "../../state.svelte";
-  import { fit, isFit, oneToOne, panBy, resize as resizeVb, toUser, zoomAtClamped } from "../../viewport";
+  import { fit, isFit, oneToOne, panBy, resize as resizeVb, toUser, wheelZoomFactor, zoomAtClamped } from "../../viewport";
   import type { ViewBox } from "../../viewport";
   import ColumnHeaders from "./matrix/ColumnHeaders.svelte";
   import MatrixCell from "./matrix/MatrixCell.svelte";
@@ -160,19 +160,19 @@
     setVb(fitOf(pane));
   }
 
-  // Wheel: pinch (ctrlKey) zooms around the cursor, two-finger scroll pans.
+  // Wheel: scroll and pinch zoom around the cursor; shift+wheel pans (drag pans too).
   // Registered by hand: Svelte's `onwheel` is passive and could not preventDefault.
   $effect(() => {
     const el = svg;
     if (!el) return;
     const onwheel = (ev: WheelEvent) => {
       ev.preventDefault();
-      const unit = ev.deltaMode === 1 ? 16 : 1;
-      if (ev.ctrlKey) {
-        const r = el.getBoundingClientRect();
-        zoomBy(Math.exp(-ev.deltaY * unit * 0.01), ev.clientX - r.left, ev.clientY - r.top);
-      } else {
+      if (ev.shiftKey) {
+        const unit = ev.deltaMode === 1 ? 16 : 1;
         setVb(panBy(vb, -ev.deltaX * unit, -ev.deltaY * unit, pane.w, pane.h));
+      } else {
+        const r = el.getBoundingClientRect();
+        zoomBy(wheelZoomFactor(ev.deltaY, ev.deltaMode, ev.ctrlKey), ev.clientX - r.left, ev.clientY - r.top);
       }
     };
     el.addEventListener("wheel", onwheel, { passive: false });
