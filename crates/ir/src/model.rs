@@ -188,6 +188,69 @@ pub struct ImpactedSymbol {
     pub distance: u32,
 }
 
+/// Textual diff of `base..head` (or the working tree), file by file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Diff {
+    pub base: String,
+    pub head: Option<String>,
+    pub files: Vec<FileDiff>,
+    /// Files or lines were left out to bound the payload.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileStatus {
+    Added,
+    Deleted,
+    Modified,
+    Renamed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileDiff {
+    /// Path on the new side (the old path for a deleted file), relative to the project.
+    pub path: String,
+    /// Set only for a rename.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub old_path: Option<String>,
+    pub status: FileStatus,
+    pub binary: bool,
+    pub additions: u32,
+    pub deletions: u32,
+    pub hunks: Vec<Hunk>,
+    /// Some hunk lines of this file were left out (counts stay exact).
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Hunk {
+    /// The `@@ -a,b +c,d @@ context` line.
+    pub header: String,
+    pub lines: Vec<DiffLine>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LineKind {
+    Context,
+    Add,
+    Del,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiffLine {
+    pub kind: LineKind,
+    /// 1-based line number on the old side (absent for an added line).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub old: Option<u32>,
+    /// 1-based line number on the new side (absent for a removed line).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new: Option<u32>,
+    /// Line content without the leading marker.
+    pub text: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Progress {
     pub step: String,

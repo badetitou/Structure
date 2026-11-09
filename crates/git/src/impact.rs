@@ -60,17 +60,8 @@ pub fn changed_lines(
     let mut changes = parse_diff(&git(project, &args)?);
 
     if base.is_none() && head.is_none() {
-        let prefix = git(project, &["rev-parse", "--show-prefix"])?;
-        let prefix = prefix.trim();
-        let listed = git(
-            project,
-            &["ls-files", "--others", "--exclude-standard", "--full-name"],
-        )?;
-        for path in listed.lines().filter(|l| !l.is_empty()) {
-            let Some(rel) = path.strip_prefix(prefix) else {
-                continue;
-            };
-            let total = std::fs::read(project.join(rel))
+        for rel in untracked(project)? {
+            let total = std::fs::read(project.join(&rel))
                 .map(|b| {
                     let nl = b.iter().filter(|&&c| c == b'\n').count() as u32;
                     nl + u32::from(b.last().is_some_and(|&c| c != b'\n'))
@@ -78,12 +69,36 @@ pub fn changed_lines(
                 .unwrap_or(1)
                 .max(1);
             changes.push(FileChange {
-                file: rel.to_string(),
+                file: rel,
                 lines: vec![(0, total)],
             });
         }
     }
     Ok(changes)
+}
+
+/// Untracked, non-ignored files under `project`, relative to it.
+pub(crate) fn untracked(project: &Path) -> anyhow::Result<Vec<String>> {
+    let prefix = git(project, &["rev-parse", "--show-prefix"])?;
+    let prefix = prefix.trim();
+    let listed = git(
+        project,
+        &["ls-files", "--others", "--exclude-standard", "--full-name"],
+    )?;
+    Ok(listed
+        .lines()
+        .filter_map(|p| p.strip_prefix(prefix))
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
+/// Revisions go into the argv: one starting with '-' would be read as an option.
+pub(crate) fn check_rev(rev: &str) -> anyhow::Result<()> {
+    if rev.starts_with('-') {
+        bail!("invalid revision {rev:?}");
+    }
+    Ok(())
 }
 
 /// Parse `git diff -U0` output into per-file changed ranges.
@@ -135,7 +150,7 @@ pub(crate) fn parse_diff(text: &str) -> Vec<FileChange> {
 }
 
 /// Strip a trailing tab (git adds one after paths with spaces) and surrounding quotes.
-fn clean_path(p: &str) -> &str {
+pub(crate) fn clean_path(p: &str) -> &str {
     let p = p.trim_end_matches('\t');
     p.strip_prefix('"')
         .and_then(|q| q.strip_suffix('"'))

@@ -111,6 +111,39 @@ export interface History {
   dirty: boolean;
   commits: Commit[];
 }
+export type FileStatus = "added" | "deleted" | "modified" | "renamed";
+export type LineKind = "context" | "add" | "del";
+export interface DiffLine {
+  kind: LineKind;
+  /** 1-based; absent for an added line. */
+  old?: number;
+  /** 1-based; absent for a removed line. */
+  new?: number;
+  text: string;
+}
+export interface Hunk {
+  header: string;
+  lines: DiffLine[];
+}
+export interface FileDiff {
+  path: string;
+  /** Only for a rename. */
+  old_path?: string;
+  status: FileStatus;
+  binary: boolean;
+  additions: number;
+  deletions: number;
+  hunks: Hunk[];
+  /** Some lines were left out (counts stay exact). */
+  truncated: boolean;
+}
+export interface Diff {
+  base: string;
+  head: string | null;
+  files: FileDiff[];
+  /** Files or lines were left out to bound the payload. */
+  truncated: boolean;
+}
 export interface Progress {
   step: string;
   pct: number;
@@ -220,4 +253,10 @@ export async function cellSymbols(
 export async function history(path: string, limit?: number): Promise<History> {
   if (!inTauri) return fetchSample<History>("history");
   return invoke<History>("history", { path, limit: limit ?? null });
+}
+
+/** Textual diff of `base..head`, same meaning as `impact` (null base = HEAD vs working tree). */
+export async function diff(path: string, base: string | null, head: string | null): Promise<Diff> {
+  if (!inTauri) return fetchSample<Diff>("diff");
+  return invoke<Diff>("diff", { path, base, head });
 }
