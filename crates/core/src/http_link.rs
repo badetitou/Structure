@@ -1,9 +1,9 @@
 //! Links HTTP calls (`Symbol::http_calls`, frontend) to the endpoints that
 //! serve them (`Symbol::http`, backend) over a merged graph.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
-use crate::ir::{Edge, EdgeKind, Graph, HttpVerb};
+use crate::ir::{Edge, EdgeKind, Graph, HttpVerb, Symbol};
 
 /// Outcome of [`link_http`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -58,14 +58,55 @@ fn score(call: &[&str], endpoint: &[&str]) -> Option<(usize, usize)> {
     (literal >= 1).then_some((literal, both))
 }
 
+/// Endpoints declared on a supertype method that a subtype method overrides with
+/// the same endpoint: only the implementation handles the request.
+fn overridden_endpoints(graph: &Graph) -> HashSet<(&str, HttpVerb, &str)> {
+    let mut supers: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in &graph.edges {
+        if matches!(e.kind, EdgeKind::Extends | EdgeKind::Implements) {
+            supers.entry(&e.from).or_default().push(&e.to);
+        }
+    }
+    let with_http: HashMap<&str, &Symbol> = graph
+        .symbols
+        .iter()
+        .filter(|s| !s.http.is_empty())
+        .map(|s| (s.id.as_str(), s))
+        .collect();
+    let mut out = HashSet::new();
+    for s in with_http.values() {
+        let (Some(tid), Some((_, suffix))) = (s.container.as_deref(), s.id.split_once('#')) else {
+            continue;
+        };
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut todo: Vec<&str> = supers.get(tid).cloned().unwrap_or_default();
+        while let Some(t) = todo.pop() {
+            if !seen.insert(t) {
+                continue;
+            }
+            todo.extend(supers.get(t).into_iter().flatten());
+            let mid = format!("{t}#{suffix}");
+            if let Some(m) = with_http.get(mid.as_str()) {
+                for h in s.http.iter().filter(|h| m.http.contains(h)) {
+                    out.insert((m.id.as_str(), h.verb, h.path.as_str()));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// `Http` edges from each calling symbol to the handler it reaches, plus stats.
 pub fn link_http(graph: &Graph) -> (Vec<Edge>, HttpLinkStats) {
+    let shadowed = overridden_endpoints(graph);
     let endpoints: Vec<(&str, HttpVerb, Vec<&str>)> = graph
         .symbols
         .iter()
         .flat_map(|s| {
+            let shadowed = &shadowed;
             s.http
                 .iter()
+                .filter(move |h| !shadowed.contains(&(s.id.as_str(), h.verb, h.path.as_str())))
                 .map(move |h| (s.id.as_str(), h.verb, segments(&h.path)))
         })
         .collect();
@@ -180,6 +221,25 @@ mod tests {
     }
 
     use HttpVerb::*;
+
+    #[test]
+    fn implementation_preferred_over_interface() {
+        let mut i = sym("p.Api#go(0)", vec![ep(Get, "/a/go")], vec![]);
+        i.container = Some("p.Api".into());
+        let mut c = sym("p.Ctl#go(0)", vec![ep(Get, "/a/go")], vec![]);
+        c.container = Some("p.Ctl".into());
+        let mut g = graph(vec![i, c, sym("fe", vec![], vec![ep(Get, "/a/go")])]);
+        g.edges.push(Edge {
+            from: "p.Ctl".into(),
+            to: "p.Api".into(),
+            kind: EdgeKind::Implements,
+        });
+        let (e, s) = link_http(&g);
+        assert_eq!(pairs(&e), [("fe", "p.Ctl#go(0)")]);
+        assert_eq!((s.linked, s.ambiguous), (1, 0));
+        g.edges.clear();
+        assert_eq!(link_http(&g).1.ambiguous, 1);
+    }
 
     #[test]
     fn placeholders_match_on_both_sides() {
