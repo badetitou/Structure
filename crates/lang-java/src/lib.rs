@@ -202,7 +202,16 @@ fn join_paths(prefix: &str, path: &str) -> String {
 }
 
 fn class_prefixes(class: Node, src: &str) -> Vec<String> {
-    for (name, a) in annotation_nodes(class, src) {
+    let anns = annotation_nodes(class, src);
+    // HTTP clients (Feign, `@HttpExchange`) call endpoints, they do not serve
+    // them: no prefix means `method_endpoints` emits nothing.
+    if anns
+        .iter()
+        .any(|(n, _)| matches!(n.as_str(), "FeignClient" | "HttpExchange"))
+    {
+        return Vec::new();
+    }
+    for (name, a) in anns {
         if matches!(name.as_str(), "RequestMapping" | "Path") {
             return annotation_paths(a, src, true);
         }

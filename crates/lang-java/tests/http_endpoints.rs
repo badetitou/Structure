@@ -67,6 +67,15 @@ fn jaxrs_path_and_verb() {
 }
 
 #[test]
+fn http_clients_serve_no_endpoint() {
+    let src = r#"@FeignClient(name = "x") @RequestMapping("/api")
+interface F { @GetMapping("/a") void a(); }
+@HttpExchange("/b") interface H { @GetMapping("/c") void c(); }"#;
+    assert!(eps(src, "a").is_empty());
+    assert!(eps(src, "c").is_empty());
+}
+
+#[test]
 fn constant_path_is_unknown() {
     let src = r#"class A { @GetMapping(Consts.X) void a() {} @GetMapping("a" + "b") void b() {} }"#;
     assert_eq!(eps(src, "a"), [(HttpVerb::Get, "?".into())]);
@@ -92,6 +101,7 @@ fn realworld_controller_methods_have_endpoints() {
         .collect();
     assert!(!controllers.is_empty());
     let mut n = 0;
+    let mut methods = 0;
     for s in g.symbols.iter().filter(|s| {
         s.kind == SymbolKind::Method
             && s.annotations.iter().any(|a| a.ends_with("Mapping"))
@@ -99,12 +109,40 @@ fn realworld_controller_methods_have_endpoints() {
                 .as_deref()
                 .is_some_and(|c| controllers.contains(&c))
     }) {
+        methods += 1;
         assert!(!s.http.is_empty(), "{} has no endpoint", s.id);
         n += s.http.len();
-        for e in &s.http {
-            eprintln!("{:?} {}  <- {}", e.verb, e.path, s.id);
-        }
     }
-    eprintln!("{n} endpoints");
-    assert!(n > 0);
+    assert!(methods > 0, "filter matched no controller method");
+    assert_eq!(n, 19);
+    let ep = |id: &str| -> Vec<(HttpVerb, String)> {
+        g.symbols
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap_or_else(|| panic!("missing {id}"))
+            .http
+            .iter()
+            .map(|e| (e.verb, e.path.clone()))
+            .collect()
+    };
+    assert_eq!(
+        ep("io.spring.api.ArticleApi#article(2)"),
+        [(HttpVerb::Get, "/articles/{slug}".into())]
+    );
+    assert_eq!(
+        ep("io.spring.api.CommentsApi#deleteComment(3)"),
+        [(HttpVerb::Delete, "/articles/{slug}/comments/{id}".into())]
+    );
+    assert_eq!(
+        ep("io.spring.api.UsersApi#userLogin(1)"),
+        [(HttpVerb::Post, "/users/login".into())]
+    );
+    assert_eq!(
+        ep("io.spring.api.ArticlesApi#getFeed(3)"),
+        [(HttpVerb::Get, "/articles/feed".into())]
+    );
+    assert_eq!(
+        ep("io.spring.api.CurrentUserApi#updateProfile(3)"),
+        [(HttpVerb::Put, "/user".into())]
+    );
 }
