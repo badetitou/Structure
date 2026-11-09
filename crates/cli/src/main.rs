@@ -42,6 +42,10 @@ enum Command {
         output: Option<PathBuf>,
         #[arg(long)]
         no_scip: bool,
+        /// With --head: run the SCIP indexer in the commit's snapshot instead
+        /// of reusing SCIP documents cached by earlier analyses.
+        #[arg(long, requires = "head")]
+        exact: bool,
     },
 }
 
@@ -57,6 +61,7 @@ fn run_analysis(
         reindex_if_stale,
         use_scip: !no_scip,
         indexer_timeout_secs: indexer_timeout.unwrap_or_else(pipeline::default_indexer_timeout),
+        exact: false,
     };
     let t = Instant::now();
     let analysis = pipeline::analyze(path, &opts, &|p: Progress| {
@@ -172,7 +177,25 @@ fn main() -> Result<()> {
             head,
             output,
             no_scip,
+            exact,
         } => {
+            if let Some(h) = head.as_deref() {
+                // A commit is analysed in its own snapshot, as in the app.
+                let opts = Options {
+                    use_scip: !no_scip,
+                    exact,
+                    ..Options::default()
+                };
+                let t = Instant::now();
+                let i = pipeline::impact_at(&path, base.as_deref(), Some(h), &opts, &|p| {
+                    if p.detail.is_none() {
+                        eprintln!("[{:>3}%] {}", p.pct, p.step);
+                    }
+                })?;
+                eprintln!("impact: {} ms", t.elapsed().as_millis());
+                print_impact(&i, &[]);
+                return write_json(&i, &output);
+            }
             // A stale index is fine for impact (symbol ranges come from tree-sitter).
             let a = run_analysis(&path, false, false, no_scip, None)?;
             let t = Instant::now();

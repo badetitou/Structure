@@ -91,6 +91,70 @@ pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<ScipIndex> {
     decode(&mut CodedInputStream::from_bytes(bytes), BATCH_BYTES)
 }
 
+/// Calls `f` with each still-encoded `Document` of the index at `path`, in
+/// file order. External symbols and metadata are skipped.
+pub fn for_each_raw_document(
+    path: &Path,
+    f: &mut dyn FnMut(Vec<u8>) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let mut reader = std::io::BufReader::with_capacity(1 << 20, file);
+    let mut input = CodedInputStream::new(&mut reader);
+    while let Some(tag) = input
+        .read_raw_tag_or_eof()
+        .context("invalid SCIP protobuf")?
+    {
+        if tag >> 3 == 2 {
+            let len = input.read_raw_varint32().context("invalid SCIP protobuf")?;
+            f(input.read_raw_bytes(len).context("invalid SCIP protobuf")?)?;
+        } else {
+            let wt = protobuf::rt::WireType::new(tag & 7).context("invalid SCIP protobuf")?;
+            input.skip_field(wt).context("invalid SCIP protobuf")?;
+        }
+    }
+    Ok(())
+}
+
+/// `relative_path` of an encoded `Document`, without decoding the rest.
+pub fn raw_document_path(raw: &[u8]) -> anyhow::Result<String> {
+    let mut input = CodedInputStream::from_bytes(raw);
+    let mut path = String::new();
+    while let Some(tag) = input
+        .read_raw_tag_or_eof()
+        .context("invalid SCIP protobuf")?
+    {
+        if tag == (1 << 3 | 2) {
+            // Last value wins, as in a full decode.
+            path = input.read_string().context("invalid SCIP protobuf")?;
+        } else {
+            let wt = protobuf::rt::WireType::new(tag & 7).context("invalid SCIP protobuf")?;
+            input.skip_field(wt).context("invalid SCIP protobuf")?;
+        }
+    }
+    Ok(path)
+}
+
+/// Index made of encoded `Document`s (e.g. from [`for_each_raw_document`]),
+/// decoded in bounded batches like [`load`].
+pub fn from_raw_documents(
+    docs: impl IntoIterator<Item = anyhow::Result<Vec<u8>>>,
+) -> anyhow::Result<ScipIndex> {
+    let mut out = ScipIndex::default();
+    let mut batch: Vec<Vec<u8>> = Vec::new();
+    let mut batch_bytes = 0usize;
+    for raw in docs {
+        let raw = raw?;
+        batch_bytes += raw.len();
+        batch.push(raw);
+        if batch_bytes >= BATCH_BYTES {
+            decode_batch(&mut batch, &mut out)?;
+            batch_bytes = 0;
+        }
+    }
+    decode_batch(&mut batch, &mut out)?;
+    Ok(out)
+}
+
 /// Streams the top-level `Index` message (`documents` = 2,
 /// `external_symbols` = 3; metadata and unknown fields are skipped).
 fn decode(input: &mut CodedInputStream, batch_limit: usize) -> anyhow::Result<ScipIndex> {
@@ -377,6 +441,39 @@ mod tests {
         assert_eq!(s.display_name.as_deref(), Some("getAccount"));
         assert!(s.relationships[0].is_implementation);
         assert!(m.symbols.contains_key("ext 1"));
+    }
+
+    #[test]
+    fn raw_documents_roundtrip() {
+        let mut idx = Index::new();
+        for (p, line) in [("A.java", 1), ("dir/B.java", 4)] {
+            let mut d = Document::new();
+            d.occurrences.push(occ(JAVA, vec![line, 1, 9], 0));
+            // Path written after the occurrences: still found.
+            d.relative_path = p.into();
+            idx.documents.push(d);
+        }
+        let mut ext = SymbolInformation::new();
+        ext.symbol = "ext 1".into();
+        idx.external_symbols.push(ext);
+        let file = std::env::temp_dir().join(format!("structure-raw-{}.scip", std::process::id()));
+        std::fs::write(&file, idx.write_to_bytes().unwrap()).unwrap();
+        let mut raws = Vec::new();
+        for_each_raw_document(&file, &mut |r| {
+            raws.push(r);
+            Ok(())
+        })
+        .unwrap();
+        let _ = std::fs::remove_file(&file);
+        let paths: Vec<String> = raws.iter().map(|r| raw_document_path(r).unwrap()).collect();
+        assert_eq!(paths, ["A.java", "dir/B.java"]);
+        // Only the second document, recomposed: positions kept, externals gone.
+        let m = from_raw_documents([Ok(raws[1].clone())]).unwrap();
+        assert_eq!(m.documents.len(), 1);
+        assert_eq!(m.documents[0].relative_path, "dir/B.java");
+        assert_eq!(m.documents[0].occurrences[0].range.start_line, 4);
+        assert!(m.symbols.is_empty());
+        assert!(raw_document_path(&[0xff, 0xff]).is_err());
     }
 
     #[test]
