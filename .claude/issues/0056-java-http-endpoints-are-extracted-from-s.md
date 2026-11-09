@@ -1,7 +1,7 @@
 ---
 id: 56
 title: Java HTTP endpoints are extracted from Spring and JAX-RS annotations
-status: in-progress
+status: done
 parent: 54
 branch: 56-java-http-endpoints
 remote: null

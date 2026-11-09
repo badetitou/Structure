@@ -1,7 +1,7 @@
 ---
 id: 55
 title: Several project roots are analysed into one matrix
-status: in-review
+status: done
 parent: 54
 branch: 55-multi-root-analysis
 remote: null
