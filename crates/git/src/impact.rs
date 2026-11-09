@@ -424,6 +424,7 @@ diff --git a/D b/D\ndeleted file mode 100644\n--- a/D\n+++ /dev/null\n@@ -1,3 +0
             annotations: vec![],
             supertypes: vec![],
             http: vec![],
+            http_calls: vec![],
             package: None,
         }
     }
