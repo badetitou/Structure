@@ -1,6 +1,6 @@
 // Glue between the panel registry and dockview: how a registered Svelte panel is
 // mounted, which groups are shown, and how the layout is persisted.
-import type { DockviewApi, DockviewTheme, IContentRenderer, SerializedDockview } from "dockview";
+import type { DockviewApi, DockviewOptions, DockviewTheme, IContentRenderer, SerializedDockview } from "dockview";
 import { mount, unmount } from "svelte";
 import type { Component } from "svelte";
 
@@ -12,6 +12,15 @@ export const structureTheme: DockviewTheme = {
   className: "dockview-theme-structure",
   dndOverlayMounting: "relative",
 };
+
+/**
+ * Drag-and-drop runs on pointer events, not HTML5 drag-and-drop: the Tauri webview
+ * (WKWebView) handles native drags itself, so HTML5 drags of tabs never reach dockview
+ * there. Dockview's own docs advise `pointer` for embedded webviews.
+ */
+export const dockDnd = {
+  dndStrategy: "pointer",
+} as const satisfies Pick<DockviewOptions, "dndStrategy">;
 
 /** Mounts a Svelte component (no props) as a dockview panel's content. */
 export class SvelteRenderer implements IContentRenderer {
