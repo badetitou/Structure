@@ -1,7 +1,7 @@
 ---
 id: 57
 title: TypeScript HTTP calls are extracted with their URL
-status: in-progress
+status: done
 parent: 54
 branch: 57-ts-http-calls
 remote: null
@@ -13,13 +13,13 @@ lang-ts does not capture call arguments; `this.http.get('/user')` produces
 nothing in the graph (crates/lang-ts/src/lib.rs). Call edges come only from SCIP.
 
 ## Acceptance criteria
-- [ ] TS functions/methods expose HTTP calls `{verb, url_template}` for:
+- [x] TS functions/methods expose HTTP calls `{verb, url_template}` for:
   Angular `HttpClient` (`get/post/put/delete/patch/request`, receiver typed or
   injected as `HttpClient`), `fetch(url, {method})`, `axios.<verb>` / `axios(...)`.
-- [ ] URL from a string literal, a template literal (`${x}` → placeholder) or
+- [x] URL from a string literal, a template literal (`${x}` → placeholder) or
   `'a/' + x` concatenation; anything else is an unknown URL, kept with its verb.
-- [ ] Stored in the IR next to #56's endpoints (shared type), serde default empty.
-- [ ] Unit tests + angular-realworld: the calls in `core/**/services` are found.
+- [x] Stored in the IR next to #56's endpoints (shared type), serde default empty.
+- [x] Unit tests + angular-realworld: the calls in `core/**/services` are found.
 
 ## Out of scope
 - Following a URL through variables, environment files or interceptors (a
@@ -60,3 +60,8 @@ and without method, axios forms, template, concatenation, non-literal → `?`, a
 verb+path for ≥ 5 known calls (e.g. Get /user on UserService, Delete
 /articles/{slug}/comments/{commentId}) and a total that cannot pass vacuously; goldens unchanged.
 Rules: no unwrap/expect outside tests; no new deps. Fixtures are already cloned by the user; never clone or build them.
+
+## Known limits
+- One call in angular-realworld has path `?`: `'/articles' + (cond ? '/feed' : '')`.
+- Any receiver named `http` is accepted untyped (Node `http` module would be a false positive).
+- `axios(identifier)` is treated as a config: verb Any, path `?`.
