@@ -1,6 +1,7 @@
 //! Structure core library: the analysis pipeline over the focused crates.
 //! The per-concern modules are re-exported here so consumers see one API.
 
+pub mod http_link;
 pub mod lang;
 pub mod pipeline;
 
