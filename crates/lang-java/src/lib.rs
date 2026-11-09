@@ -14,7 +14,13 @@ use anyhow::{Context, Result, anyhow};
 use rayon::prelude::*;
 use tree_sitter::{Node, Parser};
 
-use structure_ir::ir::{Edge, EdgeKind, Graph, Language, Range, Symbol, SymbolKind};
+mod rpc;
+
+pub use rpc::{RawRpcCall, Receiver};
+
+use structure_ir::ir::{
+    Edge, EdgeKind, Graph, HttpEndpoint, HttpVerb, Language, Range, RpcCall, Symbol, SymbolKind,
+};
 
 /// Result of parsing one Java source file.
 #[derive(Debug, Clone, Default)]
@@ -26,6 +32,12 @@ pub struct FileSymbols {
     /// (type symbol id, simple type name) for field types and constructor
     /// parameter types, generics/arrays stripped, primitives skipped.
     pub uses: Vec<(String, String)>,
+    /// Method id -> its endpoints with no class-level prefix (inheritance input).
+    pub routes: HashMap<String, Vec<HttpEndpoint>>,
+    /// Type id -> its own class-level prefixes, only when it declares a mapping.
+    pub type_prefixes: HashMap<String, Vec<String>>,
+    /// Calls that may be GWT RPC calls, resolved once the project is parsed.
+    pub rpc_raw: Vec<RawRpcCall>,
 }
 
 /// Names never reported as `Uses` targets (java.lang basics and common collections).
@@ -115,6 +127,172 @@ fn annotations_of(n: Node, src: &str) -> Vec<String> {
     out
 }
 
+fn annotation_nodes<'t>(n: Node<'t>, src: &str) -> Vec<(String, Node<'t>)> {
+    let mut out = Vec::new();
+    let mut cur = n.walk();
+    for m in n.children(&mut cur).filter(|c| c.kind() == "modifiers") {
+        let mut c2 = m.walk();
+        for a in m.children(&mut c2) {
+            if matches!(a.kind(), "annotation" | "marker_annotation")
+                && let Some(name) = a.child_by_field_name("name")
+            {
+                let t = text(name, src);
+                out.push((t.rsplit('.').next().unwrap_or(t).to_string(), a));
+            }
+        }
+    }
+    out
+}
+
+/// Value expressions of annotation argument `keys` (or the positional one if
+/// `positional`); an array initializer is flattened.
+fn annotation_values<'t>(a: Node<'t>, src: &str, keys: &[&str], positional: bool) -> Vec<Node<'t>> {
+    let Some(args) = a.child_by_field_name("arguments") else {
+        return Vec::new();
+    };
+    let mut found = None;
+    let mut cur = args.walk();
+    for c in args.named_children(&mut cur) {
+        if c.kind() == "element_value_pair" {
+            let k = c.child_by_field_name("key").map_or("", |k| text(k, src));
+            if keys.contains(&k) {
+                found = c.child_by_field_name("value");
+            }
+        } else if positional && found.is_none() {
+            found = Some(c);
+        }
+    }
+    let Some(v) = found else {
+        return Vec::new();
+    };
+    if matches!(
+        v.kind(),
+        "element_value_array_initializer" | "array_initializer"
+    ) {
+        let mut c = v.walk();
+        v.named_children(&mut c).collect()
+    } else {
+        vec![v]
+    }
+}
+
+/// Literal string value, or `?` for anything that is not a plain literal.
+fn literal_or_unknown(v: Node, src: &str) -> String {
+    let t = text(v, src);
+    if v.kind() == "string_literal" && !t.starts_with("\"\"\"") && t.len() >= 2 {
+        t[1..t.len() - 1].to_string()
+    } else {
+        "?".to_string()
+    }
+}
+
+/// Paths of a mapping annotation; one empty path when none is given.
+fn annotation_paths(a: Node, src: &str, positional: bool) -> Vec<String> {
+    let paths: Vec<String> = annotation_values(a, src, &["value", "path"], positional)
+        .into_iter()
+        .map(|v| literal_or_unknown(v, src))
+        .collect();
+    if paths.is_empty() {
+        vec![String::new()]
+    } else {
+        paths
+    }
+}
+
+fn join_paths(prefix: &str, path: &str) -> String {
+    if prefix == "?" || path == "?" {
+        return "?".to_string();
+    }
+    let parts: Vec<&str> = prefix
+        .split('/')
+        .chain(path.split('/'))
+        .filter(|p| !p.is_empty())
+        .collect();
+    format!("/{}", parts.join("/"))
+}
+
+/// Own class-level prefixes, or `None` when the class declares no mapping.
+fn class_prefixes(class: Node, src: &str) -> Option<Vec<String>> {
+    let anns = annotation_nodes(class, src);
+    // HTTP clients (Feign, `@HttpExchange`) call endpoints, they do not serve
+    // them: no prefix means `method_endpoints` emits nothing.
+    if anns
+        .iter()
+        .any(|(n, _)| matches!(n.as_str(), "FeignClient" | "HttpExchange"))
+    {
+        return Some(Vec::new());
+    }
+    for (name, a) in anns {
+        if matches!(name.as_str(), "RequestMapping" | "Path") {
+            return Some(annotation_paths(a, src, true));
+        }
+    }
+    None
+}
+
+fn verb_of(name: &str) -> Option<HttpVerb> {
+    Some(match name {
+        "GET" | "Get" => HttpVerb::Get,
+        "POST" | "Post" => HttpVerb::Post,
+        "PUT" | "Put" => HttpVerb::Put,
+        "DELETE" | "Delete" => HttpVerb::Delete,
+        "PATCH" | "Patch" => HttpVerb::Patch,
+        _ => return None,
+    })
+}
+
+/// Endpoints served by a method: Spring mappings or JAX-RS `@Path` + verb.
+fn method_endpoints(m: Node, src: &str, prefixes: &[String]) -> Vec<HttpEndpoint> {
+    let anns = annotation_nodes(m, src);
+    let mut routes: Vec<(HttpVerb, Vec<String>)> = Vec::new();
+    let jaxrs_path = anns.iter().find(|(n, _)| n == "Path").map(|(_, a)| *a);
+    for (name, a) in &anns {
+        if let Some(v) = name.strip_suffix("Mapping").and_then(verb_of) {
+            routes.push((v, annotation_paths(*a, src, true)));
+        } else if name == "RequestMapping" {
+            let methods = annotation_values(*a, src, &["method"], false);
+            // Absent `method` means any verb; values that are not a known
+            // verb (constant, HEAD, OPTIONS) yield no endpoint, not a guess.
+            let verbs: Vec<HttpVerb> = if methods.is_empty() {
+                vec![HttpVerb::Any]
+            } else {
+                methods
+                    .into_iter()
+                    .filter_map(|v| {
+                        let t = text(v, src);
+                        verb_of(t.rsplit('.').next().unwrap_or(t))
+                    })
+                    .collect()
+            };
+            let paths = annotation_paths(*a, src, true);
+            for v in verbs {
+                routes.push((v, paths.clone()));
+            }
+        } else if name.chars().all(|c| c.is_ascii_uppercase())
+            && let Some(v) = verb_of(name)
+        {
+            let paths =
+                jaxrs_path.map_or_else(|| vec![String::new()], |p| annotation_paths(p, src, true));
+            routes.push((v, paths));
+        }
+    }
+    let mut out: Vec<HttpEndpoint> = Vec::new();
+    for (verb, paths) in routes {
+        for pre in prefixes {
+            for p in &paths {
+                let e = HttpEndpoint {
+                    verb,
+                    path: join_paths(pre, p),
+                };
+                if !out.contains(&e) {
+                    out.push(e);
+                }
+            }
+        }
+    }
+    out
+}
+
 fn collect_types(n: Node, src: &str, out: &mut Vec<String>) {
     if let Some(name) = type_name(n, src) {
         out.push(name);
@@ -153,6 +331,12 @@ struct Ctx<'a> {
     src: &'a str,
     package: Option<String>,
     out: FileSymbols,
+    /// Class-level path prefixes (Spring `@RequestMapping`, JAX-RS `@Path`).
+    prefixes: Vec<String>,
+    /// Field receivers of the enclosing types, outermost first.
+    fields: Vec<rpc::Env>,
+    /// Inside a top-level interface (GWT service/async twins): no RPC calls.
+    in_interface: bool,
 }
 
 impl Ctx<'_> {
@@ -175,8 +359,17 @@ impl Ctx<'_> {
             annotations: annotations_of(node, self.src),
             supertypes: vec![],
             package: self.package.clone(),
+            http: vec![],
+            http_calls: vec![],
+            rpc_calls: vec![],
         });
         self.out.symbols.len() - 1
+    }
+
+    fn rpc(&mut self, node: Node, caller: &str) {
+        if !self.in_interface {
+            rpc::collect(node, self.src, caller, &self.fields, &mut self.out.rpc_raw);
+        }
     }
 
     fn type_decl(&mut self, node: Node, container: Option<&str>, outer_tp: &[String]) {
@@ -196,6 +389,16 @@ impl Ctx<'_> {
             (None, None) => name.to_string(),
         };
         let idx = self.symbol(id.clone(), kind, node, name_node, container);
+        let own_prefixes = class_prefixes(node, self.src);
+        // An empty list marks an HTTP client (Feign...): it serves nothing and
+        // must not feed inheritance.
+        if let Some(p) = own_prefixes.as_ref().filter(|p| !p.is_empty()) {
+            self.out.type_prefixes.insert(id.clone(), p.clone());
+        }
+        let saved_prefixes = std::mem::replace(
+            &mut self.prefixes,
+            own_prefixes.unwrap_or_else(|| vec![String::new()]),
+        );
 
         let mut supers = Vec::new();
         let mut cur = node.walk();
@@ -212,6 +415,10 @@ impl Ctx<'_> {
         let mut tp = outer_tp.to_vec();
         tp.extend(type_params_of(node, self.src));
 
+        let saved_iface = self.in_interface;
+        if container.is_none() {
+            self.in_interface = kind == SymbolKind::Interface;
+        }
         let mut rec_arity = 0;
         if node.kind() == "record_declaration"
             && let Some(params) = node.child_by_field_name("parameters")
@@ -237,8 +444,12 @@ impl Ctx<'_> {
         }
 
         if let Some(body) = node.child_by_field_name("body") {
+            self.fields.push(rpc::field_env(body, self.src));
             self.members(body, &id, &tp, rec_arity);
+            self.fields.pop();
         }
+        self.in_interface = saved_iface;
+        self.prefixes = saved_prefixes;
     }
 
     /// Record a `Uses` entry for the type of a (formal or spread) parameter.
@@ -275,7 +486,14 @@ impl Ctx<'_> {
                             text(n, self.src),
                             arity(m.child_by_field_name("parameters"))
                         );
-                        self.symbol(id, SymbolKind::Method, m, n, Some(tid));
+                        self.rpc(m, &id);
+                        let idx = self.symbol(id, SymbolKind::Method, m, n, Some(tid));
+                        self.out.symbols[idx].http = method_endpoints(m, self.src, &self.prefixes);
+                        let raw = method_endpoints(m, self.src, &[String::new()]);
+                        if !raw.is_empty() && !self.prefixes.is_empty() {
+                            let mid = self.out.symbols[idx].id.clone();
+                            self.out.routes.insert(mid, raw);
+                        }
                     }
                 }
                 "annotation_type_element_declaration" => {
@@ -294,6 +512,7 @@ impl Ctx<'_> {
                     if let Some(n) = m.child_by_field_name("name") {
                         let params = m.child_by_field_name("parameters");
                         let id = format!("{tid}#<init>({})", arity(params));
+                        self.rpc(m, &id);
                         self.symbol(id, SymbolKind::Constructor, m, n, Some(tid));
                         let mut ctp = tp.to_vec();
                         ctp.extend(type_params_of(m, self.src));
@@ -373,6 +592,9 @@ pub fn parse_source(file: &str, src: &str) -> Result<FileSymbols> {
         src,
         package: package.clone(),
         out: FileSymbols::default(),
+        prefixes: vec![String::new()],
+        fields: vec![],
+        in_interface: false,
     };
     let mut cur = root.walk();
     for n in root.children(&mut cur) {
@@ -468,6 +690,93 @@ impl TypeIndex {
 /// Parse every main-source `.java` file under `root` into a `Graph`
 /// (symbols, `Extends`/`Implements` and `Uses` edges; no calls).
 pub fn parse_project(root: &Path) -> Result<Graph> {
+    parse_project_with_warnings(root, &mut Vec::new())
+}
+
+/// Component pairs marking build-generated sources, walked for endpoints only.
+fn in_generated(rel: &Path) -> bool {
+    let comps: Vec<_> = rel.components().map(|c| c.as_os_str()).collect();
+    comps.windows(2).any(|w| {
+        (w[0] == "target" && w[1] == "generated-sources")
+            || (w[0] == "build" && w[1] == "generated")
+    })
+}
+
+/// `.java` files under `target/generated-sources/**` and `build/generated/**`.
+fn generated_files(root: &Path) -> Vec<std::path::PathBuf> {
+    let walk_root = root.to_path_buf();
+    let walker = ignore::WalkBuilder::new(root)
+        .standard_filters(false)
+        .filter_entry(move |e| {
+            if e.depth() == 0 || !e.file_type().is_some_and(|t| t.is_dir()) {
+                return true;
+            }
+            let n = e.file_name().to_string_lossy();
+            if matches!(n.as_ref(), "node_modules" | ".git" | ".gradle") {
+                return false;
+            }
+            let rel = e.path().strip_prefix(&walk_root).unwrap_or(e.path());
+            // Main sources are walked elsewhere; only generated trees matter here.
+            in_generated(rel) || n != "src"
+        })
+        .build();
+    let mut files: Vec<_> = walker
+        .flatten()
+        .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
+        .map(|e| e.into_path())
+        .filter(|p| {
+            p.extension().is_some_and(|x| x == "java")
+                && in_generated(p.strip_prefix(root).unwrap_or(p))
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+/// Endpoints (no class prefix) of `tid#suffix` found on a supertype, transitively.
+fn inherited_routes<'a>(
+    supers: &HashMap<String, Vec<String>>,
+    routes: &'a HashMap<String, Vec<HttpEndpoint>>,
+    tid: &str,
+    suffix: &str,
+    seen: &mut HashSet<String>,
+) -> Option<&'a Vec<HttpEndpoint>> {
+    for sup in supers.get(tid)? {
+        if !seen.insert(sup.clone()) {
+            continue;
+        }
+        if let Some(r) = routes.get(&format!("{sup}#{suffix}")) {
+            return Some(r);
+        }
+        if let Some(r) = inherited_routes(supers, routes, sup, suffix, seen) {
+            return Some(r);
+        }
+    }
+    None
+}
+
+/// Prefixes in force for `tid`: its own mapping, else the nearest supertype's.
+fn effective_prefixes(
+    supers: &HashMap<String, Vec<String>>,
+    prefixes: &HashMap<String, Vec<String>>,
+    tid: &str,
+    seen: &mut HashSet<String>,
+) -> Option<Vec<String>> {
+    if let Some(p) = prefixes.get(tid) {
+        return Some(p.clone());
+    }
+    for sup in supers.get(tid)? {
+        if seen.insert(sup.clone())
+            && let Some(p) = effective_prefixes(supers, prefixes, sup, seen)
+        {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// Like [`parse_project`], also reporting soft problems (unresolved `*Api` supertypes).
+pub fn parse_project_with_warnings(root: &Path, warnings: &mut Vec<String>) -> Result<Graph> {
     let walk_root = root.to_path_buf();
     let walker = ignore::WalkBuilder::new(root)
         .require_git(false)
@@ -511,6 +820,15 @@ pub fn parse_project(root: &Path) -> Result<Graph> {
     let all: Vec<Symbol> = parsed.iter().flat_map(|f| f.symbols.clone()).collect();
     let index = TypeIndex::new(&all);
 
+    // Generated sources (OpenAPI server interfaces...) feed endpoint
+    // inheritance only: their symbols never reach the graph.
+    let generated: Vec<FileSymbols> = generated_files(root)
+        .par_iter()
+        .filter_map(|p| read_and_parse(root, p).ok())
+        .collect();
+    let gen_syms: Vec<Symbol> = generated.iter().flat_map(|f| f.symbols.clone()).collect();
+    let gen_index = TypeIndex::new(&gen_syms);
+
     let mut edges = Vec::new();
     let mut seen: HashSet<(String, String, u8)> = HashSet::new();
     let mut push = |from: &str, to: String, kind: EdgeKind| {
@@ -552,6 +870,8 @@ pub fn parse_project(root: &Path) -> Result<Graph> {
     }
 
     let mut all = all;
+    attach_rpc(&mut all, &parsed, &index);
+    inherit_endpoints(&mut all, &parsed, &generated, &index, &gen_index, warnings);
     all.sort_by(|a, b| a.id.cmp(&b.id));
     edges.sort_by(|a, b| (&a.from, &a.to, a.kind as u8).cmp(&(&b.from, &b.to, b.kind as u8)));
 
@@ -561,6 +881,173 @@ pub fn parse_project(root: &Path) -> Result<Graph> {
         symbols: all,
         edges,
     })
+}
+
+/// Interfaces that extend `RemoteService`, directly or through parsed interfaces.
+fn remote_services(parsed: &[FileSymbols], index: &TypeIndex) -> HashSet<String> {
+    let mut remote: HashSet<String> = HashSet::new();
+    let mut supers: Vec<(&str, Vec<String>)> = Vec::new();
+    for fs in parsed {
+        for s in fs
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Interface && index.kinds.contains_key(&s.id))
+        {
+            if s.supertypes.iter().any(|t| t == "RemoteService") {
+                remote.insert(s.id.clone());
+            } else {
+                let resolved = s
+                    .supertypes
+                    .iter()
+                    .filter_map(|t| index.resolve(fs, t))
+                    .collect();
+                supers.push((&s.id, resolved));
+            }
+        }
+    }
+    loop {
+        let before = remote.len();
+        for (id, sups) in &supers {
+            if !remote.contains(*id) && sups.iter().any(|s| remote.contains(s)) {
+                remote.insert((*id).to_string());
+            }
+        }
+        if remote.len() == before {
+            return remote;
+        }
+    }
+}
+
+/// Turn the raw RPC-shaped calls of each file into `Symbol::rpc_calls`.
+fn attach_rpc(all: &mut [Symbol], parsed: &[FileSymbols], index: &TypeIndex) {
+    if parsed.iter().all(|f| f.rpc_raw.is_empty()) {
+        return;
+    }
+    let remote = remote_services(parsed, index);
+    let by_id: HashMap<String, usize> = all
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.id.clone(), i))
+        .collect();
+    for fs in parsed {
+        for raw in &fs.rpc_raw {
+            // (service, maybe)
+            let service = match &raw.recv {
+                Receiver::Async(n) => match index.resolve(fs, n) {
+                    Some(id) => id
+                        .strip_suffix("Async")
+                        .filter(|sync| remote.contains(*sync))
+                        .map(|sync| (sync.to_string(), false)),
+                    // `XAsync` from another root: keep `X`, the merged link decides.
+                    None => n.strip_suffix("Async").map(|x| (x.to_string(), false)),
+                },
+                Receiver::Sync { name, strict } => match index.resolve(fs, name) {
+                    Some(id) => remote.contains(&id).then_some((id, false)),
+                    // Unknown `X`: plausible only if an `XAsync` type is parsed.
+                    None => (!strict).then(|| {
+                        let twin = index.simple.contains_key(&format!("{name}Async"));
+                        (name.clone(), !twin)
+                    }),
+                },
+            };
+            if let (Some((service, maybe)), Some(&i)) = (service, by_id.get(&raw.caller)) {
+                all[i].rpc_calls.push(RpcCall {
+                    service,
+                    method: raw.method.clone(),
+                    arity: raw.arity,
+                    maybe,
+                });
+            }
+        }
+    }
+}
+
+/// Give each method with no mapping of its own the endpoints of the supertype
+/// method it overrides (same name and arity), as Spring does. Spring takes the
+/// type-level mapping from the nearest type that has one, so the implementing
+/// class's own `@RequestMapping` replaces the interface's rather than adding to it.
+fn inherit_endpoints(
+    all: &mut [Symbol],
+    parsed: &[FileSymbols],
+    generated: &[FileSymbols],
+    index: &TypeIndex,
+    gen_index: &TypeIndex,
+    warnings: &mut Vec<String>,
+) {
+    let mut supers: HashMap<String, Vec<String>> = HashMap::new();
+    let mut routes: HashMap<String, Vec<HttpEndpoint>> = HashMap::new();
+    let mut prefixes: HashMap<String, Vec<String>> = HashMap::new();
+    let mut unresolved_api = 0;
+    // Parsed code first: it wins over a generated twin with the same id.
+    for (is_parsed, fs) in parsed
+        .iter()
+        .map(|f| (true, f))
+        .chain(generated.iter().map(|f| (false, f)))
+    {
+        for s in fs.symbols.iter().filter(|s| {
+            matches!(s.kind, SymbolKind::Class | SymbolKind::Interface) && !s.supertypes.is_empty()
+        }) {
+            let mut resolved = Vec::new();
+            let mut missing_api = false;
+            for sup in &s.supertypes {
+                match index
+                    .resolve(fs, sup)
+                    .or_else(|| gen_index.resolve(fs, sup))
+                {
+                    Some(t) => resolved.push(t),
+                    None => missing_api |= sup.ends_with("Api"),
+                }
+            }
+            if is_parsed && s.kind == SymbolKind::Class && missing_api {
+                unresolved_api += 1;
+            }
+            supers.entry(s.id.clone()).or_insert(resolved);
+        }
+        for (k, v) in &fs.routes {
+            routes.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+        for (k, v) in &fs.type_prefixes {
+            prefixes.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+    }
+    for s in all.iter_mut().filter(|s| s.kind == SymbolKind::Method) {
+        let (Some(tid), Some((_, suffix))) = (s.container.as_deref(), s.id.split_once('#')) else {
+            continue;
+        };
+        // Own mapping, else the overridden one; either way the prefix is the
+        // nearest type-level mapping (own class, then supertypes).
+        let raw = match routes.get(&s.id) {
+            Some(r) => r,
+            None if s.http.is_empty() => {
+                match inherited_routes(&supers, &routes, tid, suffix, &mut HashSet::new()) {
+                    Some(r) => r,
+                    None => continue,
+                }
+            }
+            None => continue,
+        };
+        let pres = effective_prefixes(&supers, &prefixes, tid, &mut HashSet::new())
+            .unwrap_or_else(|| vec![String::new()]);
+        let mut out: Vec<HttpEndpoint> = Vec::new();
+        for e in raw {
+            for pre in &pres {
+                let n = HttpEndpoint {
+                    verb: e.verb,
+                    path: join_paths(pre, &e.path),
+                };
+                if !out.contains(&n) {
+                    out.push(n);
+                }
+            }
+        }
+        s.http = out;
+    }
+    if unresolved_api > 0 {
+        warnings.push(format!(
+            "{unresolved_api} class(es) implement an unresolved `*Api` interface; \
+             their HTTP endpoints are unknown (generated sources missing? run the build)"
+        ));
+    }
 }
 
 #[cfg(test)]

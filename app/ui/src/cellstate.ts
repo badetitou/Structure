@@ -13,6 +13,7 @@ export interface CellPaint {
   opacity: number;
 }
 
+import type { RemoteKind } from "./graph";
 import type { ImpactView } from "./domaintree";
 
 export const FWD = "var(--fwd)";
@@ -74,7 +75,7 @@ export interface EdgeStyle {
   width: number;
 }
 
-export function edgeStyle(kind: EdgeKind, weight: number): EdgeStyle {
+export function edgeStyle(kind: EdgeKind, weight: number, remote?: RemoteKind): EdgeStyle {
   const width = Math.max(1, 1 + Math.log(weight));
   switch (kind) {
     case "fwd":
@@ -84,6 +85,7 @@ export function edgeStyle(kind: EdgeKind, weight: number): EdgeStyle {
     case "imp":
       return { stroke: CHANGED, marker: "a-imp", opacity: "0.9", width };
     default:
+      if (remote) return { stroke: `var(--edge-${remote})`, marker: `a-${remote}`, opacity: "var(--edge-opacity)", width };
       return { stroke: "var(--edge)", marker: "a-def", opacity: "var(--edge-opacity)", width };
   }
 }

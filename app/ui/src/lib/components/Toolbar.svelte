@@ -25,6 +25,11 @@
     onClose,
     ready,
   }: { onZoomIn: () => void; onZoomOut: () => void; onFit: () => void; onClose: () => void; ready: boolean } = $props();
+
+  // Several projects: their names joined; else the project name or folder.
+  const title = $derived(
+    app.work?.projects?.length ? app.work.projects.map((p) => p.name).join(" + ") : app.work?.project || folderName(app.project),
+  );
 </script>
 
 {#snippet iconBtn(Icon: Component, tip: string, onclick: () => void)}
@@ -42,7 +47,7 @@
 
 <header class="flex h-10 flex-none items-center gap-1.5 overflow-x-auto border-b bg-card px-2 whitespace-nowrap">
   <img src="/logo.svg" alt="Structure" class="size-6 flex-none" />
-  <h1 class="m-0 max-w-56 truncate text-sm font-semibold" title={app.project}>{app.work?.project || folderName(app.project)}</h1>
+  <h1 class="m-0 max-w-56 truncate text-sm font-semibold" title={app.paths.join("\n")}>{title}</h1>
   {#if ready}
   {@render divider()}
   {@render iconBtn(ZoomOut, "Zoom out", onZoomOut)}
@@ -78,11 +83,33 @@
       >Swap axes — {app.transposed ? "domains as rows, layers as columns" : "layers as rows, domains as columns"}</Tooltip.Content
     >
   </Tooltip.Root>
+  {#if (app.matrix?.httpEdges.length ?? 0) > 0}
+    <Toggle
+      variant="outline"
+      size="sm"
+      class="px-2"
+      aria-label="Show front-to-back HTTP links"
+      pressed={app.showHttp}
+      onPressedChange={(v) => app.setShowHttp(v)}>HTTP links</Toggle
+    >
+  {/if}
+  {#if (app.matrix?.rpcEdges.length ?? 0) > 0}
+    <Toggle
+      variant="outline"
+      size="sm"
+      class="px-2"
+      aria-label="Show GWT RPC links"
+      pressed={app.showRpc}
+      onPressedChange={(v) => app.setShowRpc(v)}>RPC links</Toggle
+    >
+  {/if}
+  {#if !app.multi}
   {@render divider()}
   <ImpactRange />
   <Button variant="outline" size="sm" disabled={!app.impact || app.impactBusy} onclick={() => app.clearImpact()}
     >Clear impact</Button
   >
+  {/if}
   {/if}
   <span class="ml-auto flex flex-none items-center gap-1.5">
     {#if ready}<ViewsMenu />{/if}

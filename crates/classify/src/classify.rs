@@ -356,7 +356,7 @@ pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Class
                     f.uses.insert(graph.symbols[t].name.as_str());
                 }
             }
-            EdgeKind::Extends | EdgeKind::Implements => {}
+            EdgeKind::Extends | EdgeKind::Implements | EdgeKind::Http | EdgeKind::Rpc => {}
         }
     }
 
@@ -711,6 +711,9 @@ mod tests {
             name_range: R,
             annotations: vec![],
             supertypes: vec![],
+            http: vec![],
+            http_calls: vec![],
+            rpc_calls: vec![],
             package: pkg.map(Into::into),
         }
     }

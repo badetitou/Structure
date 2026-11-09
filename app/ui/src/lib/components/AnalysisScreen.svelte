@@ -8,15 +8,15 @@
   import Workspace from "./workspace/Workspace.svelte";
   import { app } from "../../state.svelte";
 
-  // Analyses `path`, shows the progress, then the workspace of panels (matrix, details, history, …)
+  // Analyses `paths`, shows the progress, then the workspace of panels (matrix, details, history, …)
   // between one compact top bar and a status bar.
-  let { path, onExit }: { path: string; onExit: (error?: string) => void } = $props();
+  let { paths, onExit }: { paths: string[]; onExit: (error?: string) => void } = $props();
 
   const matrix = $derived(matrixControl.current);
 
   onMount(() => {
     let live = true;
-    app.load(path).catch((e) => live && onExit(`Analysis failed: ${String(e)}`));
+    app.load(paths).catch((e) => live && onExit(`Analysis failed: ${String(e)}`));
     return () => {
       live = false;
       app.reset();

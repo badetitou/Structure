@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adjacency, reach } from "./graph";
+import { adjacency, remoteLinks, reach, visibleEdges } from "./graph";
 
 const e = (from: string, to: string) => ({ from, to, weight: 1 });
 const edges = [e("a", "b"), e("b", "c"), e("d", "c"), e("x", "y")];
@@ -37,5 +37,33 @@ describe("reach", () => {
     const g = adjacency(es);
     expect(reach("c0", g, "forward").size).toBe(2 * n); // c1..cn and f0..f(n-1)
     expect(reach(`c${n}`, g, "backward").size).toBe(2 * n); // c0..c(n-1) and f*
+  });
+});
+
+describe("http links", () => {
+  const http = [{ from: "front", to: "back", weight: 3 }, { from: "front", to: "back2", weight: 1 }];
+  it("hover reach crosses http edges only while shown", () => {
+    const shown = adjacency(visibleEdges(edges, http, true));
+    expect([...reach("front", shown, "forward")].sort()).toEqual(["back", "back2"]);
+    expect([...reach("back", shown, "backward")]).toEqual(["front"]);
+    const hidden = adjacency(visibleEdges(edges, http, false));
+    expect(reach("front", hidden, "forward").size).toBe(0);
+  });
+  it("hover reach crosses rpc edges only while rpc is shown", () => {
+    const rpc = [{ from: "front", to: "srv", weight: 2 }];
+    const both = adjacency(visibleEdges(edges, http, true, rpc, true));
+    expect([...reach("front", both, "forward")].sort()).toEqual(["back", "back2", "srv"]);
+    const noRpc = adjacency(visibleEdges(edges, http, true, rpc, false));
+    expect([...reach("front", noRpc, "forward")].sort()).toEqual(["back", "back2"]);
+    const onlyRpc = adjacency(visibleEdges(edges, http, false, rpc, true));
+    expect([...reach("front", onlyRpc, "forward")]).toEqual(["srv"]);
+    expect(remoteLinks(rpc, ["srv"])).toEqual({ out: [], in: [{ other: "front", count: 2 }] });
+  });
+  it("lists a cell's outgoing and incoming links with counts", () => {
+    expect(remoteLinks(http, ["front"])).toEqual({
+      out: [{ other: "back", count: 3 }, { other: "back2", count: 1 }],
+      in: [],
+    });
+    expect(remoteLinks(http, ["back"])).toEqual({ out: [], in: [{ other: "front", count: 3 }] });
   });
 });

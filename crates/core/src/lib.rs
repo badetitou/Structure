@@ -1,8 +1,10 @@
 //! Structure core library: the analysis pipeline over the focused crates.
 //! The per-concern modules are re-exported here so consumers see one API.
 
+pub mod http_link;
 pub mod lang;
 pub mod pipeline;
+pub mod rpc_link;
 
 pub use structure_classify::{classify, matrix};
 pub use structure_git::{diff, impact};
