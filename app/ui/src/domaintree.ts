@@ -3,6 +3,8 @@
 import type { Cell, CellEdge, DomainNode, Impact, Matrix } from "./api";
 
 export const MAX_COLUMNS = 12;
+/** Flame view: columns are as wide as their size, so the tree opens much deeper. */
+export const FLAME_MAX_COLUMNS = 400;
 
 export interface Column {
   /** Leaf: the domain name. Group: `g:` + index path (`g:0/2`), unique even for same-label siblings. */

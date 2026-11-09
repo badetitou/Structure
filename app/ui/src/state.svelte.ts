@@ -111,9 +111,9 @@ export class AppState {
     this.clearDiff();
   }
 
-  toggleMode() {
-    this.mode = this.mode === "dense" ? "normal" : "dense";
-    saveMode(this.mode);
+  setMode(mode: Mode) {
+    this.mode = mode;
+    saveMode(mode);
   }
 
   /** Select a view cell (or none) and list its symbols. */

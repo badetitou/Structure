@@ -11,7 +11,7 @@
   import { untrack } from "svelte";
   import type { Matrix } from "../../api";
   import { defaultEdgeOpacity } from "../../cellstate";
-  import { aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded } from "../../domaintree";
+  import { FLAME_MAX_COLUMNS, aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded } from "../../domaintree";
   import { adjacency, reach } from "../../graph";
   import { BAND_DENSE, BAND_NORMAL, STROKE_DENSE, STROKE_NORMAL, layout } from "../../layout";
   import { app } from "../../state.svelte";
@@ -30,10 +30,16 @@
 
   // Collapsible columns along the domain tree (module domains), else one per domain.
   const tree = $derived(matrix.domain_tree && matrix.domain_tree.length > 0 ? matrix.domain_tree : undefined);
-  // A new matrix (the tree can differ between commits) starts from its default expansion.
-  let override = $state.raw<{ matrix: Matrix; set: Set<string> } | null>(null);
+  // A new matrix (the tree can differ between commits) or mode starts from its default
+  // expansion; the flame view opens the tree much deeper so the matrix grows sideways.
+  let override = $state.raw<{ matrix: Matrix; flame: boolean; set: Set<string> } | null>(null);
+  const flame = $derived(mode === "flame");
   const expanded = $derived(
-    override && override.matrix === matrix ? override.set : tree ? initialExpanded(tree) : new Set<string>(),
+    override && override.matrix === matrix && override.flame === flame
+      ? override.set
+      : tree
+        ? initialExpanded(tree, flame ? FLAME_MAX_COLUMNS : undefined)
+        : new Set<string>(),
   );
   const cols = $derived(tree ? columns(tree, expanded) : flatColumns(matrix.domains));
   const vm = $derived(aggregate(matrix, cols));
@@ -47,7 +53,7 @@
     ),
   );
   const bs = $derived(tree ? bands(tree, expanded) : []);
-  const bandH = $derived(lay.detailed ? BAND_NORMAL : BAND_DENSE);
+  const bandH = $derived(mode === "dense" ? BAND_DENSE : BAND_NORMAL);
   const top = $derived(bs.length ? (bs.reduce((d, b) => Math.max(d, b.depth), 0) + 1) * bandH : 0);
   const content = $derived({ w: lay.width, h: lay.height + top });
 
@@ -84,11 +90,19 @@
   const selTile = $derived(app.selected ? tileById.get(app.selected.id) : undefined);
   const selWidth = $derived((mode === "dense" ? STROKE_DENSE : STROKE_NORMAL)[1]);
 
+  // A mode switch can change the expansion (flame opens deeper): drop a selection whose cell left the view.
+  $effect(() => {
+    const ids = new Set(vm.cells.map((c) => c.id));
+    untrack(() => {
+      if (app.selected && !ids.has(app.selected.id)) app.selectCell(null);
+    });
+  });
+
   function setExpanded(key: string, on: boolean) {
     const set = new Set(expanded);
     if (on) set.add(key);
     else set.delete(key);
-    override = { matrix, set };
+    override = { matrix, flame, set };
     // Expand / collapse changes the cell ids: drop the selection and hover.
     app.selectCell(null);
   }
@@ -102,12 +116,12 @@
   const fitOf = (p: { w: number; h: number }) => fit(content.w, content.h, p.w, p.h);
   // The user's view, valid only for the matrix and mode it was set under; a new matrix or
   // mode falls back to the default view in the same render (expand / collapse keeps it).
-  // Dense mode starts at 1:1 pixels anchored top-left; Fit shows everything.
+  // Dense and flame modes start at 1:1 pixels anchored top-left; Fit shows everything.
   let userVb = $state.raw<{ vb: ViewBox; matrix: Matrix; mode: string } | null>(null);
   const vb = $derived(
     userVb && userVb.matrix === matrix && userVb.mode === mode
       ? userVb.vb
-      : mode === "dense"
+      : mode !== "normal"
         ? oneToOne(pane.w, pane.h)
         : fitOf(pane),
   );
