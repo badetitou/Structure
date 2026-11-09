@@ -197,6 +197,7 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
     Matrix {
         project: project.to_string(),
         language: graph.language,
+        projects: vec![],
         layers,
         domains,
         cells,

@@ -83,8 +83,12 @@ type Layer =
   | "persistence" | "model" | "util" | "unknown"; // matrix rows, top to bottom
 
 interface Matrix {
-  project: string;
-  language: Language;
+  project: string;   // several roots: the first root's name
+  language: Language; // several roots: the first root's language
+  // Present only with >= 2 roots (CLI `analyze a b`, `pipeline::analyze_many`):
+  // symbol ids are `<name>::<id>` and domains `<name>/<domain>`.
+  // `link_stats` of a merged analysis are the first root's.
+  projects?: { name: string; root: string; language: Language }[];
   layers: Layer[];   // only the layers present, in Layer order
   domains: string[];
   cells: Cell[];     // non-empty cells only, sorted by (layer, domain)
