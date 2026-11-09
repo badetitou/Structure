@@ -170,10 +170,13 @@ describe("AppState", () => {
     try {
       const s = new AppState();
       expect(s.mode).toBe("normal");
-      s.toggleMode();
+      s.setMode("dense");
       expect(s.mode).toBe("dense");
       expect(store.get("structure.matrix.mode")).toBe("dense");
-      s.toggleMode();
+      s.setMode("flame");
+      expect(s.mode).toBe("flame");
+      expect(store.get("structure.matrix.mode")).toBe("flame");
+      s.setMode("normal");
       expect(store.get("structure.matrix.mode")).toBe("normal");
     } finally {
       vi.unstubAllGlobals();
