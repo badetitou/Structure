@@ -711,6 +711,7 @@ mod tests {
             name_range: R,
             annotations: vec![],
             supertypes: vec![],
+            http: vec![],
             package: pkg.map(Into::into),
         }
     }
