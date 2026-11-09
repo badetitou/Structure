@@ -28,13 +28,20 @@ fn is_inject_http_client(v: Node, src: &str) -> bool {
             .is_some_and(|a| text(a, src) == "HttpClient")
 }
 
+/// True when the annotation's own type is `HttpClient` (also generic or in a union).
 fn mentions_http_client(n: Node, src: &str) -> bool {
-    if n.kind() == "type_identifier" && text(n, src) == "HttpClient" {
-        return true;
+    match n.kind() {
+        "type_identifier" => text(n, src) == "HttpClient",
+        "generic_type" => n
+            .child_by_field_name("name")
+            .is_some_and(|t| mentions_http_client(t, src)),
+        "type_annotation" | "parenthesized_type" | "union_type" => {
+            let mut c = n.walk();
+            n.named_children(&mut c)
+                .any(|ch| mentions_http_client(ch, src))
+        }
+        _ => false,
     }
-    let mut c = n.walk();
-    n.named_children(&mut c)
-        .any(|ch| mentions_http_client(ch, src))
 }
 
 /// Names of parameters, fields and variables under `n` that are typed
@@ -113,21 +120,32 @@ fn call_at(n: Node, src: &str, clients: &HashSet<String>) -> Option<HttpEndpoint
     match f.kind() {
         "identifier" => match text(f, src) {
             "fetch" => {
-                let verb = a.get(1).map_or(HttpVerb::Get, |o| object_method(*o, src));
+                let verb = object_method(a.get(1).copied(), src);
                 Some(HttpEndpoint { verb, path: url(0) })
             }
             "axios" => {
-                let first = a.first()?;
+                let first = *a.first()?;
                 if first.kind() == "object" {
-                    let path = prop(*first, "url", src).map_or("?".to_string(), |u| url_of(u, src));
+                    let path = prop(first, "url", src).map_or("?".to_string(), |u| url_of(u, src));
                     Some(HttpEndpoint {
-                        verb: object_method(*first, src),
+                        verb: object_method(Some(first), src),
                         path,
                     })
-                } else {
+                } else if a.len() > 1 {
+                    Some(HttpEndpoint {
+                        verb: object_method(a.get(1).copied(), src),
+                        path: url(0),
+                    })
+                } else if raw_url(first, src).is_some() {
                     Some(HttpEndpoint {
                         verb: HttpVerb::Get,
                         path: url(0),
+                    })
+                } else {
+                    // `axios(config)`: method unknown.
+                    Some(HttpEndpoint {
+                        verb: HttpVerb::Any,
+                        path: "?".to_string(),
                     })
                 }
             }
@@ -173,8 +191,25 @@ fn prop<'t>(obj: Node<'t>, key: &str, src: &str) -> Option<Node<'t>> {
     })
 }
 
-/// Verb of a `{ method: 'X' }` object: Get when absent, Any when not a literal.
-fn object_method(obj: Node, src: &str) -> HttpVerb {
+/// Verb of an options argument. Get only when it is absent or an object literal
+/// with no `method` key and no spread; Any when the method cannot be read.
+fn object_method(obj: Option<Node>, src: &str) -> HttpVerb {
+    let Some(obj) = obj else {
+        return HttpVerb::Get;
+    };
+    if obj.kind() != "object" {
+        return HttpVerb::Any;
+    }
+    let mut c = obj.walk();
+    for ch in obj.named_children(&mut c) {
+        match ch.kind() {
+            "spread_element" => return HttpVerb::Any,
+            "shorthand_property_identifier" if text(ch, src) == "method" => {
+                return HttpVerb::Any;
+            }
+            _ => {}
+        }
+    }
     match prop(obj, "method", src) {
         None => HttpVerb::Get,
         Some(m) => literal(m, src).map_or(HttpVerb::Any, |s| verb_of(&s)),

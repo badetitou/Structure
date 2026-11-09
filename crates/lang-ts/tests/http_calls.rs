@@ -165,3 +165,32 @@ fn angular_realworld_services() {
     assert!(has("ArticlesService.query", Get, "?"));
     assert_eq!(all.iter().filter(|(_, _, p)| *p == "?").count(), 1);
 }
+
+#[test]
+fn http_client_only_when_the_annotation_itself_is_http_client() {
+    let src = "class S { cache: Map<string, HttpClient>; clients: HttpClient[]; h: HttpClient | null;\n\
+      a() { this.cache.get('k'); this.clients.get('j'); }\n\
+      b() { this.h.get('/ok'); } }";
+    assert!(calls(src, "S.a").is_empty());
+    assert_eq!(calls(src, "S.b"), [p(Get, "/ok")]);
+}
+
+#[test]
+fn unreadable_method_is_any() {
+    let src = "function a() { fetch('/1', init); fetch('/2', { ...o }); fetch('/3', { method }); fetch('/4', { method: m }); fetch('/5', {}); }\n\
+      function b() { axios(config); axios('/6', { method: 'post' }); axios('/7', { ...o }); axios('/8'); }";
+    assert_eq!(
+        calls(src, "#a"),
+        [
+            p(Any, "/1"),
+            p(Any, "/2"),
+            p(Any, "/3"),
+            p(Any, "/4"),
+            p(Get, "/5")
+        ]
+    );
+    assert_eq!(
+        calls(src, "#b"),
+        [p(Any, "?"), p(Post, "/6"), p(Any, "/7"), p(Get, "/8")]
+    );
+}
