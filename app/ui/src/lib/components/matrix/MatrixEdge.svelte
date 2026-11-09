@@ -15,22 +15,28 @@
     to,
     hover,
     impact,
+    http = false,
   }: {
     edge: CellEdge;
     from: Tile;
     to: Tile;
     hover: Hover | null;
     impact: ImpactView | null;
+    /** Front-to-back HTTP link: dashed, own colour while not highlighted. */
+    http?: boolean;
   } = $props();
 
-  const st = $derived(edgeStyle(edgeKind(edge.from, edge.to, hover, impact), edge.weight));
+  const st = $derived(edgeStyle(edgeKind(edge.from, edge.to, hover, impact), edge.weight, http));
 </script>
 
-<path d={edgePath(from, to)} style:stroke={st.stroke} style:opacity={st.opacity} stroke-width={st.width} marker-end="url(#{st.marker})" />
+<path class:http d={edgePath(from, to)} style:stroke={st.stroke} style:opacity={st.opacity} stroke-width={st.width} marker-end="url(#{st.marker})" />
 
 <style>
   path {
     fill: none;
     pointer-events: none;
+  }
+  path.http {
+    stroke-dasharray: 6 4;
   }
 </style>

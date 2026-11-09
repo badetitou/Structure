@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MODE_KEY, loadMode, parseMode, saveMode } from "./mode";
+import { HTTP_KEY, MODE_KEY, loadMode, loadShowHttp, parseMode, parseShowHttp, saveMode, saveShowHttp } from "./mode";
 
 function memoryStorage() {
   const m = new Map<string, string>();
@@ -34,5 +34,27 @@ describe("matrix mode persistence", () => {
     vi.stubGlobal("localStorage", { getItem: boom, setItem: boom });
     expect(loadMode()).toBe("normal");
     expect(() => saveMode("dense")).not.toThrow();
+  });
+});
+
+describe("http links toggle persistence", () => {
+  it("is on unless stored as false", () => {
+    expect(parseShowHttp(null)).toBe(true);
+    expect(parseShowHttp("true")).toBe(true);
+    expect(parseShowHttp("false")).toBe(false);
+  });
+  it("round-trips through storage and survives blocked storage", () => {
+    const st = memoryStorage();
+    vi.stubGlobal("localStorage", st);
+    expect(loadShowHttp()).toBe(true);
+    saveShowHttp(false);
+    expect(st.getItem(HTTP_KEY)).toBe("false");
+    expect(loadShowHttp()).toBe(false);
+    const boom = () => {
+      throw new Error("blocked");
+    };
+    vi.stubGlobal("localStorage", { getItem: boom, setItem: boom });
+    expect(loadShowHttp()).toBe(true);
+    expect(() => saveShowHttp(false)).not.toThrow();
   });
 });

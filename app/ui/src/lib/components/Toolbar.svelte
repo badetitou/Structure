@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
+  import { Toggle } from "$lib/components/ui/toggle";
   import * as ToggleGroup from "$lib/components/ui/toggle-group";
   import { parseMode } from "../../mode";
   import * as Tooltip from "$lib/components/ui/tooltip";
@@ -53,6 +54,16 @@
     <ToggleGroup.Item value="dense" aria-label="Dense view" class="px-2">Dense</ToggleGroup.Item>
     <ToggleGroup.Item value="flame" aria-label="Flame view: deep domains, widths by size" class="px-2">Flame</ToggleGroup.Item>
   </ToggleGroup.Root>
+  {#if (app.matrix?.httpEdges.length ?? 0) > 0}
+    <Toggle
+      variant="outline"
+      size="sm"
+      class="px-2"
+      aria-label="Show front-to-back HTTP links"
+      pressed={app.showHttp}
+      onPressedChange={(v) => app.setShowHttp(v)}>HTTP links</Toggle
+    >
+  {/if}
   <Button variant="outline" size="sm" disabled={!app.impact || app.impactBusy} onclick={() => app.clearImpact()}>Clear</Button>
   <span class="text-destructive">{app.impactError}</span>
   <span class="flex items-center text-sm text-muted-foreground">

@@ -103,6 +103,8 @@ export interface ViewMatrix {
   columns: Column[];
   cells: ViewCell[];
   edges: CellEdge[];
+  /** HTTP links, re-mapped like `edges`. */
+  httpEdges: CellEdge[];
   /** Original cell id -> view cell id. */
   cellMap: Map<string, string>;
 }
@@ -126,17 +128,26 @@ export function aggregate(m: Matrix, cols: Column[]): ViewMatrix {
     v.size += c.size;
     v.members.push(c.id);
   }
-  const edges = new Map<string, CellEdge>();
-  for (const e of m.edges) {
-    const from = cellMap.get(e.from);
-    const to = cellMap.get(e.to);
-    if (from === undefined || to === undefined || from === to) continue;
-    const k = `${from}\u0000${to}`;
-    const prev = edges.get(k);
-    if (prev) prev.weight += e.weight;
-    else edges.set(k, { from, to, weight: e.weight });
-  }
-  return { columns: cols, cells: [...cells.values()], edges: [...edges.values()], cellMap };
+  const remap = (list: readonly CellEdge[]) => {
+    const edges = new Map<string, CellEdge>();
+    for (const e of list) {
+      const from = cellMap.get(e.from);
+      const to = cellMap.get(e.to);
+      if (from === undefined || to === undefined || from === to) continue;
+      const k = `${from}\u0000${to}`;
+      const prev = edges.get(k);
+      if (prev) prev.weight += e.weight;
+      else edges.set(k, { from, to, weight: e.weight });
+    }
+    return [...edges.values()];
+  };
+  return {
+    columns: cols,
+    cells: [...cells.values()],
+    edges: remap(m.edges),
+    httpEdges: remap(m.httpEdges),
+    cellMap,
+  };
 }
 
 /** Map impact cell ids onto view cells: changed if any leaf, min distance. */
