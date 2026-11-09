@@ -197,6 +197,7 @@ impl Ctx<'_> {
             name_range: rng(s.name_node),
             annotations: s.annotations,
             supertypes: s.supertypes,
+            http: vec![],
             package: self.package.clone(),
         });
     }

@@ -52,6 +52,28 @@ pub struct Symbol {
     pub supertypes: Vec<String>,
     /// Java package or TS file's directory path.
     pub package: Option<String>,
+    /// HTTP endpoints served by this symbol (Java methods: Spring, JAX-RS).
+    /// `path` is `?` when it is not a literal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub http: Vec<HttpEndpoint>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HttpVerb {
+    Get,
+    Post,
+    Put,
+    Delete,
+    Patch,
+    Any,
+}
+
+/// A `{verb, path}` pair; neutral so it can describe served endpoints and calls.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct HttpEndpoint {
+    pub verb: HttpVerb,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,6 +157,7 @@ mod tests {
             annotations: vec![],
             supertypes: vec![],
             package: None,
+            http: vec![],
         }
     }
 
