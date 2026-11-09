@@ -41,6 +41,11 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 - `scripts/` — fetch and index fixtures; `tests/golden/` — expected classifications.
 - `fixtures/` (gitignored) — sample projects. Tests needing them read env
   `STRUCTURE_FIXTURES` (default `<workspace>/fixtures`) and skip when absent.
+  The user clones new fixtures and runs their builds/indexers: auto mode refuses
+  agents that clone or build outside code, so briefs never ask for it.
+- JDKs: default 21. JDK 17 is the Homebrew keg
+  `/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`;
+  `/usr/libexec/java_home -v 17` wrongly returns JDK 27 here.
 
 ## Rules
 
@@ -50,6 +55,9 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 3. No `unsafe` without a `// SAFETY:` comment and the user's agreement.
 4. New dependencies only when asked or clearly justified; say why in the report.
 5. One change = one concern. Refactors go in their own change.
+6. A result with a target metric (link mapping ratio, golden accuracy) is
+   reported only once it meets the target; below it, keep improving or say
+   exactly what blocks it — no "still low, I'll keep you posted".
 
 ## Workflow
 
