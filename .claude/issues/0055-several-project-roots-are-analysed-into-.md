@@ -1,7 +1,7 @@
 ---
 id: 55
 title: Several project roots are analysed into one matrix
-status: done
+status: in-review
 parent: 54
 branch: 55-multi-root-analysis
 remote: null
@@ -15,16 +15,16 @@ prefix, so two projects could collide. `Graph.language` / `Matrix.language`
 and `Matrix.project` are singular (crates/ir/src/model.rs).
 
 ## Acceptance criteria
-- [ ] `structure analyze <path>...` accepts one or more roots; one root behaves
+- [x] `structure analyze <path>...` accepts one or more roots; one root behaves
   exactly as today (same JSON, goldens unchanged).
-- [ ] Each root is detected, indexed (SCIP cache per root) and classified with
+- [x] Each root is detected, indexed (SCIP cache per root) and classified with
   its own frontend and rules, then merged into one graph.
-- [ ] With several roots, symbol ids are prefixed by a project name (root dir
+- [x] With several roots, symbol ids are prefixed by a project name (root dir
   name, de-duplicated) so they cannot collide, and each cell's domain is
   qualified by its project (e.g. `front/article`), so front and back stay apart.
-- [ ] `Matrix` lists its projects (name, root, language); single-language
+- [x] `Matrix` lists its projects (name, root, language); single-language
   fields stay for compatibility or are documented as changed in `docs/api.md`.
-- [ ] Test: realworld pair analysed together gives the union of both cell sets.
+- [x] Test: realworld pair analysed together gives the union of both cell sets.
 
 ## Out of scope
 - HTTP extraction and links (#56–#58); app UI (#59); progress per project
