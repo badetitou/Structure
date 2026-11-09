@@ -55,6 +55,7 @@ const m: Matrix = {
     cell("ui", "a4", 2),
     cell("ui", "b", 1),
   ],
+  httpEdges: [],
   edges: [
     { from: "ui:a1", to: "ui:a2", weight: 5 },
     { from: "ui:a1", to: "model:a3", weight: 2 },

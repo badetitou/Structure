@@ -1,0 +1,1125 @@
+{
+  "project": "spring-boot-realworld-example-app",
+  "language": "java",
+  "projects": [
+    {
+      "name": "spring-boot-realworld-example-app",
+      "root": "/Users/benoit.verhaeghe/Documents/Perso/Structure/fixtures/spring-boot-realworld-example-app",
+      "language": "java"
+    },
+    {
+      "name": "angular-realworld",
+      "root": "/Users/benoit.verhaeghe/Documents/Perso/Structure/fixtures/angular-realworld",
+      "language": "typescript"
+    }
+  ],
+  "layers": [
+    "ui",
+    "api_client",
+    "entry",
+    "business",
+    "persistence",
+    "model",
+    "util",
+    "unknown"
+  ],
+  "domains": [
+    "angular-realworld/app",
+    "angular-realworld/article",
+    "angular-realworld/auth",
+    "angular-realworld/components",
+    "angular-realworld/conduitdebug",
+    "angular-realworld/initauth",
+    "angular-realworld/interceptors",
+    "angular-realworld/layout",
+    "angular-realworld/models",
+    "angular-realworld/pipes",
+    "angular-realworld/profile",
+    "angular-realworld/requireauth",
+    "angular-realworld/settings",
+    "angular-realworld/setupdebuginterface",
+    "spring-boot-realworld-example-app/article",
+    "spring-boot-realworld-example-app/articledata",
+    "spring-boot-realworld-example-app/articledatalist",
+    "spring-boot-realworld-example-app/articlefavorite",
+    "spring-boot-realworld-example-app/articlefavoritecount",
+    "spring-boot-realworld-example-app/authenticationexception",
+    "spring-boot-realworld-example-app/authorization",
+    "spring-boot-realworld-example-app/comment",
+    "spring-boot-realworld-example-app/commentdata",
+    "spring-boot-realworld-example-app/config",
+    "spring-boot-realworld-example-app/currentuser",
+    "spring-boot-realworld-example-app/cursorpageparameter",
+    "spring-boot-realworld-example-app/cursorpager",
+    "spring-boot-realworld-example-app/customizeexceptionhandler",
+    "spring-boot-realworld-example-app/datetimecursor",
+    "spring-boot-realworld-example-app/datetimehandler",
+    "spring-boot-realworld-example-app/duplicatedarticleconstraint",
+    "spring-boot-realworld-example-app/duplicatedarticlevalidator",
+    "spring-boot-realworld-example-app/duplicatedemailconstraint",
+    "spring-boot-realworld-example-app/duplicatedemailvalidator",
+    "spring-boot-realworld-example-app/duplicatedusernameconstraint",
+    "spring-boot-realworld-example-app/duplicatedusernamevalidator",
+    "spring-boot-realworld-example-app/errorresource",
+    "spring-boot-realworld-example-app/errorresourceserializer",
+    "spring-boot-realworld-example-app/fielderrorresource",
+    "spring-boot-realworld-example-app/followrelation",
+    "spring-boot-realworld-example-app/graphqlcustomizeexceptionhandler",
+    "spring-boot-realworld-example-app/invalidauthenticationexception",
+    "spring-boot-realworld-example-app/invalidrequestexception",
+    "spring-boot-realworld-example-app/jacksoncustomization",
+    "spring-boot-realworld-example-app/jwt",
+    "spring-boot-realworld-example-app/jwttokenfilter",
+    "spring-boot-realworld-example-app/loginparam",
+    "spring-boot-realworld-example-app/me",
+    "spring-boot-realworld-example-app/newarticleparam",
+    "spring-boot-realworld-example-app/newcommentparam",
+    "spring-boot-realworld-example-app/noauthorizationexception",
+    "spring-boot-realworld-example-app/node",
+    "spring-boot-realworld-example-app/page",
+    "spring-boot-realworld-example-app/pagecursor",
+    "spring-boot-realworld-example-app/profile",
+    "spring-boot-realworld-example-app/profiledata",
+    "spring-boot-realworld-example-app/realworldapplication",
+    "spring-boot-realworld-example-app/registerparam",
+    "spring-boot-realworld-example-app/relation",
+    "spring-boot-realworld-example-app/resourcenotfoundexception",
+    "spring-boot-realworld-example-app/securityutil",
+    "spring-boot-realworld-example-app/tag",
+    "spring-boot-realworld-example-app/updatearticleparam",
+    "spring-boot-realworld-example-app/updateusercommand",
+    "spring-boot-realworld-example-app/updateuserconstraint",
+    "spring-boot-realworld-example-app/updateuserparam",
+    "spring-boot-realworld-example-app/updateuservalidator",
+    "spring-boot-realworld-example-app/user",
+    "spring-boot-realworld-example-app/userdata",
+    "spring-boot-realworld-example-app/userrelationship",
+    "spring-boot-realworld-example-app/userwithtoken",
+    "spring-boot-realworld-example-app/util",
+    "spring-boot-realworld-example-app/websecurityconfig"
+  ],
+  "cells": [
+    {
+      "id": "ui:angular-realworld/app",
+      "layer": "ui",
+      "domain": "angular-realworld/app",
+      "size": 1
+    },
+    {
+      "id": "ui:angular-realworld/article",
+      "layer": "ui",
+      "domain": "angular-realworld/article",
+      "size": 8
+    },
+    {
+      "id": "ui:angular-realworld/auth",
+      "layer": "ui",
+      "domain": "angular-realworld/auth",
+      "size": 1
+    },
+    {
+      "id": "ui:angular-realworld/components",
+      "layer": "ui",
+      "domain": "angular-realworld/components",
+      "size": 1
+    },
+    {
+      "id": "ui:angular-realworld/layout",
+      "layer": "ui",
+      "domain": "angular-realworld/layout",
+      "size": 2
+    },
+    {
+      "id": "ui:angular-realworld/profile",
+      "layer": "ui",
+      "domain": "angular-realworld/profile",
+      "size": 4
+    },
+    {
+      "id": "ui:angular-realworld/settings",
+      "layer": "ui",
+      "domain": "angular-realworld/settings",
+      "size": 1
+    },
+    {
+      "id": "api_client:angular-realworld/article",
+      "layer": "api_client",
+      "domain": "angular-realworld/article",
+      "size": 3
+    },
+    {
+      "id": "api_client:angular-realworld/auth",
+      "layer": "api_client",
+      "domain": "angular-realworld/auth",
+      "size": 1
+    },
+    {
+      "id": "api_client:angular-realworld/profile",
+      "layer": "api_client",
+      "domain": "angular-realworld/profile",
+      "size": 1
+    },
+    {
+      "id": "entry:spring-boot-realworld-example-app/article",
+      "layer": "entry",
+      "domain": "spring-boot-realworld-example-app/article",
+      "size": 4
+    },
+    {
+      "id": "entry:spring-boot-realworld-example-app/articlefavorite",
+      "layer": "entry",
+      "domain": "spring-boot-realworld-example-app/articlefavorite",
+      "size": 1
+    },
+    {
+      "id": "entry:spring-boot-realworld-example-app/comment",
+      "layer": "entry",
+      "domain": "spring-boot-realworld-example-app/comment",
+      "size": 3
+    },
+    {
+      "id": "entry:spring-boot-realworld-example-app/currentuser",
+      "layer": "entry",
+      "domain": "spring-boot-realworld-example-app/currentuser",
+      "size": 1
+    },
+    {
+      "id": "entry:spring-boot-realworld-example-app/me",
+      "layer": "entry",
+      "domain": "spring-boot-realworld-example-app/me",
+      "size": 1
+    },
+    {
+      "id": "entry:spring-boot-realworld-example-app/profile",
+      "layer": "entry",
+      "domain": "spring-boot-realworld-example-app/profile",
+      "size": 2
+    },
+    {
+      "id": "entry:spring-boot-realworld-example-app/relation",
+      "layer": "entry",
+      "domain": "spring-boot-realworld-example-app/relation",
+      "size": 1
+    },
+    {
+      "id": "entry:spring-boot-realworld-example-app/tag",
+      "layer": "entry",
+      "domain": "spring-boot-realworld-example-app/tag",
+      "size": 2
+    },
+    {
+      "id": "entry:spring-boot-realworld-example-app/user",
+      "layer": "entry",
+      "domain": "spring-boot-realworld-example-app/user",
+      "size": 2
+    },
+    {
+      "id": "business:angular-realworld/auth",
+      "layer": "business",
+      "domain": "angular-realworld/auth",
+      "size": 1
+    },
+    {
+      "id": "business:spring-boot-realworld-example-app/article",
+      "layer": "business",
+      "domain": "spring-boot-realworld-example-app/article",
+      "size": 2
+    },
+    {
+      "id": "business:spring-boot-realworld-example-app/authorization",
+      "layer": "business",
+      "domain": "spring-boot-realworld-example-app/authorization",
+      "size": 1
+    },
+    {
+      "id": "business:spring-boot-realworld-example-app/comment",
+      "layer": "business",
+      "domain": "spring-boot-realworld-example-app/comment",
+      "size": 1
+    },
+    {
+      "id": "business:spring-boot-realworld-example-app/jwt",
+      "layer": "business",
+      "domain": "spring-boot-realworld-example-app/jwt",
+      "size": 2
+    },
+    {
+      "id": "business:spring-boot-realworld-example-app/tag",
+      "layer": "business",
+      "domain": "spring-boot-realworld-example-app/tag",
+      "size": 1
+    },
+    {
+      "id": "business:spring-boot-realworld-example-app/user",
+      "layer": "business",
+      "domain": "spring-boot-realworld-example-app/user",
+      "size": 2
+    },
+    {
+      "id": "persistence:spring-boot-realworld-example-app/article",
+      "layer": "persistence",
+      "domain": "spring-boot-realworld-example-app/article",
+      "size": 4
+    },
+    {
+      "id": "persistence:spring-boot-realworld-example-app/articlefavorite",
+      "layer": "persistence",
+      "domain": "spring-boot-realworld-example-app/articlefavorite",
+      "size": 4
+    },
+    {
+      "id": "persistence:spring-boot-realworld-example-app/comment",
+      "layer": "persistence",
+      "domain": "spring-boot-realworld-example-app/comment",
+      "size": 4
+    },
+    {
+      "id": "persistence:spring-boot-realworld-example-app/tag",
+      "layer": "persistence",
+      "domain": "spring-boot-realworld-example-app/tag",
+      "size": 1
+    },
+    {
+      "id": "persistence:spring-boot-realworld-example-app/user",
+      "layer": "persistence",
+      "domain": "spring-boot-realworld-example-app/user",
+      "size": 4
+    },
+    {
+      "id": "persistence:spring-boot-realworld-example-app/userrelationship",
+      "layer": "persistence",
+      "domain": "spring-boot-realworld-example-app/userrelationship",
+      "size": 1
+    },
+    {
+      "id": "model:angular-realworld/article",
+      "layer": "model",
+      "domain": "angular-realworld/article",
+      "size": 3
+    },
+    {
+      "id": "model:angular-realworld/auth",
+      "layer": "model",
+      "domain": "angular-realworld/auth",
+      "size": 1
+    },
+    {
+      "id": "model:angular-realworld/models",
+      "layer": "model",
+      "domain": "angular-realworld/models",
+      "size": 2
+    },
+    {
+      "id": "model:angular-realworld/profile",
+      "layer": "model",
+      "domain": "angular-realworld/profile",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/article",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/article",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/articledata",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/articledata",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/articledatalist",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/articledatalist",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/articlefavorite",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/articlefavorite",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/articlefavoritecount",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/articlefavoritecount",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/authenticationexception",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/authenticationexception",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/comment",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/comment",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/commentdata",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/commentdata",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/cursorpageparameter",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/cursorpageparameter",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/datetimehandler",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/datetimehandler",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/duplicatedarticlevalidator",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/duplicatedarticlevalidator",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/duplicatedemailvalidator",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/duplicatedemailvalidator",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/duplicatedusernamevalidator",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/duplicatedusernamevalidator",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/errorresource",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/errorresource",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/fielderrorresource",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/fielderrorresource",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/followrelation",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/followrelation",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/invalidauthenticationexception",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/invalidauthenticationexception",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/invalidrequestexception",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/invalidrequestexception",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/loginparam",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/loginparam",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/newarticleparam",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/newarticleparam",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/newcommentparam",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/newcommentparam",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/noauthorizationexception",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/noauthorizationexception",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/page",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/page",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/pagecursor",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/pagecursor",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/profiledata",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/profiledata",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/registerparam",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/registerparam",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/resourcenotfoundexception",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/resourcenotfoundexception",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/securityutil",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/securityutil",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/tag",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/tag",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/updatearticleparam",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/updatearticleparam",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/updateusercommand",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/updateusercommand",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/updateuserparam",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/updateuserparam",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/updateuservalidator",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/updateuservalidator",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/user",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/user",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/userdata",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/userdata",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/userwithtoken",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/userwithtoken",
+      "size": 1
+    },
+    {
+      "id": "model:spring-boot-realworld-example-app/util",
+      "layer": "model",
+      "domain": "spring-boot-realworld-example-app/util",
+      "size": 1
+    },
+    {
+      "id": "util:angular-realworld/auth",
+      "layer": "util",
+      "domain": "angular-realworld/auth",
+      "size": 1
+    },
+    {
+      "id": "util:angular-realworld/interceptors",
+      "layer": "util",
+      "domain": "angular-realworld/interceptors",
+      "size": 3
+    },
+    {
+      "id": "util:angular-realworld/pipes",
+      "layer": "util",
+      "domain": "angular-realworld/pipes",
+      "size": 2
+    },
+    {
+      "id": "util:spring-boot-realworld-example-app/config",
+      "layer": "util",
+      "domain": "spring-boot-realworld-example-app/config",
+      "size": 1
+    },
+    {
+      "id": "util:spring-boot-realworld-example-app/graphqlcustomizeexceptionhandler",
+      "layer": "util",
+      "domain": "spring-boot-realworld-example-app/graphqlcustomizeexceptionhandler",
+      "size": 1
+    },
+    {
+      "id": "util:spring-boot-realworld-example-app/jacksoncustomization",
+      "layer": "util",
+      "domain": "spring-boot-realworld-example-app/jacksoncustomization",
+      "size": 1
+    },
+    {
+      "id": "util:spring-boot-realworld-example-app/profile",
+      "layer": "util",
+      "domain": "spring-boot-realworld-example-app/profile",
+      "size": 1
+    },
+    {
+      "id": "util:spring-boot-realworld-example-app/websecurityconfig",
+      "layer": "util",
+      "domain": "spring-boot-realworld-example-app/websecurityconfig",
+      "size": 1
+    },
+    {
+      "id": "unknown:angular-realworld/article",
+      "layer": "unknown",
+      "domain": "angular-realworld/article",
+      "size": 1
+    },
+    {
+      "id": "unknown:angular-realworld/auth",
+      "layer": "unknown",
+      "domain": "angular-realworld/auth",
+      "size": 2
+    },
+    {
+      "id": "unknown:angular-realworld/conduitdebug",
+      "layer": "unknown",
+      "domain": "angular-realworld/conduitdebug",
+      "size": 1
+    },
+    {
+      "id": "unknown:angular-realworld/initauth",
+      "layer": "unknown",
+      "domain": "angular-realworld/initauth",
+      "size": 1
+    },
+    {
+      "id": "unknown:angular-realworld/requireauth",
+      "layer": "unknown",
+      "domain": "angular-realworld/requireauth",
+      "size": 1
+    },
+    {
+      "id": "unknown:angular-realworld/settings",
+      "layer": "unknown",
+      "domain": "angular-realworld/settings",
+      "size": 1
+    },
+    {
+      "id": "unknown:angular-realworld/setupdebuginterface",
+      "layer": "unknown",
+      "domain": "angular-realworld/setupdebuginterface",
+      "size": 1
+    },
+    {
+      "id": "unknown:spring-boot-realworld-example-app/cursorpager",
+      "layer": "unknown",
+      "domain": "spring-boot-realworld-example-app/cursorpager",
+      "size": 1
+    },
+    {
+      "id": "unknown:spring-boot-realworld-example-app/customizeexceptionhandler",
+      "layer": "unknown",
+      "domain": "spring-boot-realworld-example-app/customizeexceptionhandler",
+      "size": 1
+    },
+    {
+      "id": "unknown:spring-boot-realworld-example-app/datetimecursor",
+      "layer": "unknown",
+      "domain": "spring-boot-realworld-example-app/datetimecursor",
+      "size": 1
+    },
+    {
+      "id": "unknown:spring-boot-realworld-example-app/duplicatedarticleconstraint",
+      "layer": "unknown",
+      "domain": "spring-boot-realworld-example-app/duplicatedarticleconstraint",
+      "size": 1
+    },
+    {
+      "id": "unknown:spring-boot-realworld-example-app/duplicatedemailconstraint",
+      "layer": "unknown",
+      "domain": "spring-boot-realworld-example-app/duplicatedemailconstraint",
+      "size": 1
+    },
+    {
+      "id": "unknown:spring-boot-realworld-example-app/duplicatedusernameconstraint",
+      "layer": "unknown",
+      "domain": "spring-boot-realworld-example-app/duplicatedusernameconstraint",
+      "size": 1
+    },
+    {
+      "id": "unknown:spring-boot-realworld-example-app/errorresourceserializer",
+      "layer": "unknown",
+      "domain": "spring-boot-realworld-example-app/errorresourceserializer",
+      "size": 1
+    },
+    {
+      "id": "unknown:spring-boot-realworld-example-app/jwttokenfilter",
+      "layer": "unknown",
+      "domain": "spring-boot-realworld-example-app/jwttokenfilter",
+      "size": 1
+    },
+    {
+      "id": "unknown:spring-boot-realworld-example-app/node",
+      "layer": "unknown",
+      "domain": "spring-boot-realworld-example-app/node",
+      "size": 1
+    },
+    {
+      "id": "unknown:spring-boot-realworld-example-app/realworldapplication",
+      "layer": "unknown",
+      "domain": "spring-boot-realworld-example-app/realworldapplication",
+      "size": 1
+    },
+    {
+      "id": "unknown:spring-boot-realworld-example-app/updateuserconstraint",
+      "layer": "unknown",
+      "domain": "spring-boot-realworld-example-app/updateuserconstraint",
+      "size": 1
+    }
+  ],
+  "edges": [
+    {
+      "from": 1,
+      "targets": [
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          5
+        ],
+        [
+          32,
+          4
+        ]
+      ]
+    },
+    {
+      "from": 2,
+      "targets": [
+        [
+          8,
+          1
+        ],
+        [
+          82,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 4,
+      "targets": [
+        [
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 5,
+      "targets": [
+        [
+          8,
+          2
+        ],
+        [
+          9,
+          4
+        ],
+        [
+          35,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 6,
+      "targets": [
+        [
+          8,
+          1
+        ],
+        [
+          33,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 8,
+      "targets": [
+        [
+          19,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 10,
+      "targets": [
+        [
+          20,
+          6
+        ],
+        [
+          26,
+          2
+        ],
+        [
+          27,
+          1
+        ],
+        [
+          30,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 11,
+      "targets": [
+        [
+          20,
+          1
+        ],
+        [
+          26,
+          1
+        ],
+        [
+          27,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 12,
+      "targets": [
+        [
+          22,
+          3
+        ],
+        [
+          26,
+          2
+        ],
+        [
+          28,
+          2
+        ]
+      ]
+    },
+    {
+      "from": 13,
+      "targets": [
+        [
+          25,
+          2
+        ]
+      ]
+    },
+    {
+      "from": 14,
+      "targets": [
+        [
+          23,
+          1
+        ],
+        [
+          25,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 15,
+      "targets": [
+        [
+          30,
+          1
+        ],
+        [
+          79,
+          2
+        ]
+      ]
+    },
+    {
+      "from": 16,
+      "targets": [
+        [
+          30,
+          1
+        ],
+        [
+          79,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 17,
+      "targets": [
+        [
+          24,
+          2
+        ]
+      ]
+    },
+    {
+      "from": 18,
+      "targets": [
+        [
+          23,
+          1
+        ],
+        [
+          25,
+          3
+        ],
+        [
+          30,
+          2
+        ]
+      ]
+    },
+    {
+      "from": 20,
+      "targets": [
+        [
+          26,
+          2
+        ],
+        [
+          27,
+          1
+        ],
+        [
+          31,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 22,
+      "targets": [
+        [
+          28,
+          1
+        ],
+        [
+          31,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 24,
+      "targets": [
+        [
+          29,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 25,
+      "targets": [
+        [
+          30,
+          2
+        ]
+      ]
+    },
+    {
+      "from": 37,
+      "targets": [
+        [
+          60,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 43,
+      "targets": [
+        [
+          60,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 44,
+      "targets": [
+        [
+          88,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 46,
+      "targets": [
+        [
+          20,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 47,
+      "targets": [
+        [
+          30,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 48,
+      "targets": [
+        [
+          30,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 66,
+      "targets": [
+        [
+          67,
+          1
+        ],
+        [
+          69,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 68,
+      "targets": [
+        [
+          30,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 71,
+      "targets": [
+        [
+          70,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 73,
+      "targets": [
+        [
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 79,
+      "targets": [
+        [
+          30,
+          1
+        ],
+        [
+          31,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 95,
+      "targets": [
+        [
+          23,
+          1
+        ],
+        [
+          30,
+          1
+        ]
+      ]
+    }
+  ],
+  "http_edges": [
+    {
+      "from": 7,
+      "targets": [
+        [
+          10,
+          4
+        ],
+        [
+          11,
+          2
+        ],
+        [
+          12,
+          3
+        ],
+        [
+          17,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 8,
+      "targets": [
+        [
+          13,
+          2
+        ],
+        [
+          18,
+          2
+        ]
+      ]
+    },
+    {
+      "from": 9,
+      "targets": [
+        [
+          15,
+          3
+        ]
+      ]
+    }
+  ],
+  "stats": {
+    "files": 132,
+    "symbols": 731,
+    "edges": 171,
+    "elapsed_ms": 46
+  }
+}

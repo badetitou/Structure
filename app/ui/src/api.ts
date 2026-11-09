@@ -58,7 +58,11 @@ export interface DomainNode {
   children: DomainNode[];
 }
 /** Matrix as sent by the backend (docs/api.md). */
-export type WireMatrix = Omit<Matrix, "edges"> & { edges: EdgeGroup[] };
+export type WireMatrix = Omit<Matrix, "edges" | "httpEdges"> & {
+  edges: EdgeGroup[];
+  /** Same wire form as `edges`; present only for several folders, when non-empty. */
+  http_edges?: EdgeGroup[];
+};
 export interface ProjectInfo {
   name: string;
   root: string;
@@ -75,8 +79,8 @@ export interface Matrix {
   domain_tree?: DomainNode[];
   cells: Cell[];
   edges: CellEdge[];
-  /** Wire form (not expanded); present only for several folders, when non-empty. Not drawn yet (#60). */
-  http_edges?: EdgeGroup[];
+  /** Front-to-back HTTP links (api client cell -> handler cell); empty unless several folders were analysed. */
+  httpEdges: CellEdge[];
   stats: Stats;
   /** Id of the cached analysis (pass to `cellSymbols`); set by the app. */
   generation?: number;
@@ -197,7 +201,8 @@ export async function analyze(
       onProgress({ step, pct });
       await sleep(250);
     }
-    return expandMatrix(await fetchSample<WireMatrix>("matrix"));
+    const name = new URLSearchParams(location.search).get("sample");
+    return expandMatrix(await fetchSample<WireMatrix>(name && /^[\w-]+$/.test(name) ? name : "matrix"));
   }
   const unlisten = await listen<Progress>("analysis-progress", (e) =>
     onProgress(e.payload),

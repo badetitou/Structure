@@ -22,3 +22,26 @@ export function saveMode(mode: Mode) {
     // storage unavailable: the choice just is not persisted
   }
 }
+
+export const HTTP_KEY = "structure.httpEdges";
+
+/** Stored value -> toggle; on unless explicitly "false". */
+export function parseShowHttp(raw: string | null): boolean {
+  return raw !== "false";
+}
+
+export function loadShowHttp(): boolean {
+  try {
+    return parseShowHttp(localStorage.getItem(HTTP_KEY));
+  } catch {
+    return true;
+  }
+}
+
+export function saveShowHttp(on: boolean) {
+  try {
+    localStorage.setItem(HTTP_KEY, String(on));
+  } catch {
+    // storage unavailable: the choice just is not persisted
+  }
+}

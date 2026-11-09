@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adjacency, reach } from "./graph";
+import { adjacency, httpLinks, reach, visibleEdges } from "./graph";
 
 const e = (from: string, to: string) => ({ from, to, weight: 1 });
 const edges = [e("a", "b"), e("b", "c"), e("d", "c"), e("x", "y")];
@@ -37,5 +37,23 @@ describe("reach", () => {
     const g = adjacency(es);
     expect(reach("c0", g, "forward").size).toBe(2 * n); // c1..cn and f0..f(n-1)
     expect(reach(`c${n}`, g, "backward").size).toBe(2 * n); // c0..c(n-1) and f*
+  });
+});
+
+describe("http links", () => {
+  const http = [{ from: "front", to: "back", weight: 3 }, { from: "front", to: "back2", weight: 1 }];
+  it("hover reach crosses http edges only while shown", () => {
+    const shown = adjacency(visibleEdges(edges, http, true));
+    expect([...reach("front", shown, "forward")].sort()).toEqual(["back", "back2"]);
+    expect([...reach("back", shown, "backward")]).toEqual(["front"]);
+    const hidden = adjacency(visibleEdges(edges, http, false));
+    expect(reach("front", hidden, "forward").size).toBe(0);
+  });
+  it("lists a cell's outgoing and incoming links with counts", () => {
+    expect(httpLinks(http, ["front"])).toEqual({
+      out: [{ other: "back", count: 3 }, { other: "back2", count: 1 }],
+      in: [],
+    });
+    expect(httpLinks(http, ["back"])).toEqual({ out: [], in: [{ other: "front", count: 3 }] });
   });
 });
