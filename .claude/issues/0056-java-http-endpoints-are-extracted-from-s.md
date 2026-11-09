@@ -13,16 +13,16 @@ lang-java keeps annotation simple names only (crates/lang-java/src/lib.rs
 `annotations_of`), so `@GetMapping("/x")` loses its path.
 
 ## Acceptance criteria
-- [ ] Java methods expose HTTP endpoints `{verb, path}`: Spring
+- [x] Java methods expose HTTP endpoints `{verb, path}`: Spring
   `@GetMapping/@PostMapping/@PutMapping/@DeleteMapping/@PatchMapping`,
   `@RequestMapping(method=...)`; `value`/`path` attribute or positional value;
   arrays give several endpoints; class-level `@RequestMapping` prefix joined.
-- [ ] JAX-RS `@Path` (class + method) with `@GET/@POST/...`.
-- [ ] Path variables normalised (`{slug}` kept as a placeholder); constants
+- [x] JAX-RS `@Path` (class + method) with `@GET/@POST/...`.
+- [x] Path variables normalised (`{slug}` kept as a placeholder); constants
   not resolvable from literals are reported as unknown, not guessed.
-- [ ] Stored in the IR (e.g. `Symbol.http_endpoints`), serde default empty
+- [x] Stored in the IR (e.g. `Symbol.http_endpoints`), serde default empty
   so existing JSON is unchanged when there are none.
-- [ ] Unit tests + realworld-java: every controller method has an endpoint.
+- [x] Unit tests + realworld-java: every controller method has an endpoint.
 
 ## Out of scope
 - `server.servlet.context-path` / properties files (note as a known limit).
@@ -49,3 +49,7 @@ Done: unit tests (Spring class prefix + method, arrays, RequestMethod, JAX-RS, c
 a fixture test that every `@RestController` method in realworld-java has ≥ 1 endpoint; goldens unchanged.
 Rules: no unwrap/expect outside tests; no new deps; don't touch pipeline/multi-root (#55 runs in parallel and also edits crates/ir — keep IR edits small and additive).
 Fixtures are already cloned and indexed by the user — never clone or build them.
+
+## Known limits
+- `server.servlet.context-path` and properties files are not read.
+- Class prefix comes only from the type's own annotation (not a superclass/interface).
