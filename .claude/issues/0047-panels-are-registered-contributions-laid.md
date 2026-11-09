@@ -1,15 +1,17 @@
 ---
-id: 45
+id: 47
 title: Panels are registered contributions laid out in a resizable split tree
-status: in-review
-parent: 44
+status: done
+parent: 46
 branch: 45-tiling-panels
 remote: null
 created: 2026-11-09
 ---
 ## Context
 
-Part of #44. Today `AnalysisScreen.svelte` hard-codes
+Merged in 1ed0a97; commit 46aefbf refers to it as #45 (renumbered: the id was taken on main).
+
+Part of #46. Today `AnalysisScreen.svelte` hard-codes
 `SidePanel(History) | MatrixView | SidePanel(Details)`.
 
 ## Acceptance criteria
@@ -28,4 +30,4 @@ Part of #44. Today `AnalysisScreen.svelte` hard-codes
 - [x] `SidePanel.svelte` and `panels.ts` are removed; `npm test`, `npm run build` pass.
 
 ## Out of scope
-- Changing the tree from the UI (split, move, close): #46.
+- Changing the tree from the UI (split, move, close): #48.
