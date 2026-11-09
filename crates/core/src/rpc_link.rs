@@ -16,6 +16,10 @@ pub struct RpcLinkStats {
     pub unresolved_service: usize,
     /// Calls to a known service with no implementation, or none having the method.
     pub no_impl: usize,
+    /// Calls on a service nothing says exists (`Foo.Util.getInstance()` with no
+    /// `FooAsync` type, no `RemoteService` Foo in the graph): not RPC as far as
+    /// we know, left out of every other counter.
+    pub maybe_rpc: usize,
     /// Calls not linked, as "caller -> Service#method(arity)".
     pub unmatched: Vec<String>,
 }
@@ -62,9 +66,31 @@ impl<'g> Index<'g> {
             .collect()
     }
 
+    /// Whether the interface extends `RemoteService`, through parsed interfaces.
+    fn is_remote(&self, id: &str) -> bool {
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut todo: Vec<&str> = vec![id];
+        while let Some(t) = todo.pop() {
+            if !seen.insert(t) {
+                continue;
+            }
+            if self
+                .by_id
+                .get(t)
+                .is_some_and(|s| s.supertypes.iter().any(|x| x == "RemoteService"))
+            {
+                return true;
+            }
+            todo.extend(self.supers.get(t).into_iter().flatten());
+        }
+        false
+    }
+
     /// Classes implementing any of `ifaces`, transitively, plus classes whose
-    /// unresolved supertype is named like the service (interface in another
-    /// project, or in a library).
+    /// unresolved supertype is named like the service. That fallback is for an
+    /// interface living in another project (or a library): it never applies to
+    /// a class of the same project as a found interface, where an unresolved
+    /// supertype of that name is some other type.
     fn implementations(
         &self,
         graph: &'g Graph,
@@ -87,6 +113,8 @@ impl<'g> Index<'g> {
             }
             todo.extend(self.subs.get(t).into_iter().flatten());
         }
+        let project = |id: &str| id.split_once("::").map(|(p, _)| p.to_string());
+        let projects: Vec<Option<String>> = ifaces.iter().map(|i| project(i)).collect();
         let simple = service.rsplit("::").next().unwrap_or(service);
         let simple = simple.rsplit(['.', '$']).next().unwrap_or(simple);
         for s in graph
@@ -100,7 +128,8 @@ impl<'g> Index<'g> {
                 .into_iter()
                 .flatten()
                 .any(|t| self.by_id.get(t).is_some_and(|x| x.name == simple));
-            if !resolved {
+            let same_project = projects.contains(&project(&s.id));
+            if !resolved && (!same_project || ifaces.is_empty()) {
                 out.insert(s.id.as_str());
             }
         }
@@ -142,17 +171,30 @@ pub fn link_rpc(graph: &Graph) -> (Vec<Edge>, RpcLinkStats) {
         return (vec![], stats);
     }
     let idx = Index::new(graph);
-    // service -> (interface found, implementations)
-    let mut services: HashMap<&str, (bool, BTreeSet<&str>)> = HashMap::new();
+    // (service, maybe) -> (interface found, implementations)
+    let mut services: HashMap<(&str, bool), (bool, BTreeSet<&str>)> = HashMap::new();
     let mut pairs: BTreeSet<(&str, &str)> = BTreeSet::new();
     for caller in &graph.symbols {
         for call in &caller.rpc_calls {
+            let (found, impls) = services
+                .entry((call.service.as_str(), call.maybe))
+                .or_insert_with(|| {
+                    let mut ifaces = idx.interfaces(graph, &call.service);
+                    if call.maybe {
+                        ifaces.retain(|i| idx.is_remote(i));
+                    }
+                    let impls = if call.maybe && ifaces.is_empty() {
+                        BTreeSet::new()
+                    } else {
+                        idx.implementations(graph, &ifaces, &call.service)
+                    };
+                    (!ifaces.is_empty(), impls)
+                });
+            if call.maybe && !*found {
+                stats.maybe_rpc += 1;
+                continue;
+            }
             stats.calls += 1;
-            let (found, impls) = services.entry(call.service.as_str()).or_insert_with(|| {
-                let ifaces = idx.interfaces(graph, &call.service);
-                let impls = idx.implementations(graph, &ifaces, &call.service);
-                (!ifaces.is_empty(), impls)
-            });
             let mut targets: BTreeSet<&str> = BTreeSet::new();
             for c in impls.iter() {
                 let t = call
@@ -223,6 +265,7 @@ mod tests {
             service: service.into(),
             method: method.into(),
             arity,
+            maybe: false,
         }
     }
 
@@ -365,6 +408,50 @@ mod tests {
         let (e, s) = link_rpc(&g);
         assert_eq!(pairs(&e), [("web::cl", "srv::q.Impl#go(1)")]);
         assert_eq!(s.linked, 1);
+    }
+
+    #[test]
+    fn same_simple_name_fallback_skips_unrelated_types_of_the_project() {
+        // `p.X` is found; `o.Other` implements some other `X` (unresolved,
+        // same project) and must not become an implementation.
+        let mut other = sym("o.Other", SymbolKind::Class, None);
+        other.supertypes = vec!["X".into()];
+        let mut syms = base();
+        syms.push(other);
+        syms.push(sym("o.Other#go(1)", SymbolKind::Method, Some("o.Other")));
+        let mut c = sym("cl", SymbolKind::Method, None);
+        c.rpc_calls = vec![call("p.X", "go", 2)];
+        syms.push(c);
+        let g = graph(syms, vec![edge("p.XImpl", "p.X", EdgeKind::Implements)]);
+        assert_eq!(pairs(&link_rpc(&g).0), [("cl", "p.XImpl#go(1)")]);
+    }
+
+    #[test]
+    fn maybe_calls_need_a_remote_service_in_the_graph() {
+        let mut maybe = sym("cl", SymbolKind::Method, None);
+        maybe.rpc_calls = vec![RpcCall {
+            maybe: true,
+            ..call("X", "go", 2)
+        }];
+        // `X` exists but is no RemoteService: dropped, counted apart.
+        let mut syms = base();
+        syms.push(maybe.clone());
+        let g = graph(syms, vec![edge("p.XImpl", "p.X", EdgeKind::Implements)]);
+        let (e, s) = link_rpc(&g);
+        assert!(e.is_empty());
+        assert_eq!(
+            (s.calls, s.maybe_rpc, s.unresolved_service, s.no_impl),
+            (0, 1, 0, 0)
+        );
+        assert!(s.unmatched.is_empty());
+        // Same graph, `X` extends RemoteService: linked.
+        let mut syms = base();
+        syms[0].supertypes = vec!["RemoteService".into()];
+        syms.push(maybe);
+        let g = graph(syms, vec![edge("p.XImpl", "p.X", EdgeKind::Implements)]);
+        let (e, s) = link_rpc(&g);
+        assert_eq!(pairs(&e), [("cl", "p.XImpl#go(1)")]);
+        assert_eq!((s.calls, s.linked, s.maybe_rpc), (1, 1, 0));
     }
 
     #[test]

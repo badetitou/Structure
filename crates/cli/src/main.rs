@@ -99,6 +99,12 @@ fn run_analysis(
             "rpc: {}/{} linked, {} no implementation, {} unresolved service",
             r.linked, r.calls, r.no_impl, r.unresolved_service
         );
+        if r.maybe_rpc > 0 {
+            eprintln!(
+                "rpc: {} call(s) on an unknown `X.Util.getInstance()` service, not counted",
+                r.maybe_rpc
+            );
+        }
         for u in r.unmatched.iter().take(20) {
             eprintln!("  unmatched: {u}");
         }

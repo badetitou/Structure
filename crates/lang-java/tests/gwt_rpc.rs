@@ -85,6 +85,11 @@ public class Page {
   void notRpc() { foo.run(cb); field.toString(); }
   void inLambda() { run(() -> field.go(1, cb)); }
   Page() { field.go(0, cb); }
+  void scoped1() { { IFooAsync field = foo; field.run(cb); } field.go(1, cb); }
+  void scoped2() { run(() -> { IFooAsync field = foo; field.run(cb); }); field.go(1, cb); }
+  void scoped3() { new Thread() { void r() { IFooAsync field = foo; } }; field.go(1, cb); }
+  void scoped4() { for (IFooAsync field : foos) { field.run(cb); } field.go(1, cb); }
+  void scoped5() { IFooAsync field = foo; { field.run(cb); } field.go(1, cb); }
 }",
     );
     write(
@@ -105,6 +110,17 @@ public class External {
 }",
     );
     dir
+}
+
+fn maybe(g: &Graph, caller: &str) -> Vec<bool> {
+    g.symbols
+        .iter()
+        .find(|s| s.id == caller)
+        .unwrap_or_else(|| panic!("no {caller}"))
+        .rpc_calls
+        .iter()
+        .map(|c| c.maybe)
+        .collect()
 }
 
 fn calls<'a>(g: &'a Graph, caller: &str) -> Vec<(&'a str, &'a str, u32)> {
@@ -179,7 +195,12 @@ fn unresolved_service_keeps_its_simple_name() {
     assert_eq!(calls(&g, "c.ui.External#b(0)"), [("IGone", "f", 1)]);
     assert_eq!(calls(&g, "c.ui.External#c(0)"), [("IGone", "f", 1)]);
     // Type only, or a nested type that is not `Util`: not enough to call it RPC.
-    assert!(calls(&g, "c.ui.External#d(0)").is_empty());
+    // `XAsync` typed but unknown here (imported from another root): kept as `X`.
+    assert_eq!(calls(&g, "c.ui.External#d(0)"), [("IGone", "f", 1)]);
+    assert!(maybe(&g, "c.ui.External#d(0)") == [false]);
+    // No `IGoneAsync` type is parsed: only a maybe, the merged link decides.
+    assert!(maybe(&g, "c.ui.External#b(0)") == [true]);
+    assert!(maybe(&g, "c.ui.External#c(0)") == [true]);
     assert!(calls(&g, "c.ui.External#e(0)").is_empty());
     // ClientBundle / Constants created with GWT.create are not services.
     assert!(calls(&g, "c.ui.External#f(0)").is_empty());
@@ -187,5 +208,24 @@ fn unresolved_service_keeps_its_simple_name() {
     assert!(calls(&g, "c.ui.External#h(0)").is_empty());
     // A comment between arguments is not an argument.
     assert_eq!(calls(&g, "c.ui.External#i(0)"), [("IGone", "f", 2)]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn locals_are_block_scoped() {
+    let dir = layout("scoped");
+    let g = parse_project(&dir).unwrap();
+    let svc = "c.remote.ISvc";
+    // The local of a closed block, lambda, anonymous class or loop no longer
+    // hides the field.
+    for m in ["scoped1", "scoped2", "scoped3", "scoped4"] {
+        assert_eq!(
+            calls(&g, &format!("c.ui.Page#{m}(0)")),
+            [(svc, "go", 2)],
+            "{m}"
+        );
+    }
+    // Still in scope: shadows the field.
+    assert!(calls(&g, "c.ui.Page#scoped5(0)").is_empty());
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -184,7 +184,7 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
         matrix,
         link_stats,
         http_stats: Some(http_stats),
-        rpc_stats: (rpc_stats.calls > 0).then_some(rpc_stats),
+        rpc_stats: (rpc_stats.calls + rpc_stats.maybe_rpc > 0).then_some(rpc_stats),
         metrics,
         warnings,
     }

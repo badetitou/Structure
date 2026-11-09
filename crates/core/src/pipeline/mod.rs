@@ -276,7 +276,7 @@ pub(super) fn analyze_in(
         matrix,
         link_stats,
         http_stats: None,
-        rpc_stats: (rpc_stats.calls > 0).then_some(rpc_stats),
+        rpc_stats: (rpc_stats.calls + rpc_stats.maybe_rpc > 0).then_some(rpc_stats),
         metrics,
         warnings,
     })
