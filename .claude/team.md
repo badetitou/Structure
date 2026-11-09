@@ -1,6 +1,6 @@
 # Team — Structure
 
-Last retro: none
+Last retro: 2026-11-06
 
 ## Agents
 
@@ -29,3 +29,7 @@ None. (The user-level `pharo` server is not relevant here.)
 ## Notes from retros
 
 - 2026-11-06: team created by team-setup on an empty folder.
+- 2026-11-06 retro (Gradle support, #1–#3, #8): 3 implementer spawns refused by
+  auto mode for cloning/building an outside fixture → CLAUDE.md: the user clones
+  fixtures. Recurring "don't report below-target metrics" → CLAUDE.md rule 6.
+  JDK 17 location noted in CLAUDE.md.
