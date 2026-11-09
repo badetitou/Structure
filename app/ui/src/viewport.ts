@@ -10,7 +10,9 @@ export interface ViewBox {
 }
 
 export const MIN_ZOOM = 0.1;
-export const MAX_ZOOM = 10;
+/** Zooming in has no product limit; it only stops before the view gets narrower
+ * than float64 can resolve at its position (keeps the maths finite and exact). */
+const MIN_REL_WIDTH = 1e-9;
 
 /** Smallest viewBox of the pane's aspect that contains the content, centred. */
 export function fit(contentW: number, contentH: number, paneW: number, paneH: number): ViewBox {
@@ -45,13 +47,24 @@ export function zoomLevel(vb: ViewBox, fitVb: ViewBox): number {
   return fitVb.w / vb.w;
 }
 
-/** Zoom keeping (px, py) fixed, with the resulting level clamped to [MIN_ZOOM, MAX_ZOOM] of fit. */
+/** True while `vb` is wide enough for float64 to tell its edges apart. */
+function resolvable(vb: ViewBox): boolean {
+  const scale = Math.max(Math.abs(vb.x), Math.abs(vb.y), Math.abs(vb.x + vb.w), Math.abs(vb.y + vb.h), 1);
+  return vb.w > MIN_REL_WIDTH * scale && vb.h > MIN_REL_WIDTH * scale;
+}
+
+/** Zoom keeping (px, py) fixed. Zooming out stops at MIN_ZOOM of fit; zooming in
+ * is unbounded (up to float precision, see MIN_REL_WIDTH). */
 export function zoomAtClamped(vb: ViewBox, factor: number, px: number, py: number, fitVb: ViewBox): ViewBox {
+  if (factor > 1) {
+    const z = zoomAt(vb, factor, px, py);
+    return resolvable(z) ? z : vb;
+  }
   const level = zoomLevel(vb, fitVb);
-  if ((factor > 1 && level >= MAX_ZOOM) || (factor < 1 && level <= MIN_ZOOM)) return vb;
-  // Clamp only in the direction of travel: an out-of-range start may move back
-  // toward the range without snapping to the opposite bound.
-  const target = factor > 1 ? Math.min(MAX_ZOOM, level * factor) : Math.max(MIN_ZOOM, level * factor);
+  if (factor < 1 && level <= MIN_ZOOM) return vb;
+  // Clamp only in the direction of travel: a start below the bound may move back
+  // toward the range without snapping.
+  const target = Math.max(MIN_ZOOM, level * factor);
   return zoomAt(vb, target / level, px, py);
 }
 

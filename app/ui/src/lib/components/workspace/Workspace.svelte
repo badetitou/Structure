@@ -3,7 +3,7 @@
   import { createDockview } from "dockview";
   import "dockview/dist/styles/dockview.css";
   import { defaultLayout } from "../../../workspace/builtin";
-  import { SvelteRenderer, loadDock, restore, saveDock, structureTheme, syncVisibility } from "../../../workspace/dock";
+  import { SvelteRenderer, dockDnd, loadDock, restore, saveDock, structureTheme, syncVisibility } from "../../../workspace/dock";
   import { panels } from "../../../workspace/registry";
   import { workspace } from "../../../workspace/workspace.svelte";
   import MissingPanel from "./MissingPanel.svelte";
@@ -15,6 +15,7 @@
   onMount(() => {
     const api = createDockview(host, {
       theme: structureTheme,
+      ...dockDnd,
       createComponent: ({ name }) => new SvelteRenderer(panels.get(name)?.component ?? MissingPanel),
     });
     restore(api, loadDock(), panels.has, defaultLayout);
