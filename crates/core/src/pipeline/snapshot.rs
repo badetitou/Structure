@@ -127,9 +127,10 @@ pub fn impact_in_snapshot(
 ) -> anyhow::Result<Impact> {
     let mut changes = impact::changed_lines(snap, base_sha, Some(head))?;
     changes.retain(|c| c.file != "index.scip");
-    let mut result = impact::compute(
+    let mut result = impact::compute_with(
         &analysis.graph,
         &analysis.classification,
+        analysis.impact_index(),
         &changes,
         base_sha.unwrap_or("HEAD"),
         Some(head),

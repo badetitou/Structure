@@ -4,7 +4,7 @@ use anyhow::{Context, bail};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::Path;
 use std::process::Command;
-use structure_ir::ir::{Graph, Symbol};
+use structure_ir::ir::Graph;
 use structure_ir::model::{Cell, Classification, Impact, ImpactedCell, ImpactedSymbol};
 
 /// Changed line ranges of one file: 0-based, end-exclusive, NEW side.
@@ -263,6 +263,94 @@ pub fn analyze(
     Ok(compute(graph, cls, &changes, base.unwrap_or("HEAD"), head))
 }
 
+/// What [`compute`] needs from a graph, independent of the diff: built once per
+/// analysis and reused by every impact on it. Symbols are indices into
+/// `Graph::symbols`; on duplicate ids the last symbol stands for the id.
+#[derive(Debug, Clone, Default)]
+pub struct ImpactIndex {
+    /// Top-level ancestor of each symbol's id; `None` on a container cycle.
+    top: Vec<Option<u32>>,
+    /// Symbols of each file, in graph order.
+    by_file: HashMap<String, Vec<u32>>,
+    /// `callers[caller_start[t]..caller_start[t + 1]]`: top-level symbols with
+    /// an edge to top-level symbol `t` (deduplicated, never `t` itself).
+    caller_start: Vec<u32>,
+    callers: Vec<u32>,
+}
+
+impl ImpactIndex {
+    pub fn new(graph: &Graph) -> ImpactIndex {
+        let n = graph.symbols.len();
+        let by_id: HashMap<&str, u32> = graph
+            .symbols
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.id.as_str(), i as u32))
+            .collect();
+        let lift = |id: &str| -> Option<u32> {
+            let mut cur = *by_id.get(id)?;
+            for _ in 0..=n {
+                match graph.symbols[cur as usize]
+                    .container
+                    .as_deref()
+                    .and_then(|c| by_id.get(c))
+                {
+                    Some(&p) => cur = p,
+                    None => return Some(cur),
+                }
+            }
+            None
+        };
+        let top: Vec<Option<u32>> = graph.symbols.iter().map(|s| lift(&s.id)).collect();
+        let top_of = |id: &str| by_id.get(id).and_then(|&i| top[i as usize]);
+
+        let mut by_file: HashMap<String, Vec<u32>> = HashMap::new();
+        for (i, s) in graph.symbols.iter().enumerate() {
+            match by_file.get_mut(s.file.as_str()) {
+                Some(v) => v.push(i as u32),
+                None => {
+                    by_file.insert(s.file.clone(), vec![i as u32]);
+                }
+            }
+        }
+
+        // (callee, caller) pairs, sorted and deduplicated, then laid out per callee.
+        let mut pairs: Vec<(u32, u32)> = graph
+            .edges
+            .iter()
+            .filter_map(|e| match (top_of(&e.from), top_of(&e.to)) {
+                (Some(f), Some(t)) if f != t => Some((t, f)),
+                _ => None,
+            })
+            .collect();
+        pairs.sort_unstable();
+        pairs.dedup();
+        let mut caller_start = vec![0u32; n + 1];
+        for &(t, _) in &pairs {
+            caller_start[t as usize + 1] += 1;
+        }
+        for i in 0..n {
+            caller_start[i + 1] += caller_start[i];
+        }
+        let callers = pairs.into_iter().map(|(_, f)| f).collect();
+        ImpactIndex {
+            top,
+            by_file,
+            caller_start,
+            callers,
+        }
+    }
+
+    fn callers_of(&self, t: u32) -> &[u32] {
+        let (a, b) = (
+            self.caller_start[t as usize],
+            self.caller_start[t as usize + 1],
+        );
+        &self.callers[a as usize..b as usize]
+    }
+}
+
+/// [`compute_with`] on an index built for this call only.
 pub fn compute(
     graph: &Graph,
     cls: &Classification,
@@ -270,30 +358,36 @@ pub fn compute(
     base: &str,
     head: Option<&str>,
 ) -> Impact {
-    let by_id: HashMap<&str, &Symbol> = graph.symbols.iter().map(|s| (s.id.as_str(), s)).collect();
-    let lift = |id: &str| -> Option<String> {
-        let mut cur = *by_id.get(id)?;
-        for _ in 0..=graph.symbols.len() {
-            match cur.container.as_deref().and_then(|c| by_id.get(c)) {
-                Some(p) => cur = p,
-                None => return Some(cur.id.clone()),
-            }
-        }
-        None
-    };
+    compute_with(graph, cls, &ImpactIndex::new(graph), changes, base, head)
+}
+
+/// Impact of `changes` on `graph`; `index` must have been built from `graph`.
+pub fn compute_with(
+    graph: &Graph,
+    cls: &Classification,
+    index: &ImpactIndex,
+    changes: &[FileChange],
+    base: &str,
+    head: Option<&str>,
+) -> Impact {
+    let id = |i: u32| graph.symbols[i as usize].id.as_str();
 
     let mut changed_files: Vec<String> = changes.iter().map(|c| c.file.clone()).collect();
     changed_files.sort();
     changed_files.dedup();
 
-    let mut changed: BTreeSet<String> = BTreeSet::new();
+    let mut changed: BTreeSet<u32> = BTreeSet::new();
     for ch in changes {
-        let spans: Vec<(&Symbol, u32, u32)> = graph
-            .symbols_in_file(&ch.file)
-            .map(|s| {
-                let st = s.range.start_line;
-                let en = (s.range.end_line + u32::from(s.range.end_col > 0)).max(st + 1);
-                (s, st, en)
+        let spans: Vec<(u32, u32, u32)> = index
+            .by_file
+            .get(ch.file.as_str())
+            .into_iter()
+            .flatten()
+            .map(|&i| {
+                let r = &graph.symbols[i as usize].range;
+                let st = r.start_line;
+                let en = (r.end_line + u32::from(r.end_col > 0)).max(st + 1);
+                (i, st, en)
             })
             .collect();
         // A range outside every symbol (package, imports, file comments) belongs
@@ -303,48 +397,43 @@ pub fn compute(
                 .lines
                 .iter()
                 .any(|&(a, b)| !spans.iter().any(|&(_, st, en)| st < b && a < en));
-        for &(s, st, en) in &spans {
+        for &(i, st, en) in &spans {
             if whole || ch.lines.iter().any(|&(a, b)| st < b && a < en) {
-                changed.extend(lift(&s.id));
+                changed.extend(index.top[i as usize]);
             }
         }
     }
 
-    // callers[x] = classes that depend on x
-    let mut callers: HashMap<String, BTreeSet<String>> = HashMap::new();
-    for e in &graph.edges {
-        if let (Some(f), Some(t)) = (lift(&e.from), lift(&e.to))
-            && f != t
-        {
-            callers.entry(t).or_default().insert(f);
-        }
-    }
-    let mut dist: HashMap<String, u32> = changed.iter().map(|c| (c.clone(), 0)).collect();
-    let mut queue: VecDeque<(String, u32)> = changed.iter().map(|c| (c.clone(), 0)).collect();
-    while let Some((id, d)) = queue.pop_front() {
-        for caller in callers.get(&id).into_iter().flatten() {
-            if !dist.contains_key(caller) {
-                dist.insert(caller.clone(), d + 1);
-                queue.push_back((caller.clone(), d + 1));
+    // Breadth-first over callers: shortest distance from any changed class.
+    let mut dist: HashMap<u32, u32> = changed.iter().map(|&c| (c, 0)).collect();
+    let mut queue: VecDeque<(u32, u32)> = changed.iter().map(|&c| (c, 0)).collect();
+    while let Some((t, d)) = queue.pop_front() {
+        for &caller in index.callers_of(t) {
+            if let std::collections::hash_map::Entry::Vacant(e) = dist.entry(caller) {
+                e.insert(d + 1);
+                queue.push_back((caller, d + 1));
             }
         }
     }
     let mut impacted_symbols: Vec<ImpactedSymbol> = dist
         .iter()
-        .filter(|(id, _)| !changed.contains(*id))
-        .map(|(id, &distance)| ImpactedSymbol {
-            id: id.clone(),
+        .filter(|(i, _)| !changed.contains(*i))
+        .map(|(&i, &distance)| ImpactedSymbol {
+            id: id(i).to_string(),
             distance,
         })
         .collect();
     impacted_symbols.sort_by(|a, b| (a.distance, &a.id).cmp(&(b.distance, &b.id)));
+    let mut changed_symbols: Vec<String> = changed.iter().map(|&i| id(i).to_string()).collect();
+    changed_symbols.sort();
 
     let cell_of = |id: &str| {
         cls.placements
             .get(id)
             .map(|p| Cell::id_for(p.layer, &p.domain))
     };
-    let changed_cells: BTreeSet<String> = changed.iter().filter_map(|s| cell_of(s)).collect();
+    let changed_cells: BTreeSet<String> =
+        changed_symbols.iter().filter_map(|s| cell_of(s)).collect();
     let mut cell_dist: BTreeMap<String, u32> = BTreeMap::new();
     for s in &impacted_symbols {
         if let Some(c) = cell_of(&s.id)
@@ -364,7 +453,7 @@ pub fn compute(
         base: base.to_string(),
         head: head.map(str::to_string),
         changed_files,
-        changed_symbols: changed.into_iter().collect(),
+        changed_symbols,
         changed_cells: changed_cells.into_iter().collect(),
         impacted_cells,
         impacted_symbols,
@@ -376,7 +465,7 @@ pub fn compute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use structure_ir::ir::{Edge, EdgeKind, Language, Range, SymbolKind};
+    use structure_ir::ir::{Edge, EdgeKind, Language, Range, Symbol, SymbolKind};
     use structure_ir::model::{Layer, Placement};
 
     #[test]
@@ -611,5 +700,61 @@ diff --git a/D b/D\ndeleted file mode 100644\n--- a/D\n+++ /dev/null\n@@ -1,3 +0
         let i = compute(&g, &c, &ch, "HEAD", None);
         assert_eq!(i.changed_symbols, ["Service"]);
         assert_eq!(i.impacted_symbols[0].id, "Action");
+    }
+
+    #[test]
+    fn reused_index_handles_duplicate_ids_and_container_cycles() {
+        let g = Graph {
+            root: ".".into(),
+            language: Language::Java,
+            symbols: vec![
+                sym("A", None, "A.java", 0, 10),
+                sym("A#m", Some("A"), "A.java", 2, 4),
+                // Same id twice: the last one stands for `B`.
+                sym("B", None, "B.java", 0, 5),
+                sym("B", None, "B2.java", 0, 5),
+                // Container cycle: never lifted.
+                sym("X", Some("Y"), "X.java", 0, 5),
+                sym("Y", Some("X"), "X.java", 6, 9),
+            ],
+            edges: vec![
+                edge("B", "A#m", EdgeKind::Call),
+                edge("B", "A", EdgeKind::Uses),
+                edge("X", "A", EdgeKind::Uses),
+                edge("A#m", "A", EdgeKind::Uses),
+            ],
+        };
+        let c = Classification::default();
+        let index = ImpactIndex::new(&g);
+        let ch = |f: &str| {
+            [FileChange {
+                file: f.into(),
+                lines: vec![],
+            }]
+        };
+        for f in ["A.java", "B.java", "B2.java", "X.java"] {
+            assert_eq!(
+                compute_with(&g, &c, &index, &ch(f), "HEAD", None),
+                compute(&g, &c, &ch(f), "HEAD", None),
+                "{f}"
+            );
+        }
+        let i = compute_with(&g, &c, &index, &ch("A.java"), "HEAD", None);
+        assert_eq!(i.changed_symbols, ["A"]);
+        let ids: Vec<_> = i
+            .impacted_symbols
+            .iter()
+            .map(|s| (s.id.as_str(), s.distance))
+            .collect();
+        assert_eq!(ids, [("B", 1)]);
+        assert_eq!(
+            compute_with(&g, &c, &index, &ch("B.java"), "HEAD", None).changed_symbols,
+            ["B"]
+        );
+        assert!(
+            compute_with(&g, &c, &index, &ch("X.java"), "HEAD", None)
+                .changed_symbols
+                .is_empty()
+        );
     }
 }

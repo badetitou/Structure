@@ -20,11 +20,13 @@ pub use snapshot::{MAX_SNAPSHOTS, analyze_snapshot, impact_at, impact_in_snapsho
 pub use structure_git::{resolve_base, resolve_commit, worktree_fingerprint};
 
 use std::path::Path;
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use anyhow::{Context, bail};
 
 use crate::classify::{RuleSet, classify};
+use crate::impact::ImpactIndex;
 use crate::ir::{Graph, Language};
 use crate::link::{LinkStats, link};
 use crate::matrix;
@@ -81,6 +83,17 @@ pub struct Analysis {
     pub rpc_stats: Option<crate::rpc_link::RpcLinkStats>,
     pub metrics: Metrics,
     pub warnings: Vec<String>,
+    /// Built from `graph` on the first impact (see [`Analysis::impact_index`]).
+    impact_index: OnceLock<ImpactIndex>,
+}
+
+impl Analysis {
+    /// Index shared by every impact computed on this analysis, built on first
+    /// use. `graph` must not change once it is built.
+    pub fn impact_index(&self) -> &ImpactIndex {
+        self.impact_index
+            .get_or_init(|| ImpactIndex::new(&self.graph))
+    }
 }
 
 pub fn detect_language(root: &Path) -> anyhow::Result<Language> {
@@ -279,6 +292,7 @@ pub(super) fn analyze_in(
         rpc_stats: (rpc_stats.calls + rpc_stats.maybe_rpc > 0).then_some(rpc_stats),
         metrics,
         warnings,
+        impact_index: OnceLock::new(),
     })
 }
 
