@@ -4,7 +4,7 @@ export const MODE_KEY = "structure.matrix.mode";
 
 /** Stored value → mode; anything unknown falls back to the normal view. */
 export function parseMode(raw: string | null): Mode {
-  return raw === "dense" ? "dense" : "normal";
+  return raw === "dense" || raw === "flame" ? raw : "normal";
 }
 
 export function loadMode(): Mode {

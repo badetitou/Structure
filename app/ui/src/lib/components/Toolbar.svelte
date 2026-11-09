@@ -1,7 +1,8 @@
 <script lang="ts">
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
-  import { Toggle } from "$lib/components/ui/toggle";
+  import * as ToggleGroup from "$lib/components/ui/toggle-group";
+  import { parseMode } from "../../mode";
   import * as Tooltip from "$lib/components/ui/tooltip";
   import { app } from "../../state.svelte";
   import ViewsMenu from "./workspace/ViewsMenu.svelte";
@@ -38,15 +39,18 @@
   {@render zoomBtn("−", "Zoom out", onZoomOut)}
   {@render zoomBtn("+", "Zoom in", onZoomIn)}
   {@render zoomBtn("Fit", "Show the whole matrix", onFit)}
-  <Toggle
+  <ToggleGroup.Root
+    type="single"
     variant="outline"
     size="sm"
-    pressed={app.mode === "dense"}
-    onPressedChange={() => app.toggleMode()}
-    aria-label="Dense mode"
+    aria-label="Matrix view"
+    value={app.mode}
+    onValueChange={(v) => v && app.setMode(parseMode(v))}
   >
-    {app.mode === "dense" ? "Dense: on" : "Dense: off"}
-  </Toggle>
+    <ToggleGroup.Item value="normal" aria-label="Normal view" class="px-2">Normal</ToggleGroup.Item>
+    <ToggleGroup.Item value="dense" aria-label="Dense view" class="px-2">Dense</ToggleGroup.Item>
+    <ToggleGroup.Item value="flame" aria-label="Flame view: deep domains, widths by size" class="px-2">Flame</ToggleGroup.Item>
+  </ToggleGroup.Root>
   <Button variant="outline" size="sm" disabled={!app.impact || app.impactBusy} onclick={() => app.clearImpact()}>Clear</Button>
   <span class="text-destructive">{app.impactError}</span>
   <span class="flex items-center text-sm text-muted-foreground">
