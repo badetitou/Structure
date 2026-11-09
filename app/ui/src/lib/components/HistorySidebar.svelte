@@ -26,7 +26,6 @@
 
 {#if hist && lanes}
   <ScrollArea class="h-full text-xs">
-    <h3 class="mx-2.5 my-2 text-sm font-semibold">History</h3>
     {#if hist.dirty}
       {@const first = lanes.rows[0]}
       <button
