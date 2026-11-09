@@ -1,0 +1,123 @@
+{
+  "project": "gwtdemo",
+  "language": "java",
+  "layers": [
+    "unknown"
+  ],
+  "domains": [
+    "order",
+    "server.rpc",
+    "shared.rpc",
+    "user"
+  ],
+  "cells": [
+    {
+      "id": "unknown:order",
+      "layer": "unknown",
+      "domain": "order",
+      "size": 1
+    },
+    {
+      "id": "unknown:server.rpc",
+      "layer": "unknown",
+      "domain": "server.rpc",
+      "size": 1
+    },
+    {
+      "id": "unknown:shared.rpc",
+      "layer": "unknown",
+      "domain": "shared.rpc",
+      "size": 2
+    },
+    {
+      "id": "unknown:user",
+      "layer": "unknown",
+      "domain": "user",
+      "size": 1
+    }
+  ],
+  "edges": [
+    {
+      "from": 0,
+      "targets": [
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "from": 3,
+      "targets": [
+        [
+          2,
+          1
+        ]
+      ]
+    }
+  ],
+  "rpc_edges": [
+    {
+      "from": 0,
+      "targets": [
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "from": 3,
+      "targets": [
+        [
+          1,
+          1
+        ]
+      ]
+    }
+  ],
+  "stats": {
+    "files": 5,
+    "symbols": 16,
+    "edges": 6,
+    "elapsed_ms": 10
+  },
+  "domain_tree": [
+    {
+      "label": "com.acme",
+      "size": 5,
+      "children": [
+        {
+          "label": "client",
+          "size": 2,
+          "children": [
+            {
+              "label": "order",
+              "domain": "order",
+              "size": 1,
+              "children": []
+            },
+            {
+              "label": "user",
+              "domain": "user",
+              "size": 1,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "server.rpc",
+          "domain": "server.rpc",
+          "size": 1,
+          "children": []
+        },
+        {
+          "label": "shared.rpc",
+          "domain": "shared.rpc",
+          "size": 2,
+          "children": []
+        }
+      ]
+    }
+  ]
+}

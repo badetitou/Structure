@@ -26,6 +26,13 @@ describe("expandMatrix", () => {
     ]);
   });
 
+  it("expands rpc_edges like edges, and gives an empty list when absent", () => {
+    const base = { cells: [{ id: "ui:a" }, { id: "model:a" }], edges: [] };
+    const m = expandMatrix({ ...base, rpc_edges: [{ from: 0, targets: [[1, 2]] }] } as unknown as WireMatrix);
+    expect(m.rpcEdges).toEqual([{ from: "ui:a", to: "model:a", weight: 2 }]);
+    expect("rpc_edges" in m).toBe(false);
+    expect(expandMatrix(base as unknown as WireMatrix).rpcEdges).toEqual([]);
+  });
   it("expands http_edges like edges, and gives an empty list when absent", () => {
     const base = {
       project: "p",

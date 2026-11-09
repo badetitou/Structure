@@ -21,6 +21,7 @@ const mx = (project: string, warnings?: string[]): Matrix => ({
   cells: [],
   edges: [],
   httpEdges: [],
+  rpcEdges: [],
   stats: { files: 1, symbols: 1, edges: 0, elapsed_ms: 1 },
   generation: 7,
   warnings,

@@ -13,8 +13,13 @@ function expandGroups(w: WireMatrix, groups: readonly EdgeGroup[]): CellEdge[] {
   return edges;
 }
 
-/** Expand grouped, index-based edges to `{from, to, weight}` with cell ids (code edges and HTTP links). */
+/** Expand grouped, index-based edges to `{from, to, weight}` with cell ids (code edges, HTTP and RPC links). */
 export function expandMatrix(w: WireMatrix): Matrix {
-  const { http_edges, ...rest } = w;
-  return { ...rest, edges: expandGroups(w, w.edges), httpEdges: expandGroups(w, http_edges ?? []) };
+  const { http_edges, rpc_edges, ...rest } = w;
+  return {
+    ...rest,
+    edges: expandGroups(w, w.edges),
+    httpEdges: expandGroups(w, http_edges ?? []),
+    rpcEdges: expandGroups(w, rpc_edges ?? []),
+  };
 }
