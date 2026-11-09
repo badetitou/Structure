@@ -345,6 +345,7 @@ impl Ctx<'_> {
             supertypes: vec![],
             package: self.package.clone(),
             http: vec![],
+            http_calls: vec![],
         });
         self.out.symbols.len() - 1
     }
