@@ -1,13 +1,15 @@
 ---
 id: 49
 title: Diff panel shows the changes of the selected commit
-status: in-review
+status: done
 parent: null
 branch: 49-commit-diff-panel
 remote: null
 created: 2026-11-09
 ---
 ## Context
+
+Merged in 87d4b19.
 
 Picking a commit (or a range, or the working tree) in the history sidebar
 shows its impact on the matrix and the changed symbols, but not the change
