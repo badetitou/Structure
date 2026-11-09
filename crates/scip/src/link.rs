@@ -113,10 +113,11 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
     for doc in &index.documents {
         let fi = files.get(doc.relative_path.as_str());
         for o in &doc.occurrences {
-            if !o.is_definition || scip::is_local(&o.symbol) || is_noise(&o.symbol) {
+            let sym = index.name(o.symbol);
+            if !o.is_definition || scip::is_local(sym) || is_noise(sym) {
                 continue;
             }
-            if !project.insert(o.symbol.as_str()) {
+            if !project.insert(sym) {
                 continue;
             }
             if let Some(fi) = fi {
@@ -124,13 +125,13 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
             }
         }
     }
-    let defined: Vec<&str> = defs.iter().map(|(_, o)| o.symbol.as_str()).collect();
+    let defined: Vec<&str> = defs.iter().map(|(_, o)| index.name(o.symbol)).collect();
     // Matching is independent per definition; the ordered collect keeps it
     // deterministic.
     let mapped: Vec<Option<usize>> = defs
         .par_iter()
         .map(|&(fi, o)| {
-            let name = scip::simple_name(&o.symbol)?;
+            let name = scip::simple_name(index.name(o.symbol))?;
             // Same identifier line (columns differ: bytes vs UTF-16)...
             let on_line = fi.by_line.get(&o.range.start_line).and_then(|c| {
                 c.iter()
@@ -221,7 +222,8 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
                 return (refs, found);
             };
             for o in &doc.occurrences {
-                if o.is_definition || scip::is_local(&o.symbol) || is_noise(&o.symbol) {
+                let sym = index.name(o.symbol);
+                if o.is_definition || scip::is_local(sym) || is_noise(sym) {
                     continue;
                 }
                 refs += 1;
@@ -239,11 +241,9 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
                     continue;
                 };
                 let src_id = &graph.symbols[src].id;
-                let (to, kind) = match resolve(o.symbol.as_str()) {
+                let (to, kind) = match resolve(sym) {
                     Some(t) => {
-                        let k = if is_callable(graph.symbols[t].kind)
-                            && map.contains_key(o.symbol.as_str())
-                        {
+                        let k = if is_callable(graph.symbols[t].kind) && map.contains_key(sym) {
                             EdgeKind::Call
                         } else {
                             EdgeKind::Uses
@@ -255,12 +255,11 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
                     }
                     // A project symbol the frontend doesn't model (file-level
                     // constant, test class): not an external dependency.
-                    None if project.contains(o.symbol.as_str()) => continue,
+                    None if project.contains(sym) => continue,
                     None => {
-                        let name = scip::owner_type_name(&o.symbol)
-                            .or_else(|| scip::simple_name(&o.symbol));
+                        let name = scip::owner_type_name(sym).or_else(|| scip::simple_name(sym));
                         let Some(name) = name else { continue };
-                        let k = if o.symbol.ends_with(").") {
+                        let k = if sym.ends_with(").") {
                             EdgeKind::Call
                         } else {
                             EdgeKind::Uses
@@ -303,17 +302,21 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
 
     // 3. Implementations.
     let mut impls_of: HashMap<usize, Vec<usize>> = HashMap::new();
-    let mut syms: Vec<&String> = index.symbols.keys().collect();
-    syms.sort();
-    for s in syms {
-        let Some(&si) = map.get(s.as_str()) else {
+    let mut syms: Vec<(&str, &scip::ScipSymbol)> = index
+        .symbols
+        .iter()
+        .map(|(&id, s)| (index.name(id), s))
+        .collect();
+    syms.sort_unstable_by_key(|&(name, _)| name);
+    for (s, info) in syms {
+        let Some(&si) = map.get(s) else {
             continue;
         };
-        for r in &index.symbols[s].relationships {
+        for r in &info.relationships {
             if !r.is_implementation {
                 continue;
             }
-            let Some(&ti) = map.get(r.symbol.as_str()) else {
+            let Some(&ti) = map.get(index.name(r.symbol)) else {
                 continue;
             };
             if si == ti {
@@ -416,21 +419,55 @@ mod tests {
         format!("semanticdb maven m 1 {s}")
     }
 
-    fn occ(s: &str, range: Range, def: bool) -> ScipOccurrence {
-        ScipOccurrence {
-            symbol: pfx(s),
-            range,
-            is_definition: def,
-            enclosing_range: None,
-        }
+    /// Occurrence before interning: (symbol, range, definition).
+    type Occ = (String, Range, bool);
+
+    fn occ(s: &str, range: Range, def: bool) -> Occ {
+        (pfx(s), range, def)
     }
 
-    fn doc(p: &str, o: Vec<ScipOccurrence>) -> ScipDocument {
-        ScipDocument {
-            relative_path: p.into(),
-            language: "java".into(),
-            occurrences: o,
+    fn doc(p: &str, o: Vec<Occ>) -> (String, Vec<Occ>) {
+        (p.into(), o)
+    }
+
+    /// Index of `docs`, plus `implements` (implementor, implemented) relationships.
+    fn index(docs: Vec<(String, Vec<Occ>)>, implements: &[(&str, &str)]) -> ScipIndex {
+        let mut idx = ScipIndex::default();
+        for (p, occs) in docs {
+            let occurrences = occs
+                .into_iter()
+                .map(|(s, range, is_definition)| ScipOccurrence {
+                    symbol: idx.intern(&s).unwrap(),
+                    range,
+                    is_definition,
+                    enclosing_range: None,
+                })
+                .collect();
+            idx.documents.push(ScipDocument {
+                relative_path: p,
+                language: "java".into(),
+                occurrences,
+            });
         }
+        for (s, to) in implements {
+            let rel = ScipRelationship {
+                symbol: idx.intern(&pfx(to)).unwrap(),
+                is_implementation: true,
+                is_reference: false,
+                is_type_definition: false,
+                is_definition: false,
+            };
+            let id = idx.intern(&pfx(s)).unwrap();
+            idx.symbols.insert(
+                id,
+                ScipSymbol {
+                    display_name: None,
+                    kind: None,
+                    relationships: vec![rel],
+                },
+            );
+        }
+        idx
     }
 
     fn fixture() -> (Graph, ScipIndex) {
@@ -533,31 +570,12 @@ mod tests {
                 occ("p/I#run().", r(3, 4, 3, 7), false),
             ],
         );
-        let mut symbols = HashMap::new();
-        let rel = |s: &str| ScipRelationship {
-            symbol: pfx(s),
-            is_implementation: true,
-            is_reference: false,
-            is_type_definition: false,
-            is_definition: false,
-        };
-        for (s, to) in [("p/A#", "p/I#"), ("p/A#run().", "p/I#run().")] {
-            symbols.insert(
-                pfx(s),
-                ScipSymbol {
-                    symbol: pfx(s),
-                    display_name: None,
-                    kind: None,
-                    relationships: vec![rel(to)],
-                },
-            );
-        }
         (
             g,
-            ScipIndex {
-                documents: vec![a, b, imp, i, c],
-                symbols,
-            },
+            index(
+                vec![a, b, imp, i, c],
+                &[("p/A#", "p/I#"), ("p/A#run().", "p/I#run().")],
+            ),
         )
     }
 
@@ -646,14 +664,14 @@ mod tests {
         };
         let mut first = vec![occ("p/X#", r(0, 6, 0, 7), true)];
         first.extend(refs(2));
-        let idx = ScipIndex {
-            documents: vec![
+        let idx = index(
+            vec![
                 doc("X.java", first),
                 doc("X.java", refs(5)),
                 doc("Y.java", vec![occ("p/Y#", r(0, 6, 0, 7), true)]),
             ],
-            symbols: Default::default(),
-        };
+            &[],
+        );
         let (a, st) = link(g.clone(), &idx);
         let count = |t: &str| {
             a.edges
@@ -709,8 +727,8 @@ mod tests {
             ],
             edges: vec![],
         };
-        let index = ScipIndex {
-            documents: vec![
+        let index = index(
+            vec![
                 doc(
                     f,
                     vec![
@@ -732,8 +750,8 @@ mod tests {
                 ),
                 doc("T.java", vec![occ("T#", r(0, 6, 0, 7), true)]),
             ],
-            symbols: HashMap::new(),
-        };
+            &[],
+        );
         let (g, st) = link(g, &index);
         assert_eq!(st.mapped_symbols, 3, "{st:?}");
         assert_eq!(st.lifted_symbols, 2, "{st:?}");
