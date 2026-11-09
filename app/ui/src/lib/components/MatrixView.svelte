@@ -91,6 +91,14 @@
   const selTile = $derived(app.selected ? tileById.get(app.selected.id) : undefined);
   const selWidth = $derived((mode === "dense" ? STROKE_DENSE : STROKE_NORMAL)[1]);
 
+  // Publish the aggregated view so the details panel names visible cells.
+  $effect(() => {
+    app.view = vm;
+    return () => {
+      app.view = null;
+    };
+  });
+
   // A mode switch can change the expansion (flame opens deeper): drop a selection whose cell left the view.
   $effect(() => {
     const ids = new Set(vm.cells.map((c) => c.id));

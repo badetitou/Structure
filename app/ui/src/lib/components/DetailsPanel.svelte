@@ -15,7 +15,14 @@
     void app.impact;
     shown = initialCaps();
   });
-  const http = $derived(app.selected && app.matrix ? httpLinks(app.matrix.httpEdges, app.selected.members) : null);
+  // Links between view cells (collapsed domains merged), only while the toolbar toggle is on.
+  const http = $derived(
+    app.showHttp && app.selected && app.view ? httpLinks(app.view.httpEdges, [app.selected.id]) : null,
+  );
+  const viewName = (id: string) => {
+    const c = app.view?.cells.find((x) => x.id === id);
+    return c ? `${c.layer} / ${c.label}` : id;
+  };
   const list = $derived(app.selected && app.symbols?.cell === app.selected.id ? app.symbols : null);
 </script>
 
@@ -62,10 +69,10 @@
         {@render heading("HTTP")}
         <ul class="m-0 list-disc pl-4">
           {#each http.out as l (l.other)}
-            <li>calls {l.other} <small class="text-muted-foreground">({l.count})</small></li>
+            <li>calls {viewName(l.other)} <small class="text-muted-foreground">({l.count})</small></li>
           {/each}
           {#each http.in as l (l.other)}
-            <li>called by {l.other} <small class="text-muted-foreground">({l.count})</small></li>
+            <li>called by {viewName(l.other)} <small class="text-muted-foreground">({l.count})</small></li>
           {/each}
         </ul>
       {/if}
