@@ -20,7 +20,9 @@
   let recents = $state(loadRecent());
 
   async function add() {
-    const p = await api.pickFolder();
+    const picked = await api.pickFolder();
+    // Strip trailing separators so "/a/b/" and "/a/b" count as one folder.
+    const p = picked && (picked.replace(/[\\/]+$/, "") || picked);
     if (p) {
       if (!paths.includes(p)) paths = [...paths, p];
       onPick?.();
