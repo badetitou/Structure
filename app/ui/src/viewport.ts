@@ -84,6 +84,19 @@ export function panBy(vb: ViewBox, dx: number, dy: number, paneW: number, paneH:
   return { ...vb, x: vb.x - (dx * vb.w) / Math.max(paneW, 1), y: vb.y - (dy * vb.h) / Math.max(paneH, 1) };
 }
 
+/** Wheel zoom rates per pixel of `deltaY`: a pinch sends small deltas, a mouse
+ * notch ~100 px (→ ~1.22× per notch). */
+const PINCH_RATE = 0.01;
+const WHEEL_RATE = 0.002;
+
+/** Zoom factor (>1 zooms in) for a wheel event: scrolling up / pinching out zooms in.
+ * `deltaMode` is the WheelEvent's (0 px, 1 line, 2 page); `pinch` is its ctrlKey. */
+export function wheelZoomFactor(deltaY: number, deltaMode: number, pinch: boolean): number {
+  const unit = deltaMode === 1 ? 16 : deltaMode === 2 ? 400 : 1;
+  const f = Math.exp(-deltaY * unit * (pinch ? PINCH_RATE : WHEEL_RATE));
+  return Number.isFinite(f) && f > 0 ? f : 1;
+}
+
 /** Pane resized: keep the scale (user units per pixel) and the top-left corner. */
 export function resize(vb: ViewBox, oldW: number, newW: number, newH: number): ViewBox {
   const k = vb.w / Math.max(oldW, 1);

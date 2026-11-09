@@ -7,7 +7,7 @@ import { selectionDiff } from "./history";
 import type { Selection } from "./history";
 import type { Mode } from "./layout";
 import { RequestGuard, shownMatrix } from "./matrixsel";
-import { loadMode, loadShowHttp, loadShowRpc, saveMode, saveShowHttp, saveShowRpc } from "./mode";
+import { loadMode, loadShowHttp, loadShowRpc, loadTransposed, saveMode, saveShowHttp, saveShowRpc, saveTransposed } from "./mode";
 import { analyzeAndRecord } from "./recent";
 
 /** The diff panel's content: the requested range and its diff once loaded. */
@@ -41,6 +41,8 @@ export class AppState {
   showHttp = $state(loadShowHttp());
   /** Draw GWT RPC links (persisted). */
   showRpc = $state(loadShowRpc());
+  /** Domains as rows and layers as columns. */
+  transposed = $state(loadTransposed());
   /** Null when unavailable (not a git repo, error): the sidebar is hidden. */
   history = $state.raw<History | null>(null);
   historySel = $state.raw<Selection | null>(null);
@@ -140,6 +142,11 @@ export class AppState {
   setMode(mode: Mode) {
     this.mode = mode;
     saveMode(mode);
+  }
+
+  setTransposed(on: boolean) {
+    this.transposed = on;
+    saveTransposed(on);
   }
 
   /** Select a view cell (or none) and list its symbols. */

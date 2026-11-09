@@ -67,3 +67,22 @@ export function saveShowRpc(on: boolean) {
     // storage unavailable: the choice just is not persisted
   }
 }
+
+export const TRANSPOSED_KEY = "structure.matrix.transposed";
+
+/** Whether the matrix shows domains as rows; off when unset or storage is unavailable. */
+export function loadTransposed(): boolean {
+  try {
+    return localStorage.getItem(TRANSPOSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveTransposed(on: boolean) {
+  try {
+    localStorage.setItem(TRANSPOSED_KEY, on ? "1" : "0");
+  } catch {
+    // storage unavailable: the choice just is not persisted
+  }
+}

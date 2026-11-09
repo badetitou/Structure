@@ -24,12 +24,13 @@
 </script>
 
 <ModeWatcher />
-<div class="flex items-center justify-between border-b bg-card px-4" style="height: var(--app-header-h)">
-  <span class="flex items-center gap-2 font-semibold"><img src="/logo.svg" alt="" class="size-7" /> Structure</span>
-  <ThemeSwitch />
-</div>
 {#if screen === "home"}
+  <div class="flex items-center justify-between border-b bg-card px-4" style="height: var(--app-header-h)">
+    <span class="flex items-center gap-2 font-semibold"><img src="/logo.svg" alt="" class="size-7" /> Structure</span>
+    <ThemeSwitch />
+  </div>
   <Home bind:paths onPick={() => (error = "")} {error} onAnalyze={start} />
 {:else}
+  <!-- The analysis screen has its own compact top bar. -->
   <AnalysisScreen {paths} onExit={backHome} />
 {/if}
