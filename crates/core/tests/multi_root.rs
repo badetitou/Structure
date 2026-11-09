@@ -77,8 +77,12 @@ fn http_calls_link_to_backend_handlers() {
     };
     let a = pipeline::analyze_many(&[back, front], &offline(), &|_| {}).expect("analyze");
     let s = a.http_stats.as_ref().expect("http stats");
-    assert_eq!(s.calls, 18);
-    assert!(s.linked >= 15, "{s:?}");
+    assert_eq!(
+        (s.calls, s.linked, s.unknown_path, s.ambiguous),
+        (18, 17, 1, 0),
+        "{s:?}"
+    );
+    assert!(s.unmatched.is_empty(), "{s:?}");
     let has = |from: &str, to: &str| {
         a.graph
             .edges

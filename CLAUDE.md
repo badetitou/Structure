@@ -32,7 +32,9 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     module names (`ir`, `model`, `java`, `ts`, `scip`, `link`, `metrics`, `classify`,
     `matrix`, `impact`). Own code: `lang/` (`LanguageFrontend` trait, registry
     `all()`/`frontend()`, Java/TS indexer + detection) and `pipeline/` (`mod`
-    analyze/detect, `indexer`, `process`, `progress`, `snapshot`, `history`).
+    analyze/detect, `indexer`, `process`, `progress`, `snapshot`, `history`) and
+    `http_link` (matches TS `http_calls` to Java `http` endpoints → `Http` edges,
+    multi-root only).
 - `crates/cli` — bin `structure` (`analyze`, `impact`). Keep `main` thin.
 - `app/` — Tauri 2 app: `src-tauri` (commands over `pipeline`), `ui` (Vite + Svelte
   5 + TS, vitest): `src/*.ts` state/geometry helpers, `src/workspace/` panel registry +
