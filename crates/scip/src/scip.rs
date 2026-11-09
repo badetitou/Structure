@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::Context;
 use protobuf::CodedInputStream;
@@ -11,11 +12,19 @@ use scip::types::{self, descriptor::Suffix};
 
 use structure_ir::ir::Range;
 
+/// A SCIP symbol string, interned in its [`ScipIndex`] (see [`ScipIndex::name`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SymbolId(u32);
+
 #[derive(Debug, Clone, Default)]
 pub struct ScipIndex {
     pub documents: Vec<ScipDocument>,
     /// From documents' symbol infos and `external_symbols`.
-    pub symbols: HashMap<String, ScipSymbol>,
+    pub symbols: HashMap<SymbolId, ScipSymbol>,
+    /// Every symbol string once, by id: occurrences repeat a few symbols
+    /// many times (vscode: 8.8M occurrences, 1M distinct symbols).
+    names: Vec<Arc<str>>,
+    ids: HashMap<Arc<str>, SymbolId>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,7 +36,7 @@ pub struct ScipDocument {
 
 #[derive(Debug, Clone)]
 pub struct ScipOccurrence {
-    pub symbol: String,
+    pub symbol: SymbolId,
     pub range: Range,
     pub is_definition: bool,
     pub enclosing_range: Option<Range>,
@@ -35,7 +44,6 @@ pub struct ScipOccurrence {
 
 #[derive(Debug, Clone)]
 pub struct ScipSymbol {
-    pub symbol: String,
     pub display_name: Option<String>,
     pub kind: Option<String>,
     pub relationships: Vec<ScipRelationship>,
@@ -43,7 +51,7 @@ pub struct ScipSymbol {
 
 #[derive(Debug, Clone)]
 pub struct ScipRelationship {
-    pub symbol: String,
+    pub symbol: SymbolId,
     pub is_implementation: bool,
     pub is_reference: bool,
     pub is_type_definition: bool,
@@ -60,6 +68,33 @@ pub struct ScipStats {
 }
 
 impl ScipIndex {
+    /// The symbol string of `id`, which must come from this index.
+    pub fn name(&self, id: SymbolId) -> &str {
+        &self.names[id.0 as usize]
+    }
+
+    /// Id of `name` if the index has seen it.
+    pub fn id(&self, name: &str) -> Option<SymbolId> {
+        self.ids.get(name).copied()
+    }
+
+    /// Id of `name`, added to the index when new.
+    pub fn intern(&mut self, name: &str) -> anyhow::Result<SymbolId> {
+        if let Some(&id) = self.ids.get(name) {
+            return Ok(id);
+        }
+        let id = SymbolId(u32::try_from(self.names.len()).context("too many SCIP symbols")?);
+        let name: Arc<str> = Arc::from(name);
+        self.names.push(name.clone());
+        self.ids.insert(name, id);
+        Ok(id)
+    }
+
+    /// Symbol information of `name`, if any.
+    pub fn symbol(&self, name: &str) -> Option<&ScipSymbol> {
+        self.symbols.get(&self.id(name)?)
+    }
+
     pub fn stats(&self) -> ScipStats {
         let occurrences: usize = self.documents.iter().map(|d| d.occurrences.len()).sum();
         let definitions = self
@@ -188,7 +223,7 @@ fn decode(input: &mut CodedInputStream, batch_limit: usize) -> anyhow::Result<Sc
     }
     decode_batch(&mut batch, &mut out)?;
     for info in &external {
-        add_symbol(&mut out.symbols, info);
+        add_symbol(&mut out, info)?;
     }
     Ok(out)
 }
@@ -197,38 +232,82 @@ fn decode(input: &mut CodedInputStream, batch_limit: usize) -> anyhow::Result<Sc
 /// is larger than this.
 const BATCH_BYTES: usize = 64 << 20;
 
+/// One document decoded on a worker thread, its symbols deduplicated
+/// locally before they are interned (in document order) into the index.
+struct DecodedDocument {
+    relative_path: String,
+    language: String,
+    /// Distinct symbols of the occurrences; `occurrences` index into it.
+    names: Vec<String>,
+    occurrences: Vec<(u32, Range, bool, Option<Range>)>,
+    infos: Vec<types::SymbolInformation>,
+}
+
+fn decode_document(raw: &[u8]) -> anyhow::Result<DecodedDocument> {
+    let doc = types::Document::parse_from_bytes(raw).context("invalid SCIP protobuf")?;
+    let mut local: HashMap<String, u32> = HashMap::new();
+    let mut occurrences = Vec::with_capacity(doc.occurrences.len());
+    for o in doc.occurrences {
+        let Some((range, is_definition, enclosing_range)) = convert_occ(&o) else {
+            continue;
+        };
+        let next = local.len() as u32;
+        let i = *local.entry(o.symbol).or_insert(next);
+        occurrences.push((i, range, is_definition, enclosing_range));
+    }
+    let mut names = vec![String::new(); local.len()];
+    for (name, i) in local {
+        names[i as usize] = name;
+    }
+    Ok(DecodedDocument {
+        relative_path: doc.relative_path,
+        language: doc.language,
+        names,
+        occurrences,
+        infos: doc.symbols,
+    })
+}
+
 /// Decodes the batched documents in parallel and appends them to `out` in
 /// their original order, then empties the batch.
 fn decode_batch(batch: &mut Vec<Vec<u8>>, out: &mut ScipIndex) -> anyhow::Result<()> {
-    let decoded: Vec<anyhow::Result<(ScipDocument, Vec<types::SymbolInformation>)>> = batch
-        .par_iter()
-        .map(|raw| {
-            let doc = types::Document::parse_from_bytes(raw).context("invalid SCIP protobuf")?;
-            let occurrences = doc.occurrences.iter().filter_map(convert_occ).collect();
-            Ok((
-                ScipDocument {
-                    relative_path: doc.relative_path,
-                    language: doc.language,
-                    occurrences,
-                },
-                doc.symbols,
-            ))
-        })
-        .collect();
+    let decoded: Vec<anyhow::Result<DecodedDocument>> =
+        batch.par_iter().map(|raw| decode_document(raw)).collect();
     batch.clear();
     for d in decoded {
-        let (doc, symbols) = d?;
-        for info in &symbols {
-            add_symbol(&mut out.symbols, info);
+        let d = d?;
+        for info in &d.infos {
+            add_symbol(out, info)?;
         }
-        out.documents.push(doc);
+        let ids = d
+            .names
+            .iter()
+            .map(|n| out.intern(n))
+            .collect::<anyhow::Result<Vec<SymbolId>>>()?;
+        let occurrences = d
+            .occurrences
+            .into_iter()
+            .map(
+                |(i, range, is_definition, enclosing_range)| ScipOccurrence {
+                    symbol: ids[i as usize],
+                    range,
+                    is_definition,
+                    enclosing_range,
+                },
+            )
+            .collect();
+        out.documents.push(ScipDocument {
+            relative_path: d.relative_path,
+            language: d.language,
+            occurrences,
+        });
     }
     Ok(())
 }
 
-fn add_symbol(map: &mut HashMap<String, ScipSymbol>, info: &types::SymbolInformation) {
+fn add_symbol(out: &mut ScipIndex, info: &types::SymbolInformation) -> anyhow::Result<()> {
     if info.symbol.is_empty() {
-        return;
+        return Ok(());
     }
     let kind = match info.kind.enum_value() {
         Ok(types::symbol_information::Kind::UnspecifiedKind) | Err(_) => None,
@@ -237,21 +316,23 @@ fn add_symbol(map: &mut HashMap<String, ScipSymbol>, info: &types::SymbolInforma
     let relationships = info
         .relationships
         .iter()
-        .map(|r| ScipRelationship {
-            symbol: r.symbol.clone(),
-            is_implementation: r.is_implementation,
-            is_reference: r.is_reference,
-            is_type_definition: r.is_type_definition,
-            is_definition: r.is_definition,
+        .map(|r| {
+            Ok(ScipRelationship {
+                symbol: out.intern(&r.symbol)?,
+                is_implementation: r.is_implementation,
+                is_reference: r.is_reference,
+                is_type_definition: r.is_type_definition,
+                is_definition: r.is_definition,
+            })
         })
-        .collect();
+        .collect::<anyhow::Result<Vec<_>>>()?;
     let new = ScipSymbol {
-        symbol: info.symbol.clone(),
         display_name: (!info.display_name.is_empty()).then(|| info.display_name.clone()),
         kind,
         relationships,
     };
-    match map.get_mut(&info.symbol) {
+    let id = out.intern(&info.symbol)?;
+    match out.symbols.get_mut(&id) {
         // Same symbol seen twice: merge relationships, fill gaps.
         Some(old) => {
             old.relationships.extend(new.relationships);
@@ -263,12 +344,15 @@ fn add_symbol(map: &mut HashMap<String, ScipSymbol>, info: &types::SymbolInforma
             }
         }
         None => {
-            map.insert(info.symbol.clone(), new);
+            out.symbols.insert(id, new);
         }
     }
+    Ok(())
 }
 
-fn convert_occ(o: &types::Occurrence) -> Option<ScipOccurrence> {
+/// Range, definition flag and enclosing range of an occurrence; `None` when
+/// it has no symbol or a malformed range.
+fn convert_occ(o: &types::Occurrence) -> Option<(Range, bool, Option<Range>)> {
     if o.symbol.is_empty() {
         return None;
     }
@@ -278,12 +362,7 @@ fn convert_occ(o: &types::Occurrence) -> Option<ScipOccurrence> {
     } else {
         convert_range(&o.enclosing_range)
     };
-    Some(ScipOccurrence {
-        symbol: o.symbol.clone(),
-        range,
-        is_definition: o.symbol_roles & 0x1 != 0,
-        enclosing_range,
-    })
+    Some((range, o.symbol_roles & 0x1 != 0, enclosing_range))
 }
 
 /// `[sl, sc, ec]` or `[sl, sc, el, ec]`; `None` if malformed.
@@ -418,7 +497,7 @@ mod tests {
                 .map(|o| {
                     let r = o.range;
                     (
-                        o.symbol.clone(),
+                        m.name(o.symbol).to_string(),
                         [r.start_line, r.start_col, r.end_line, r.end_col],
                         o.is_definition,
                     )
@@ -437,10 +516,16 @@ mod tests {
         let e = m.documents[0].occurrences[0].enclosing_range.unwrap();
         assert_eq!((e.start_line, e.end_line, e.end_col), (1, 3, 1));
         assert!(m.documents[1].occurrences[0].enclosing_range.is_none());
-        let s = &m.symbols[JAVA];
+        let s = m.symbol(JAVA).unwrap();
         assert_eq!(s.display_name.as_deref(), Some("getAccount"));
         assert!(s.relationships[0].is_implementation);
-        assert!(m.symbols.contains_key("ext 1"));
+        assert_eq!(m.name(s.relationships[0].symbol), "x");
+        assert!(m.symbol("ext 1").is_some());
+        // One id per distinct symbol, shared by every occurrence.
+        assert_eq!(
+            m.documents[0].occurrences[0].symbol,
+            m.documents[1].occurrences[0].symbol
+        );
     }
 
     #[test]
@@ -512,8 +597,8 @@ mod tests {
         idx.external_symbols.push(ext2);
         let m = from_bytes(&idx.write_to_bytes().unwrap()).unwrap();
         assert_eq!(m.symbols.len(), 1);
-        let s = &m.symbols["s 1"];
-        let rels: Vec<_> = s.relationships.iter().map(|r| r.symbol.as_str()).collect();
+        let s = m.symbol("s 1").unwrap();
+        let rels: Vec<_> = s.relationships.iter().map(|r| m.name(r.symbol)).collect();
         assert_eq!(rels, ["a", "b"]);
         assert_eq!(s.display_name.as_deref(), Some("First"));
         assert_eq!(s.kind.as_deref(), Some("Class"));
