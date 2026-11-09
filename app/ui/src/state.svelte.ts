@@ -1,6 +1,6 @@
 import * as api from "./api";
 import type { Diff, History, Impact, Matrix, Progress } from "./api";
-import type { ViewCell } from "./domaintree";
+import type { ViewCell, ViewMatrix } from "./domaintree";
 import { PAGE, appendPage } from "./cellsymbols";
 import type { SymbolList } from "./cellsymbols";
 import { selectionDiff } from "./history";
@@ -35,6 +35,8 @@ export class AppState {
   selected = $state.raw<ViewCell | null>(null);
   symbols = $state.raw<SymbolList | null>(null);
   mode = $state<Mode>(loadMode());
+  /** The aggregated matrix currently drawn (set by MatrixView; tracks expansion). */
+  view = $state.raw<ViewMatrix | null>(null);
   /** Draw front-to-back HTTP links (persisted). */
   showHttp = $state(loadShowHttp());
   /** Null when unavailable (not a git repo, error): the sidebar is hidden. */

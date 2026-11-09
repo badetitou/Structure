@@ -82,6 +82,19 @@ describe("aggregate", () => {
       { from: "ui:a2", to: "ui:b", weight: 1 },
     ]);
   });
+  it("remaps http edges like edges: merged targets summed, internal ones dropped", () => {
+    const withHttp: Matrix = {
+      ...m,
+      httpEdges: [
+        { from: "ui:a1", to: "ui:a3", weight: 2 },
+        { from: "ui:a1", to: "ui:a4", weight: 3 },
+        { from: "ui:a3", to: "ui:a4", weight: 4 },
+      ],
+    };
+    const v = aggregate(withHttp, columns(tree, new Set(["g:0"])));
+    expect(v.httpEdges).toEqual([{ from: "ui:a1", to: "ui:g:0/2", weight: 5 }]);
+    expect(v.edges).toEqual(aggregate(m, columns(tree, new Set(["g:0"]))).edges);
+  });
   it("sums parallel edges when fully collapsed", () => {
     const v = aggregate(m, columns(tree, new Set()));
     expect(v.edges).toEqual([

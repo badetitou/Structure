@@ -4,12 +4,12 @@
   "projects": [
     {
       "name": "spring-boot-realworld-example-app",
-      "root": "/Users/benoit.verhaeghe/Documents/Perso/Structure/fixtures/spring-boot-realworld-example-app",
+      "root": "fixtures/spring-boot-realworld-example-app",
       "language": "java"
     },
     {
       "name": "angular-realworld",
-      "root": "/Users/benoit.verhaeghe/Documents/Perso/Structure/fixtures/angular-realworld",
+      "root": "fixtures/angular-realworld",
       "language": "typescript"
     }
   ],
