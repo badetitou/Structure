@@ -1,7 +1,7 @@
 ---
 id: 63
 title: GWT RPC calls link the client to the server implementation
-status: in-progress
+status: done
 parent: 54
 branch: 63-gwt-rpc
 remote: null
@@ -19,14 +19,14 @@ Client and server live in the same project here, so this must work for one root 
 not only across roots like HTTP (#58).
 
 ## Acceptance criteria
-- [ ] A call to a method `m` of an `XAsync` interface whose sync twin `X extends RemoteService`
+- [x] A call to a method `m` of an `XAsync` interface whose sync twin `X extends RemoteService`
   gives an RPC edge from the caller to `Impl#m` for each class implementing `X` (arity = async arity - 1).
-- [ ] New `EdgeKind::Rpc` (or reuse Http with a protocol tag — decide in the brief), shown in the
+- [x] (analysis side; drawing in #66) New `EdgeKind::Rpc` (or reuse Http with a protocol tag — decide in the brief), shown in the
   matrix like http_edges (#60: drawn, toggle, details), in single- and multi-root analyses.
-- [ ] Works without SCIP (receiver typed `XAsync` field/local, or `X.Util.getInstance()` / `GWT.create(X.class)`),
+- [x] Works without SCIP (receiver typed `XAsync` field/local, or `X.Util.getInstance()` / `GWT.create(X.class)`),
   and with SCIP when available.
-- [ ] e-sedit-rh BLGRHGwt: linked/total RPC calls reported, target >= 80%, unmatched listed.
-- [ ] Unit tests on a minimal GWT layout.
+- [x] e-sedit-rh BLGRHGwt: linked/total RPC calls reported, target >= 80%, unmatched listed.
+- [x] Unit tests on a minimal GWT layout.
 
 ## Out of scope (later RPC kinds)
 - gRPC (generated stubs ↔ `*ImplBase`), Java RMI, JSON-RPC, Feign/HttpExchange clients as callers
@@ -78,3 +78,10 @@ STRUCTURE_FIXTURES=/Users/benoit.verhaeghe/Documents/Perso/Structure/fixtures (g
 Unit tests on a minimal GWT layout: each call shape, AsyncCallback arity drop, several impls, unresolved service, field
 shadowed by a local of another type, single root produces rpc_edges.
 Rules: no unwrap/expect outside tests; no new deps.
+
+## Result
+- e-sedit-rh BLGRHGwt `--no-scip`: `rpc: 5393/5393 linked` (0.8 s); 40 calls on services absent from the repo
+  (`IGwtServiceSedit`, `IGwtServiceCore`, ... and `ICorePhaseConstants`) reported as "not counted" (`maybe_rpc`).
+  Including them: 5393/5433 = 99.3%. 416 rpc_edges groups over 731 cells. Pair with BLGRHServer: identical.
+- Known limits: same-simple-name implementation across roots has no package/import preference (Symbol has no
+  imports); varargs arity; calls in field initialisers/static blocks not collected.
