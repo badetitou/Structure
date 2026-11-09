@@ -8,7 +8,7 @@
   // expand only creates or removes the headers that actually appear or go away.
   let {
     lay,
-    cols,
+    heads,
     bands,
     bandH,
     top,
@@ -16,7 +16,8 @@
     oncollapse,
   }: {
     lay: Layout;
-    cols: Column[];
+    /** One header per domain slot: the columns it holds (several in the aligned view). */
+    heads: { key: string; members: Column[] }[];
     bands: Band[];
     bandH: number;
     /** Depth of the band rows: the labels sit below them (right of them when transposed). */
@@ -54,7 +55,7 @@
 {/each}
 
 <g transform={lay.transposed ? `translate(${top} 0)` : `translate(0 ${top})`}>
-{#each cols as col, i (col.key)}
+{#each heads as head, i (head.key)}
   {@const l = lay.domainLabels[i]}
   {#if l}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -63,17 +64,15 @@
       y={l.y}
       font-weight="bold"
       class:dense
-      class:group={col.group}
       transform={lay.rotateDomains ? `rotate(-90 ${l.x} ${l.y})` : undefined}
       dominant-baseline={lay.rotateDomains ? "middle" : undefined}
       text-anchor={lay.rotateDomains || lay.transposed ? undefined : "middle"}
-      onclick={col.group ? () => onexpand(col.key) : undefined}
-      >{lay.flame && !lay.transposed ? fitText(l.text, (lay.columns[i]?.w ?? 0) - 2, charW) : l.text}<title>{l.text}</title></text
+      >{#if lay.flame && !lay.transposed}{@const only = head.members.length === 1 ? head.members[0] : undefined}<tspan class:group={only?.group} onclick={only?.group ? () => onexpand(only.key) : undefined}>{fitText(l.text, (lay.columns[i]?.w ?? 0) - 2, charW)}</tspan>{:else}{#each head.members as col, j (col.key)}{#if j > 0}{" ⇄ "}{/if}<tspan class:group={col.group} onclick={col.group ? () => onexpand(col.key) : undefined}>{col.group ? "▸ " : ""}{col.label}</tspan>{/each}{/if}<title>{l.text}</title></text
     >
   {/if}
 {/each}
 
-{#each lay.layerLabels as l, i (l.text)}
+{#each lay.layerLabels as l, i (i)}
   <text
     x={l.x}
     y={l.y}

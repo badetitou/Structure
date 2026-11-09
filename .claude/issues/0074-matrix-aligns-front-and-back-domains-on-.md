@@ -1,7 +1,7 @@
 ---
 id: 74
 title: Matrix aligns front and back domains on shared rows, split by a double line
-status: in-progress
+status: done
 parent: null
 branch: 74-matrix-align-front-back
 remote: null
@@ -16,21 +16,21 @@ stops and the back starts. The backend tree also often stays one collapsed colum
 initial expansion budget (12 columns) is spent on the first project.
 
 ## Acceptance criteria
-- [ ] "Aligned" view (toolbar toggle, persisted, default on, shown only when the matrix has
+- [x] "Aligned" view (toolbar toggle, persisted, default on, shown only when the matrix has
   >= 2 projects and remote (http/rpc) edges): the layer axis is split into one segment per
   project (only the layers that project uses, in global order; shared layers like `model`
   appear once per segment), segments separated by a gap with a double line, in every mode
   (dense included), both orientations.
-- [ ] Domain axis: each row holds at most one visible domain column per project; columns linked by
+- [x] Domain axis: each row holds at most one visible domain column per project; columns linked by
   remote edges are paired (heaviest link first), so a front domain and the back domain it calls
   share a row and the link is straight. Unpaired columns get their own row. Rows follow the
   caller ("primary") project's column order; secondary-only rows go last.
-- [ ] Row label shows each member column (e.g. `orders ⇄ order`); a group member stays
+- [x] Row label shows each member column (e.g. `orders ⇄ order`); a group member stays
   expandable by clicking its part. Bands are drawn for the primary project only.
-- [ ] Initial expansion gives each project its own budget, so the backend is expanded too.
-- [ ] Selection, hover, details panel, impact keep working (ids remapped through `cellMap`).
-- [ ] Toggle off = today's matrix exactly (existing tests unchanged).
-- [ ] vitest, svelte-check, build green; checked in the browser on `?sample=matrix-multi`.
+- [x] Initial expansion gives each project its own budget, so the backend is expanded too.
+- [x] Selection, hover, details panel, impact keep working (ids remapped through `cellMap`).
+- [x] Toggle off = today's matrix exactly (existing tests unchanged).
+- [x] vitest, svelte-check, build green; checked in the browser on `?sample=matrix-multi`.
 
 ## Out of scope
 - Collapsing a secondary-project group (no bands for it) — follow-up if needed.
@@ -72,3 +72,18 @@ cellMap composition, segments with shared layers, layout gaps/separators, defaul
 Browser check with `?sample=matrix-multi` (normal + dense, both orientations); stop any server you start.
 Rules: no new deps; no colour literals outside app.css; one concern; commit on the branch when green
 (no Claude attribution).
+
+## Result
+
+Done: `aligned.ts` (pairing, per-project layer segments, cellMap composition), `layout.ts`
+(`layerTexts`, `gapsBefore`, `separators`), MatrixView/ColumnHeaders/Toolbar wiring, token
+`--segment-line`, toggle `structure.matrix.aligned`. vitest 181 tests, svelte-check and build green.
+
+Browser (`?sample=matrix-multi`, headless Chromium via playwright-core): normal and dense, both
+orientations load without errors; double line drawn between the angular and spring segments;
+rows such as `angular-realworld/article ⇄ spring-boot-realworld-example-app/article` pair front and
+back. The sample has no `domain_tree`, so the per-project expansion budget and the primary-only
+bands were covered by reasoning and unit tests only, not in the browser. Flame not checked visually.
+
+Known limits: pairing uses all remote edges, whatever the HTTP/RPC link toggles; a row never merges
+two existing groups; cell tooltips and the details panel show the plain layer name (`layerName`).
