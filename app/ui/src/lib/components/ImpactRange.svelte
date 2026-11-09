@@ -12,6 +12,7 @@
 
   function run(e: SubmitEvent) {
     e.preventDefault();
+    if (app.impactBusy) return;
     app.runTypedImpact(base.trim() || null, head.trim() || null);
     open = false;
   }

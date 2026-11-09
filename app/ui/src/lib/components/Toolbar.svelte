@@ -12,7 +12,7 @@
   import ThemeSwitch from "../../ThemeSwitch.svelte";
   import { parseMode } from "../../mode";
   import { app } from "../../state.svelte";
-  import { baseName } from "../../statusbar";
+  import { folderName } from "../../recent";
   import ImpactRange from "./ImpactRange.svelte";
   import ViewsMenu from "./workspace/ViewsMenu.svelte";
 
@@ -42,7 +42,7 @@
 
 <header class="flex h-10 flex-none items-center gap-1.5 overflow-x-auto border-b bg-card px-2 whitespace-nowrap">
   <img src="/logo.svg" alt="Structure" class="size-6 flex-none" />
-  <h1 class="m-0 max-w-56 truncate text-sm font-semibold" title={app.project}>{app.work?.project || baseName(app.project)}</h1>
+  <h1 class="m-0 max-w-56 truncate text-sm font-semibold" title={app.project}>{app.work?.project || folderName(app.project)}</h1>
   {#if ready}
   {@render divider()}
   {@render iconBtn(ZoomOut, "Zoom out", onZoomOut)}

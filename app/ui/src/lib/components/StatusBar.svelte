@@ -14,22 +14,22 @@
   class="flex h-6 flex-none items-center gap-2 overflow-hidden border-t bg-card px-3 text-xs whitespace-nowrap text-muted-foreground"
   aria-label="Status bar"
 >
-  <span class="min-w-0 truncate" title={app.project}>{app.project}</span>
+  <span class="min-w-16 truncate" title={app.project}>{app.project}</span>
   {#if m}
     {@render sep()}
-    <span>{m.language}</span>
+    <span class="flex-none">{m.language}</span>
     {@render sep()}
-    <span>{statsLabel(m.stats)}</span>
+    <span class="flex-none">{statsLabel(m.stats)}</span>
   {/if}
   {@render sep()}
-  <span class:text-foreground={!!app.impact?.matrix}>{snapshotLabel(app.impact)}</span>
+  <span class="flex-none" class:text-foreground={!!app.impact?.matrix}>{snapshotLabel(app.impact)}</span>
   {#if impact}
     {@render sep()}
     <span class="truncate">{impact}</span>
   {/if}
   {#if app.impactError}
     {@render sep()}
-    <span class="truncate text-destructive" title={app.impactError}>{app.impactError}</span>
+    <span class="max-w-[40%] flex-none truncate text-destructive" title={app.impactError}>{app.impactError}</span>
   {/if}
   {#if selection}
     {@render sep()}
