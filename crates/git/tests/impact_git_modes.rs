@@ -103,3 +103,23 @@ fn rename_delete_and_middle_deletion() {
     assert_eq!(r, vec![fc("gone2.txt", &[])]);
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn untracked_scip_index_is_skipped_and_lines_counted_in_chunks() {
+    let d = temp_repo("untrackedidx");
+    std::fs::write(d.join("a.txt"), "1\n").unwrap();
+    git(&d, &["add", "."]);
+    git(&d, &["commit", "-qm", "one"]);
+    std::fs::create_dir_all(d.join("sub")).unwrap();
+    std::fs::write(d.join("index.scip"), "x\n").unwrap();
+    std::fs::write(d.join("sub/index.scip"), "x\n").unwrap();
+    // Larger than one read chunk, last line without '\n'.
+    std::fs::write(d.join("big.txt"), format!("{}tail", "abc\n".repeat(20_000))).unwrap();
+    std::fs::write(d.join("no_nl.txt"), "a\nb").unwrap();
+    let r = sorted(changed_lines(&d, None, None).unwrap());
+    assert_eq!(
+        r,
+        vec![fc("big.txt", &[(0, 20_001)]), fc("no_nl.txt", &[(0, 2)])]
+    );
+    let _ = std::fs::remove_dir_all(&d);
+}
