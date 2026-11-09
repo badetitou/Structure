@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Instant;
 use structure_core::metrics::{Metrics, peak_rss_bytes};
 use structure_core::model::{Cell, Impact, Matrix, Progress};
@@ -17,7 +17,9 @@ struct Cli {
 enum Command {
     /// Analyze a project and emit the matrix as JSON.
     Analyze {
-        path: PathBuf,
+        /// One or more project roots, merged into one matrix.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
         #[arg(short, long)]
         output: Option<PathBuf>,
         /// Re-run the SCIP indexer even if index.scip exists.
@@ -50,7 +52,7 @@ enum Command {
 }
 
 fn run_analysis(
-    path: &Path,
+    paths: &[PathBuf],
     reindex: bool,
     reindex_if_stale: bool,
     no_scip: bool,
@@ -64,7 +66,7 @@ fn run_analysis(
         exact: false,
     };
     let t = Instant::now();
-    let analysis = pipeline::analyze(path, &opts, &|p: Progress| {
+    let analysis = pipeline::analyze_many(paths, &opts, &|p: Progress| {
         if p.detail.is_some() {
             // Live indexer output: not a step change.
             return;
@@ -76,6 +78,9 @@ fn run_analysis(
         "language: {:?}, files: {}, symbols: {}, edges: {}",
         m.language, m.stats.files, m.stats.symbols, m.stats.edges
     );
+    for p in &m.projects {
+        eprintln!("project {}: {:?} ({})", p.name, p.language, p.root);
+    }
     match &analysis.link_stats {
         Some(s) => eprintln!("link: {s:?}"),
         None => eprintln!("link: none (tree-sitter only)"),
@@ -161,13 +166,13 @@ fn print_impact(i: &Impact, shown: &[String]) {
 fn main() -> Result<()> {
     match Cli::parse().command {
         Command::Analyze {
-            path,
+            paths,
             output,
             reindex,
             no_scip,
             indexer_timeout,
         } => {
-            let a = run_analysis(&path, reindex, true, no_scip, indexer_timeout)?;
+            let a = run_analysis(&paths, reindex, true, no_scip, indexer_timeout)?;
             print_table(&a.matrix);
             write_json(&a.matrix, &output)
         }
@@ -197,7 +202,7 @@ fn main() -> Result<()> {
                 return write_json(&i, &output);
             }
             // A stale index is fine for impact (symbol ranges come from tree-sitter).
-            let a = run_analysis(&path, false, false, no_scip, None)?;
+            let a = run_analysis(std::slice::from_ref(&path), false, false, no_scip, None)?;
             let t = Instant::now();
             let i = pipeline::impact(&path, &a, base.as_deref(), head.as_deref())?;
             eprintln!("impact: {} ms", t.elapsed().as_millis());
