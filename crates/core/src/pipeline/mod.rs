@@ -203,7 +203,7 @@ pub(super) fn analyze_in(
     step("parsing", 35);
     let t = Instant::now();
     let graph = crate::lang::frontend(lang)
-        .parse_project(root)
+        .parse_project_warned(root, &mut warnings)
         .with_context(|| format!("parsing {}", root.display()))?;
     metrics.phase("parse", t, None);
 
