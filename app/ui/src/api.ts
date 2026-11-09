@@ -59,15 +59,24 @@ export interface DomainNode {
 }
 /** Matrix as sent by the backend (docs/api.md). */
 export type WireMatrix = Omit<Matrix, "edges"> & { edges: EdgeGroup[] };
+export interface ProjectInfo {
+  name: string;
+  root: string;
+  language: Language;
+}
 export interface Matrix {
   project: string;
   language: Language;
+  /** Present only when several folders were analysed together. */
+  projects?: ProjectInfo[];
   layers: Layer[];
   domains: string[];
   /** Present only when the domains form a hierarchy. */
   domain_tree?: DomainNode[];
   cells: Cell[];
   edges: CellEdge[];
+  /** Wire form (not expanded); present only for several folders, when non-empty. Not drawn yet (#60). */
+  http_edges?: EdgeGroup[];
   stats: Stats;
   /** Id of the cached analysis (pass to `cellSymbols`); set by the app. */
   generation?: number;
@@ -166,8 +175,9 @@ export async function pickFolder(): Promise<string | null> {
   return typeof sel === "string" ? sel : null;
 }
 
+/** Analyses one folder, or several together (`paths.length > 1`). */
 export async function analyze(
-  path: string,
+  paths: string[],
   onProgress: (p: Progress) => void,
 ): Promise<Matrix> {
   if (!inTauri) {
@@ -193,7 +203,7 @@ export async function analyze(
     onProgress(e.payload),
   );
   try {
-    return expandMatrix(await invoke<WireMatrix>("analyze", { path }));
+    return expandMatrix(await invoke<WireMatrix>("analyze", { paths }));
   } finally {
     unlisten();
   }
@@ -235,7 +245,7 @@ export async function impact(
 /** One page of the symbols of `cells` (sorted by name); `head` = commit whose
  * matrix is shown, null for the working tree. */
 export async function cellSymbols(
-  path: string,
+  paths: string[],
   head: string | null,
   generation: number,
   cells: string[],
@@ -247,7 +257,7 @@ export async function cellSymbols(
     const list = cells.flatMap((c) => all[c] ?? []);
     return { total: list.length, offset, symbols: list.slice(offset, offset + limit) };
   }
-  return invoke<CellSymbols>("cell_symbols", { path, head, generation, cells, offset, limit });
+  return invoke<CellSymbols>("cell_symbols", { paths, head, generation, cells, offset, limit });
 }
 
 export async function history(path: string, limit?: number): Promise<History> {

@@ -25,6 +25,7 @@
 {/snippet}
 
 <div class="flex flex-none items-center gap-2 overflow-x-auto border-b bg-card px-4 py-2 whitespace-nowrap">
+  {#if !app.multi}
   <details class="group flex items-center gap-2 open:flex-wrap">
     <summary class="cursor-pointer text-sm">Advanced</summary>
     <Input class="h-7 w-48" placeholder="base (empty = HEAD)" bind:value={base} />
@@ -36,6 +37,7 @@
       onclick={() => app.runTypedImpact(base.trim() || null, head.trim() || null)}>Show impact</Button
     >
   </details>
+  {/if}
   {@render zoomBtn("−", "Zoom out", onZoomOut)}
   {@render zoomBtn("+", "Zoom in", onZoomIn)}
   {@render zoomBtn("Fit", "Show the whole matrix", onFit)}

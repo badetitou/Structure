@@ -23,7 +23,8 @@ const START: Progress = { step: "starting…", pct: 0 };
 
 /** State of the analysis screen: project, analysis, selection, impact, history. */
 export class AppState {
-  project = $state("");
+  /** Folders analysed together (one for a single project). */
+  paths = $state<string[]>([]);
   /** "loading" while analysing, "ready" once the working-tree matrix is there. */
   phase = $state<"idle" | "loading" | "ready">("idle");
   progress = $state<Progress>(START);
@@ -51,6 +52,15 @@ export class AppState {
   private symReq = 0;
   private loadReq = 0;
 
+  /** First folder: the project for single-project code. */
+  get project(): string {
+    return this.paths[0] ?? "";
+  }
+  /** Several folders analysed together: git panels (history, impact, diff) are unavailable. */
+  get multi(): boolean {
+    return this.paths.length > 1;
+  }
+
   /** The matrix to display: the commit snapshot's when the impact carries one, else the working tree. */
   get matrix(): Matrix | null {
     return this.work ? shownMatrix(this.work, this.impact) : null;
@@ -63,15 +73,16 @@ export class AppState {
     return this.matrix === this.work ? null : (this.impact?.head ?? null);
   }
 
-  /** Analyses `path` (progress in `progress`), then loads its history. Rejects when the analysis fails. */
-  async load(path: string): Promise<void> {
+  /** Analyses `paths` (progress in `progress`), then loads its history (single project only). Rejects when the analysis fails. */
+  async load(input: string | string[]): Promise<void> {
+    const paths = typeof input === "string" ? [input] : input;
     this.reset();
     const req = this.loadReq;
-    this.project = path;
+    this.paths = paths;
     this.phase = "loading";
     let m: Matrix;
     try {
-      m = await analyzeAndRecord(path, (p) =>
+      m = await analyzeAndRecord(paths, (p) =>
         api.analyze(p, (pr) => {
           if (req === this.loadReq) this.progress = pr;
         }),
@@ -83,8 +94,9 @@ export class AppState {
     if (req !== this.loadReq) return;
     this.work = m;
     this.phase = "ready";
+    if (paths.length > 1) return; // no git history across several repos
     try {
-      const h = await api.history(path);
+      const h = await api.history(paths[0]);
       if (req === this.loadReq) this.history = h;
     } catch {
       // history is optional
@@ -96,7 +108,7 @@ export class AppState {
     this.loadReq++;
     this.guard.invalidate();
     this.symReq++;
-    this.project = "";
+    this.paths = [];
     this.phase = "idle";
     this.progress = START;
     this.work = null;
@@ -138,7 +150,7 @@ export class AppState {
         : { cell: cell.id, total: cell.size, items: [], loading: true };
     this.symbols = base;
     try {
-      const page = await api.cellSymbols(this.project, this.shownHead, m.generation ?? 0, cell.members, base.items.length, PAGE);
+      const page = await api.cellSymbols(this.paths, this.shownHead, m.generation ?? 0, cell.members, base.items.length, PAGE);
       if (req !== this.symReq) return;
       this.symbols = appendPage(base, page);
     } catch (e) {
@@ -150,7 +162,7 @@ export class AppState {
   /** Diff of two refs (null = HEAD / working tree); shows the commit snapshot when there is one.
    * Ignored while another impact runs. */
   async runImpact(base: string | null, head: string | null): Promise<void> {
-    if (this.impactBusy) return;
+    if (this.impactBusy || this.multi) return;
     const req = this.guard.begin();
     this.impactError = "";
     this.impactBusy = true;
@@ -201,6 +213,7 @@ export class AppState {
 
   /** Loads the diff of `base..head`; a later selection supersedes it. */
   async loadDiff(base: string | null, head: string | null): Promise<void> {
+    if (this.multi) return;
     const req = this.diffGuard.begin();
     this.diff = { base, head, loading: true };
     try {
