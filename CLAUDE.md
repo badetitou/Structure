@@ -35,8 +35,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     analyze/detect, `indexer`, `process`, `progress`, `snapshot`, `history`).
 - `crates/cli` — bin `structure` (`analyze`, `impact`). Keep `main` thin.
 - `app/` — Tauri 2 app: `src-tauri` (commands over `pipeline`), `ui` (Vite + Svelte
-  5 + TS, vitest): `src/*.ts` state/geometry helpers, `src/lib/components` Svelte
-  components (`matrix/`, `ui/`). See `app/README.md`.
+  5 + TS, vitest): `src/*.ts` state/geometry helpers, `src/workspace/` panel registry +
+  tiling layout, `src/lib/components` Svelte components (`matrix/`, `workspace/`, `ui/`). See `app/README.md`.
 - `docs/` — `plan.md`, `api.md` (Tauri API contract), `samples/*.json`.
 - `scripts/` — fetch and index fixtures; `tests/golden/` — expected classifications.
 - `fixtures/` (gitignored) — sample projects. Tests needing them read env

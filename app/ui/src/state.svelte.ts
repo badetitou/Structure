@@ -8,12 +8,11 @@ import type { Selection } from "./history";
 import type { Mode } from "./layout";
 import { RequestGuard, shownMatrix } from "./matrixsel";
 import { loadMode, saveMode } from "./mode";
-import { loadPanels, savePanels } from "./panels";
 import { analyzeAndRecord } from "./recent";
 
 const START: Progress = { step: "starting…", pct: 0 };
 
-/** State of the analysis screen: project, analysis, selection, impact, history, layout. */
+/** State of the analysis screen: project, analysis, selection, impact, history. */
 export class AppState {
   project = $state("");
   /** "loading" while analysing, "ready" once the working-tree matrix is there. */
@@ -31,7 +30,6 @@ export class AppState {
   historySel = $state.raw<Selection | null>(null);
   impactError = $state("");
   impactBusy = $state(false);
-  panels = $state(loadPanels());
 
   private guard = new RequestGuard();
   private symReq = 0;
@@ -98,10 +96,6 @@ export class AppState {
   toggleMode() {
     this.mode = this.mode === "dense" ? "normal" : "dense";
     saveMode(this.mode);
-  }
-
-  savePanels() {
-    savePanels(this.panels);
   }
 
   /** Select a view cell (or none) and list its symbols. */
