@@ -295,3 +295,46 @@ fn calls_in_callbacks_belong_to_the_enclosing_method() {
         .collect();
     assert_eq!(got, [("a.ts#S.a", Get, "/x"), ("a.ts#S.b", Post, "/y")]);
 }
+
+#[test]
+fn url_from_local_variable() {
+    let src = "class S { constructor(private httpClient: HttpClient) {}\n\
+      a() { let localVarPath = `/habilitations/has`;\n\
+        return this.httpClient.request<boolean>('get', `${this.configuration.basePath}${localVarPath}`, {}); }\n\
+      b(id: number) { let localVarPath = `/users/${this.configuration.encodeParam({name: 'id', value: id})}/roles`;\n\
+        return this.httpClient.request('delete', `${this.configuration.basePath}${localVarPath}`); }\n\
+      c() { let p = '/a'; p = '/b'; return this.httpClient.get(`${p}/x`); }\n\
+      d() { let p = '/a'; p += '/b'; return this.httpClient.get(`/api${p}`); }\n\
+      e() { const r = this.httpClient.get(`/api${p}`); const p = '/late'; return r; }\n\
+      f() { const q = '/a'; const p = `${q}/b`; return this.httpClient.get(`/api${p}`); } }";
+    assert_eq!(calls(src, "S.a"), [p(Get, "/{basePath}/habilitations/has")]);
+    assert_eq!(calls(src, "S.b"), [p(Delete, "/{basePath}/users/{}/roles")]);
+    assert_eq!(calls(src, "S.c"), [p(Get, "/{p}/x")]);
+    assert_eq!(calls(src, "S.d"), [p(Get, "/api{p}")]);
+    assert_eq!(calls(src, "S.e"), [p(Get, "/api{p}")]);
+    // Scope: a declarator must enclose the use, outside parameters and loop headers.
+    let scoped = "class S { constructor(private http: HttpClient) {}\n\
+      closure() { xs.forEach(() => { const u = '/a'; }); return this.http.get(`/api${u}`); }\n\
+      sibling(a: boolean) { if (a) { const u = '/a'; } return this.http.get(`/api${u}`); }\n\
+      param(u: string) { { const k = 1; } return this.http.get(`/api${u}`); }\n\
+      shadow(u: string) { const u2 = 1; return this.http.get(`/api${u}`); }\n\
+      forof(xs: string[]) { for (const u of xs) { this.http.get(`/api${u}`); } }\n\
+      forin(o: any) { for (let u in o) { this.http.get(`/api${u}`); } }\n\
+      arr() { let u = '/a'; [u] = xs; return this.http.get(`/api${u}`); }\n\
+      obj() { let u = '/a'; ({u} = o); return this.http.get(`/api${u}`); }\n\
+      obj2() { let u = '/a'; ({k: u} = o); return this.http.get(`/api${u}`); }\n\
+      forre(xs: string[]) { let u = '/a'; for (u of xs) {} return this.http.get(`/api${u}`); }\n\
+      forin2(o: any) { let u = '/a'; for (u in o) {} return this.http.get(`/api${u}`); }\n\
+      nested() { const u = '/a'; if (x) { return this.http.get(`/api${u}`); } }\n\
+      inner() { const u = '/a'; return xs.map(() => this.http.get(`/api${u}`)); } }";
+    for m in [
+        "closure", "sibling", "param", "forof", "forin", "arr", "obj", "obj2", "forre", "forin2",
+    ] {
+        assert_eq!(calls(scoped, &format!("S.{m}")), [p(Get, "/api{u}")], "{m}");
+    }
+    assert_eq!(calls(scoped, "S.nested"), [p(Get, "/api/a")]);
+    // The function boundary stops the search: a use inside a callback stays a placeholder.
+    assert_eq!(calls(scoped, "S.inner"), [p(Get, "/api{u}")]);
+    // One level deep only: `q` inside `p` stays a placeholder.
+    assert_eq!(calls(src, "S.f"), [p(Get, "/api{q}/b")]);
+}
