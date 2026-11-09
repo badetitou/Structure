@@ -64,6 +64,16 @@
       onPressedChange={(v) => app.setShowHttp(v)}>HTTP links</Toggle
     >
   {/if}
+  {#if (app.matrix?.rpcEdges.length ?? 0) > 0}
+    <Toggle
+      variant="outline"
+      size="sm"
+      class="px-2"
+      aria-label="Show GWT RPC links"
+      pressed={app.showRpc}
+      onPressedChange={(v) => app.setShowRpc(v)}>RPC links</Toggle
+    >
+  {/if}
   <Button variant="outline" size="sm" disabled={!app.impact || app.impactBusy} onclick={() => app.clearImpact()}>Clear</Button>
   <span class="text-destructive">{app.impactError}</span>
   <span class="flex items-center text-sm text-muted-foreground">

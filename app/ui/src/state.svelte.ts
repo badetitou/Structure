@@ -7,7 +7,7 @@ import { selectionDiff } from "./history";
 import type { Selection } from "./history";
 import type { Mode } from "./layout";
 import { RequestGuard, shownMatrix } from "./matrixsel";
-import { loadMode, loadShowHttp, saveMode, saveShowHttp } from "./mode";
+import { loadMode, loadShowHttp, loadShowRpc, saveMode, saveShowHttp, saveShowRpc } from "./mode";
 import { analyzeAndRecord } from "./recent";
 
 /** The diff panel's content: the requested range and its diff once loaded. */
@@ -39,6 +39,8 @@ export class AppState {
   view = $state.raw<ViewMatrix | null>(null);
   /** Draw front-to-back HTTP links (persisted). */
   showHttp = $state(loadShowHttp());
+  /** Draw GWT RPC links (persisted). */
+  showRpc = $state(loadShowRpc());
   /** Null when unavailable (not a git repo, error): the sidebar is hidden. */
   history = $state.raw<History | null>(null);
   historySel = $state.raw<Selection | null>(null);
@@ -130,6 +132,10 @@ export class AppState {
   setShowHttp(on: boolean) {
     this.showHttp = on;
     saveShowHttp(on);
+  }
+  setShowRpc(on: boolean) {
+    this.showRpc = on;
+    saveShowRpc(on);
   }
   setMode(mode: Mode) {
     this.mode = mode;
