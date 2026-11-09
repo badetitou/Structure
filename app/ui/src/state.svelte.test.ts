@@ -51,6 +51,11 @@ async function loaded(work = mx("work")) {
   return s;
 }
 
+const twoProjects = [
+  { name: "front", root: "/front", language: "typescript" as const },
+  { name: "back", root: "/back", language: "java" as const },
+];
+
 describe("AppState", () => {
   it("loads the analysis, reports progress and then the history", async () => {
     const work = mx("p");
@@ -76,6 +81,65 @@ describe("AppState", () => {
     await s.load("/p");
     expect(s.phase).toBe("ready");
     expect(s.history).toBeNull();
+  });
+
+  it("analyses several folders together without any git call", async () => {
+    mocked.analyze.mockResolvedValue({ ...mx("front"), projects: twoProjects });
+    const s = new AppState();
+    await s.load(["/front", "/back"]);
+    expect(mocked.analyze.mock.calls[0][0]).toEqual(["/front", "/back"]);
+    expect(s.multi).toBe(true);
+    expect(s.phase).toBe("ready");
+    expect(mocked.history).not.toHaveBeenCalled();
+    await s.runImpact(null, null);
+    await s.loadDiff(null, null);
+    expect(mocked.impact).not.toHaveBeenCalled();
+    expect(mocked.diff).not.toHaveBeenCalled();
+    s.selectCell(cell);
+    await flush();
+    expect(mocked.cellSymbols.mock.calls[0][0]).toEqual(["/front", "/back"]);
+  });
+
+  it("is not multi when two paths resolve to one project", async () => {
+    mocked.analyze.mockResolvedValue(mx("p"));
+    mocked.history.mockResolvedValue({ dirty: false, commits: [] });
+    const s = new AppState();
+    await s.load(["/p", "/p/"]);
+    expect(s.multi).toBe(false);
+    expect(mocked.history).toHaveBeenCalledTimes(1);
+    expect(s.history).not.toBeNull();
+  });
+
+  it("goes single -> multi -> single with clean git state each time", async () => {
+    const hist = { dirty: false, commits: [] };
+    mocked.history.mockResolvedValue(hist);
+    mocked.impact.mockResolvedValue(imp());
+    mocked.diff.mockResolvedValue({ base: "a", head: null, files: [], truncated: false });
+    const s = new AppState();
+    mocked.analyze.mockResolvedValue(mx("p"));
+    await s.load("/p");
+    await s.runImpact(null, null);
+    await s.loadDiff(null, null);
+    expect(s.history).toBe(hist);
+    expect(s.impact).not.toBeNull();
+    expect(s.diff).not.toBeNull();
+
+    mocked.history.mockClear();
+    mocked.analyze.mockResolvedValue({ ...mx("front"), projects: twoProjects });
+    await s.load(["/front", "/back"]);
+    expect(s.multi).toBe(true);
+    for (const x of [s.history, s.impact, s.diff]) expect(x).toBeNull();
+    expect(s.impactBusy).toBe(false);
+    expect(s.impactError).toBe("");
+    expect(mocked.history).not.toHaveBeenCalled();
+
+    mocked.analyze.mockResolvedValue(mx("p"));
+    await s.load("/p");
+    expect(s.multi).toBe(false);
+    expect(s.history).toBe(hist);
+    for (const x of [s.impact, s.diff]) expect(x).toBeNull();
+    expect(s.impactBusy).toBe(false);
+    expect(s.impactError).toBe("");
   });
 
   it("rejects when the analysis fails", async () => {
@@ -149,7 +213,7 @@ describe("AppState", () => {
     s.selectCell(cell);
     expect(s.symbols?.loading).toBe(true);
     await flush();
-    expect(mocked.cellSymbols).toHaveBeenCalledWith("/p", null, 7, ["m1"], 0, expect.any(Number));
+    expect(mocked.cellSymbols).toHaveBeenCalledWith(["/p"], null, 7, ["m1"], 0, expect.any(Number));
     expect(s.symbols?.items).toHaveLength(1);
     mocked.cellSymbols.mockResolvedValueOnce({ total: 2, offset: 1, symbols: [sym("b")] });
     await s.loadSymbols(true);
@@ -318,6 +382,6 @@ describe("AppState", () => {
     mocked.cellSymbols.mockResolvedValue({ total: 0, offset: 0, symbols: [] });
     s.selectCell(cell);
     await flush();
-    expect(mocked.cellSymbols).toHaveBeenLastCalledWith("/p", "h1", 7, ["m1"], 0, expect.any(Number));
+    expect(mocked.cellSymbols).toHaveBeenLastCalledWith(["/p"], "h1", 7, ["m1"], 0, expect.any(Number));
   });
 });
