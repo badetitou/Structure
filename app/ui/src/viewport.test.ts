@@ -54,23 +54,26 @@ describe("zoomAt", () => {
 
 describe("zoomAtClamped", () => {
   const f = fit(1000, 500, 800, 400);
-  it("clamps to 10x of fit and 0.1x of fit", () => {
+  it("zooms in far past the old 10x cap, zooms out down to 0.1x of fit", () => {
     let vb = f;
-    for (let i = 0; i < 50; i++) vb = zoomAtClamped(vb, 2, 500, 250, f);
-    close(zoomLevel(vb, f), 10);
+    for (let i = 0; i < 20; i++) vb = zoomAtClamped(vb, 2, 500, 250, f);
+    close(zoomLevel(vb, f), 2 ** 20);
     for (let i = 0; i < 50; i++) vb = zoomAtClamped(vb, 0.5, 500, 250, f);
     close(zoomLevel(vb, f), 0.1);
   });
-  it("does nothing past a bound in the direction of travel", () => {
-    const above = zoomAt(f, 20, 0, 0); // level 20
-    expect(zoomAtClamped(above, 2, 0, 0, f)).toBe(above);
+  it("stops zooming in only at float precision, keeping the view finite", () => {
+    let vb = f;
+    for (let i = 0; i < 2000; i++) vb = zoomAtClamped(vb, 2, 500, 250, f);
+    expect(vb.w).toBeGreaterThan(0);
+    expect(Number.isFinite(zoomLevel(vb, f))).toBe(true);
+    expect(zoomLevel(vb, f)).toBeGreaterThan(1e6);
+    expect(zoomAtClamped(vb, 2, 500, 250, f)).toBe(vb);
+  });
+  it("does nothing below the zoom-out bound when zooming out", () => {
     const below = zoomAt(f, 0.05, 0, 0); // level 0.05
     expect(zoomAtClamped(below, 0.5, 0, 0, f)).toBe(below);
   });
-  it("moves back toward the range from outside without snapping", () => {
-    const above = zoomAt(f, 20, 0, 0);
-    close(zoomLevel(zoomAtClamped(above, 0.5, 0, 0, f), f), 10);
-    close(zoomLevel(zoomAtClamped(above, 0.9, 0, 0, f), f), 18);
+  it("moves back toward the range from below without snapping", () => {
     const below = zoomAt(f, 0.05, 0, 0);
     close(zoomLevel(zoomAtClamped(below, 2, 0, 0, f), f), 0.1);
     close(zoomLevel(zoomAtClamped(below, 1.2, 0, 0, f), f), 0.06);
