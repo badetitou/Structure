@@ -24,7 +24,7 @@ export interface Label {
   y: number;
 }
 
-/** Horizontal slot of one column: left edge and width. */
+/** Slot of one column (or row) along its axis: start and length. */
 export interface ColumnSlot {
   x: number;
   w: number;
@@ -34,12 +34,21 @@ export interface Layout {
   width: number;
   height: number;
   tiles: Tile[];
-  /** One slot per domain column, left to right (bands span them). */
+  /**
+   * One slot per domain, along the domain axis: left to right, or top to bottom
+   * when transposed (`x` / `w` are then a top and a height). Bands span them.
+   */
   columns: ColumnSlot[];
+  /** One slot per layer, along the layer axis (top to bottom, or left to right when transposed). */
+  rows: ColumnSlot[];
   domainLabels: Label[];
   layerLabels: Label[];
   /** Rotate domain labels by -90 degrees around their anchor. */
   rotateDomains: boolean;
+  /** Rotate layer labels by -90 degrees around their anchor (dense, transposed). */
+  rotateLayers: boolean;
+  /** Domains are rows and layers columns; domain labels and bands sit on the left. */
+  transposed: boolean;
   /** Labels under cells and edges are only drawn in normal mode. */
   detailed: boolean;
   /** Flame mode: column widths follow sizes, domain labels are cut to their column. */
@@ -58,13 +67,19 @@ export const BAND_NORMAL = 22;
 export const BAND_DENSE = 14;
 /** Upper bound of one character's width in a dense header label (bold, font-size 10). */
 export const DENSE_CHAR_W = 7;
-const denseMargin = (names: readonly string[]) =>
-  12 + DENSE_CHAR_W * Math.max(0, ...names.map((n) => n.length));
+/** Upper bound of one character's width in a normal header label (bold, font-size 11). */
+export const LABEL_CHAR_W = 8;
+const longest = (names: readonly string[]) => Math.max(0, ...names.map((n) => n.length));
+const denseMargin = (names: readonly string[]) => 12 + DENSE_CHAR_W * longest(names);
+/** Left room for horizontal domain labels when transposed. */
+const labelMargin = (names: readonly string[]) => 12 + LABEL_CHAR_W * longest(names);
 
 /** Flame mode: row height, minimum column width, target width before minimums. */
 export const FLAME_ROW = 56;
 export const FLAME_MIN_W = 18;
 export const FLAME_TARGET_W = 1400;
+/** Flame mode, transposed: width of one layer column (bars grow along it). */
+export const FLAME_COL = 120;
 /** Flame mode: gap between neighbouring cells, height of an empty slot's baseline. */
 export const FLAME_GAP = 2;
 export const FLAME_BASELINE = 2;
@@ -76,81 +91,85 @@ export function flameWidths(sizes: readonly number[]): number[] {
   return sizes.map((s) => Math.max(FLAME_MIN_W, s * unit));
 }
 
-function flameLayout(
+/**
+ * Geometry before orientation: `x` runs along the domains, `y` along the layers.
+ * `uEnd` / `vEnd` are the extents along each axis, padding included.
+ */
+interface Core {
+  tiles: Tile[];
+  columns: ColumnSlot[];
+  rows: ColumnSlot[];
+  uEnd: number;
+  vEnd: number;
+}
+
+function flameCore(
   layers: readonly string[],
   domains: readonly string[],
   cells: readonly SlotCell[],
-  domainTexts: readonly string[],
-): Layout {
+  u0: number,
+  v0: number,
+  row: number,
+  fromStart: boolean,
+): Core {
   const byId = new Map(cells.map((c) => [c.id, c]));
   const maxSize = Math.max(1, ...cells.map((c) => c.size));
   const colSize = new Map<string, number>();
   for (const c of cells) colSize.set(c.domain, (colSize.get(c.domain) ?? 0) + c.size);
   const widths = flameWidths(domains.map((d) => colSize.get(d) ?? 0));
   const columns: ColumnSlot[] = [];
-  let x = MARGIN_L;
+  let x = u0;
   for (const w of widths) {
     columns.push({ x, w });
     x += w;
   }
   const tiles: Tile[] = [];
   layers.forEach((layer, r) => {
-    const bottom = MARGIN_T + (r + 1) * FLAME_ROW - FLAME_GAP;
+    const start = v0 + r * row + FLAME_GAP;
+    const bottom = v0 + (r + 1) * row - FLAME_GAP;
     domains.forEach((domain, c) => {
       const cell = byId.get(`${layer}:${domain}`);
       const slot = columns[c];
       if (!slot) return;
-      // Bars rise from the row's baseline: full height is the largest cell.
-      const h = cell ? Math.max(4, (FLAME_ROW - 2 * FLAME_GAP) * Math.sqrt(cell.size / maxSize)) : FLAME_BASELINE;
+      // Bars rise from the row's baseline (or grow from its start): full length is the largest cell.
+      const h = cell ? Math.max(4, (row - 2 * FLAME_GAP) * Math.sqrt(cell.size / maxSize)) : FLAME_BASELINE;
       tiles.push({
         id: cell ? cell.id : null,
         layer,
         domain,
         x: slot.x + FLAME_GAP / 2,
-        y: bottom - h,
+        y: fromStart ? start : bottom - h,
         w: Math.max(1, slot.w - FLAME_GAP),
         h,
       });
     });
   });
   return {
-    width: x + 20,
-    height: MARGIN_T + layers.length * FLAME_ROW + 20,
     tiles,
     columns,
-    domainLabels: domains.map((d, i) => ({
-      text: domainTexts[i] ?? d,
-      x: (columns[i]?.x ?? 0) + (columns[i]?.w ?? 0) / 2,
-      y: 24,
-    })),
-    layerLabels: layers.map((text, i) => ({ text, x: 8, y: MARGIN_T + i * FLAME_ROW + FLAME_ROW / 2 + 4 })),
-    rotateDomains: false,
-    detailed: false,
-    flame: true,
+    rows: layers.map((_, i) => ({ x: v0 + i * row, w: row })),
+    uEnd: x + 20,
+    vEnd: v0 + layers.length * row + 20,
   };
 }
 
-export function layout(
-  mode: Mode,
+function gridCore(
+  dense: boolean,
   layers: readonly string[],
   domains: readonly string[],
   cells: readonly SlotCell[],
-  /** Header text per domain (defaults to the domain); sizes the dense margin. */
-  domainTexts: readonly string[] = domains,
-): Layout {
-  if (mode === "flame") return flameLayout(layers, domains, cells, domainTexts);
+  u0: number,
+  v0: number,
+): Core {
   const byId = new Map(cells.map((c) => [c.id, c]));
   const maxSize = Math.max(1, ...cells.map((c) => c.size));
-  const dense = mode === "dense";
-  const ml = dense ? denseMargin(layers) : MARGIN_L;
-  const mt = dense ? denseMargin(domainTexts) : MARGIN_T;
   const pitch = dense ? DENSE_STEP : PITCH;
   const tiles: Tile[] = [];
   layers.forEach((layer, r) => {
     domains.forEach((domain, c) => {
       const cell = byId.get(`${layer}:${domain}`);
-      const x0 = ml + c * pitch;
-      const y0 = mt + r * pitch;
+      const x0 = u0 + c * pitch;
+      const y0 = v0 + r * pitch;
       let side: number;
       if (dense) side = pitch;
       else if (cell) side = 20 + (PITCH - 50) * Math.sqrt(cell.size / maxSize);
@@ -166,25 +185,85 @@ export function layout(
       });
     });
   });
-  const domainLabels = domains.map((d, i) => ({
-    text: domainTexts[i] ?? d,
-    x: ml + i * pitch + pitch / 2,
-    y: dense ? mt - 4 : 24,
-  }));
-  const layerLabels = layers.map((text, i) => ({
-    text,
-    x: 8,
-    y: mt + i * pitch + pitch / 2 + (dense ? 3 : 0),
-  }));
+  const pad = dense ? 4 : 20;
   return {
-    width: ml + domains.length * pitch + (dense ? 4 : 20),
-    height: mt + layers.length * pitch + (dense ? 4 : 20),
     tiles,
-    columns: domains.map((_, i) => ({ x: ml + i * pitch, w: pitch })),
-    domainLabels,
-    layerLabels,
-    rotateDomains: dense,
-    detailed: !dense,
-    flame: false,
+    columns: domains.map((_, i) => ({ x: u0 + i * pitch, w: pitch })),
+    rows: layers.map((_, i) => ({ x: v0 + i * pitch, w: pitch })),
+    uEnd: u0 + domains.length * pitch + pad,
+    vEnd: v0 + layers.length * pitch + pad,
+  };
+}
+
+const centre = (s: ColumnSlot | undefined) => (s ? s.x + s.w / 2 : 0);
+
+export function layout(
+  mode: Mode,
+  layers: readonly string[],
+  domains: readonly string[],
+  cells: readonly SlotCell[],
+  /** Header text per domain (defaults to the domain); sizes the dense margin. */
+  domainTexts: readonly string[] = domains,
+  /** Domains as rows and layers as columns. */
+  transposed = false,
+): Layout {
+  const dense = mode === "dense";
+  const flame = mode === "flame";
+  // Room before the domain axis holds the layer labels, room before the layer axis the domain labels.
+  const layerRoom = dense ? denseMargin(layers) : transposed ? MARGIN_T : MARGIN_L;
+  const domainRoom = transposed
+    ? dense
+      ? denseMargin(domainTexts)
+      : labelMargin(domainTexts)
+    : dense
+      ? denseMargin(domainTexts)
+      : MARGIN_T;
+  const core = flame
+    ? flameCore(layers, domains, cells, layerRoom, domainRoom, transposed ? FLAME_COL : FLAME_ROW, transposed)
+    : gridCore(dense, layers, domains, cells, layerRoom, domainRoom);
+  const common = {
+    columns: core.columns,
+    rows: core.rows,
+    detailed: !dense && !flame,
+    flame,
+    transposed,
+  };
+  if (!transposed) {
+    return {
+      ...common,
+      width: core.uEnd,
+      height: core.vEnd,
+      tiles: core.tiles,
+      domainLabels: domains.map((d, i) => ({
+        text: domainTexts[i] ?? d,
+        x: centre(core.columns[i]),
+        y: dense ? domainRoom - 4 : 24,
+      })),
+      layerLabels: layers.map((text, i) => ({
+        text,
+        x: 8,
+        y: centre(core.rows[i]) + (dense ? 3 : flame ? 4 : 0),
+      })),
+      rotateDomains: dense,
+      rotateLayers: false,
+    };
+  }
+  return {
+    ...common,
+    width: core.vEnd,
+    height: core.uEnd,
+    tiles: core.tiles.map((t) => ({ ...t, x: t.y, y: t.x, w: t.h, h: t.w })),
+    domainLabels: domains.map((d, i) => ({
+      text: domainTexts[i] ?? d,
+      x: 8,
+      y: centre(core.columns[i]) + (dense ? 3 : 4),
+    })),
+    layerLabels: layers.map((text, i) => ({
+      text,
+      x: centre(core.rows[i]),
+      y: dense ? layerRoom - 4 : 24,
+    })),
+    rotateDomains: false,
+    rotateLayers: dense,
   };
 }
