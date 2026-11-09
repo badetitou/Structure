@@ -1,4 +1,5 @@
-export type RecentProject = { path: string; name: string; lastOpened: string };
+/** One analysis: the set of folders analysed together (one for a single project). */
+export type RecentProject = { paths: string[]; name: string; lastOpened: string };
 
 export const MAX_RECENT = 8;
 const KEY = "structure.recentProjects";
@@ -8,17 +9,37 @@ export function folderName(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-export function addRecent(
-  list: RecentProject[],
-  path: string,
-  now: Date = new Date(),
-): RecentProject[] {
-  const entry = { path, name: folderName(path), lastOpened: now.toISOString() };
-  return [entry, ...list.filter((r) => r.path !== path)].slice(0, MAX_RECENT);
+const asPaths = (p: string | string[]): string[] => (typeof p === "string" ? [p] : p);
+
+/** Identity of a set of folders, independent of their order. */
+export function recentKey(paths: string | string[]): string {
+  return [...asPaths(paths)].sort().join("\n");
 }
 
-export function removeRecent(list: RecentProject[], path: string): RecentProject[] {
-  return list.filter((r) => r.path !== path);
+export function addRecent(
+  list: RecentProject[],
+  paths: string | string[],
+  now: Date = new Date(),
+): RecentProject[] {
+  const ps = asPaths(paths);
+  const entry = { paths: ps, name: ps.map(folderName).join(" + "), lastOpened: now.toISOString() };
+  const key = recentKey(ps);
+  return [entry, ...list.filter((r) => recentKey(r.paths) !== key)].slice(0, MAX_RECENT);
+}
+
+export function removeRecent(list: RecentProject[], paths: string | string[]): RecentProject[] {
+  const key = recentKey(paths);
+  return list.filter((r) => recentKey(r.paths) !== key);
+}
+
+/** Accepts the current shape and the old `{path}` one (migrated to `paths: [path]`). */
+function migrate(r: unknown): RecentProject | null {
+  if (!r || typeof r !== "object") return null;
+  const o = r as Record<string, unknown>;
+  if (typeof o.name !== "string" || typeof o.lastOpened !== "string") return null;
+  const paths = Array.isArray(o.paths) ? o.paths : typeof o.path === "string" ? [o.path] : null;
+  if (!paths || paths.length === 0 || !paths.every((p) => typeof p === "string")) return null;
+  return { paths: paths as string[], name: o.name, lastOpened: o.lastOpened };
 }
 
 export function parseRecent(raw: string | null): RecentProject[] {
@@ -27,13 +48,8 @@ export function parseRecent(raw: string | null): RecentProject[] {
     const v: unknown = JSON.parse(raw);
     if (!Array.isArray(v)) return [];
     return v
-      .filter(
-        (r): r is RecentProject =>
-          !!r &&
-          typeof r.path === "string" &&
-          typeof r.name === "string" &&
-          typeof r.lastOpened === "string",
-      )
+      .map(migrate)
+      .filter((r): r is RecentProject => r !== null)
       .slice(0, MAX_RECENT);
   } catch {
     return [];
@@ -63,14 +79,14 @@ export type RecentStore = {
 
 const defaultStore: RecentStore = { load: loadRecent, save: saveRecent };
 
-/** Runs `analyze`, then records `path`; on failure rethrows and leaves the store untouched. */
+/** Runs `analyze`, then records `paths`; on failure rethrows and leaves the store untouched. */
 export async function analyzeAndRecord<T>(
-  path: string,
-  analyze: (path: string) => Promise<T>,
+  paths: string[],
+  analyze: (paths: string[]) => Promise<T>,
   store: RecentStore = defaultStore,
   now: Date = new Date(),
 ): Promise<T> {
-  const result = await analyze(path);
-  store.save(addRecent(store.load(), path, now));
+  const result = await analyze(paths);
+  store.save(addRecent(store.load(), paths, now));
   return result;
 }

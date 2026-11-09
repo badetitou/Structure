@@ -78,6 +78,23 @@ describe("AppState", () => {
     expect(s.history).toBeNull();
   });
 
+  it("analyses several folders together without any git call", async () => {
+    mocked.analyze.mockResolvedValue(mx("front"));
+    const s = new AppState();
+    await s.load(["/front", "/back"]);
+    expect(mocked.analyze.mock.calls[0][0]).toEqual(["/front", "/back"]);
+    expect(s.multi).toBe(true);
+    expect(s.phase).toBe("ready");
+    expect(mocked.history).not.toHaveBeenCalled();
+    await s.runImpact(null, null);
+    await s.loadDiff(null, null);
+    expect(mocked.impact).not.toHaveBeenCalled();
+    expect(mocked.diff).not.toHaveBeenCalled();
+    s.selectCell(cell);
+    await flush();
+    expect(mocked.cellSymbols.mock.calls[0][0]).toEqual(["/front", "/back"]);
+  });
+
   it("rejects when the analysis fails", async () => {
     mocked.analyze.mockRejectedValue(new Error("boom"));
     const s = new AppState();
@@ -149,7 +166,7 @@ describe("AppState", () => {
     s.selectCell(cell);
     expect(s.symbols?.loading).toBe(true);
     await flush();
-    expect(mocked.cellSymbols).toHaveBeenCalledWith("/p", null, 7, ["m1"], 0, expect.any(Number));
+    expect(mocked.cellSymbols).toHaveBeenCalledWith(["/p"], null, 7, ["m1"], 0, expect.any(Number));
     expect(s.symbols?.items).toHaveLength(1);
     mocked.cellSymbols.mockResolvedValueOnce({ total: 2, offset: 1, symbols: [sym("b")] });
     await s.loadSymbols(true);
@@ -318,6 +335,6 @@ describe("AppState", () => {
     mocked.cellSymbols.mockResolvedValue({ total: 0, offset: 0, symbols: [] });
     s.selectCell(cell);
     await flush();
-    expect(mocked.cellSymbols).toHaveBeenLastCalledWith("/p", "h1", 7, ["m1"], 0, expect.any(Number));
+    expect(mocked.cellSymbols).toHaveBeenLastCalledWith(["/p"], "h1", 7, ["m1"], 0, expect.any(Number));
   });
 });
