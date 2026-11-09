@@ -1,16 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ALIGNED_KEY,
   HTTP_KEY,
   MODE_KEY,
   RPC_KEY,
   TRANSPOSED_KEY,
+  loadAligned,
   loadMode,
   loadShowHttp,
   loadShowRpc,
   loadTransposed,
+  parseAligned,
   parseMode,
   parseShowHttp,
   parseShowRpc,
+  saveAligned,
   saveMode,
   saveShowHttp,
   saveShowRpc,
@@ -112,5 +116,27 @@ describe("matrix orientation persistence", () => {
     vi.stubGlobal("localStorage", { getItem: boom, setItem: boom });
     expect(loadTransposed()).toBe(false);
     expect(() => saveTransposed(true)).not.toThrow();
+  });
+});
+
+describe("aligned view persistence", () => {
+  it("is on by default and round-trips through storage", () => {
+    const st = memoryStorage();
+    vi.stubGlobal("localStorage", st);
+    expect(loadAligned()).toBe(true);
+    saveAligned(false);
+    expect(st.getItem(ALIGNED_KEY)).toBe("false");
+    expect(loadAligned()).toBe(false);
+    saveAligned(true);
+    expect(loadAligned()).toBe(true);
+    expect(parseAligned(null)).toBe(true);
+  });
+  it("does not throw when storage is unavailable", () => {
+    const boom = () => {
+      throw new Error("blocked");
+    };
+    vi.stubGlobal("localStorage", { getItem: boom, setItem: boom });
+    expect(loadAligned()).toBe(true);
+    expect(() => saveAligned(false)).not.toThrow();
   });
 });

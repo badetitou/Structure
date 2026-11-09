@@ -86,3 +86,26 @@ export function saveTransposed(on: boolean) {
     // storage unavailable: the choice just is not persisted
   }
 }
+
+export const ALIGNED_KEY = "structure.matrix.aligned";
+
+/** Stored value -> toggle; on unless explicitly "false". */
+export function parseAligned(raw: string | null): boolean {
+  return raw !== "false";
+}
+
+export function loadAligned(): boolean {
+  try {
+    return parseAligned(localStorage.getItem(ALIGNED_KEY));
+  } catch {
+    return true;
+  }
+}
+
+export function saveAligned(on: boolean) {
+  try {
+    localStorage.setItem(ALIGNED_KEY, String(on));
+  } catch {
+    // storage unavailable: the choice just is not persisted
+  }
+}
