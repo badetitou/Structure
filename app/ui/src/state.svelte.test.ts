@@ -236,6 +236,7 @@ describe("AppState", () => {
     mocked.impact.mockRejectedValueOnce(new Error("bad ref"));
     await s.runImpact("c", "d");
     expect(s.impactBusy).toBe(false);
+    expect(s.impactProgress).toBeNull();
     expect(s.impactError).toContain("bad ref");
     s.clearImpact();
     expect(s.impactError).toBe("");

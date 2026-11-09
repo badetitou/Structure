@@ -3,7 +3,7 @@
   import { Badge } from "$lib/components/ui/badge";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { rowSvg } from "../../graphsvg";
-  import { clickCommit, isSelected, relativeDate } from "../../history";
+  import { clickCommit, headIndex, isSelected, relativeDate } from "../../history";
   import { layoutLanes } from "../../lanes";
   import { app } from "../../state.svelte";
 
@@ -16,10 +16,12 @@
     node.replaceChildren(build());
   };
   const rowClass =
-    "flex h-10 cursor-pointer items-center gap-1.5 overflow-hidden px-2.5 pl-1.5 select-none hover:bg-muted disabled:cursor-wait";
+    "flex h-10 cursor-pointer items-center gap-1.5 overflow-hidden px-2.5 pl-1.5 select-none enabled:hover:bg-muted disabled:cursor-wait";
   // Rows are locked while an impact runs; the selected (pending) rows get a spinner.
   const busy = $derived(app.impactBusy);
   const dim = $derived(busy ? "opacity-60" : "");
+  // Only the range's head is analysed; the rest of the range is just the diff base.
+  const pending = $derived(busy ? headIndex(app.historySel) : null);
 </script>
 
 {#if hist && lanes}
@@ -55,7 +57,7 @@
         type="button"
         class="{rowClass} w-full text-left {isSelected(app.historySel, i) ? 'bg-accent' : dim}"
         disabled={busy}
-        aria-busy={busy && isSelected(app.historySel, i)}
+        aria-busy={pending === i}
         onclick={(ev) => app.pickHistory(clickCommit(app.historySel, i, ev.shiftKey))}
       >
         <span
@@ -69,7 +71,7 @@
             {#each c.refs as ref}<Badge variant="secondary" class="ml-1 h-4 rounded-full px-1.5 text-[10px]">{ref}</Badge>{/each}
           </span>
         </span>
-        {#if busy && isSelected(app.historySel, i)}<LoaderIcon class="size-3.5 flex-none animate-spin" />{/if}
+        {#if pending === i}<LoaderIcon class="size-3.5 flex-none animate-spin" />{/if}
       </button>
     {/each}
   </ScrollArea>
