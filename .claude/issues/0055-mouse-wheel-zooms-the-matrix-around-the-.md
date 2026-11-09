@@ -1,5 +1,5 @@
 ---
-id: 54
+id: 55
 title: Mouse wheel zooms the matrix around the cursor
 status: done
 parent: null
@@ -22,3 +22,5 @@ In the matrix view a plain wheel / two-finger scroll pans and only a pinch
 
 ## Out of scope
 - Zoom animation / smoothing, a setting to switch back to scroll-pans.
+
+Note: first committed as #54 (id clash with the transpose issue); commit 0af69c9 says "Refs #54".
