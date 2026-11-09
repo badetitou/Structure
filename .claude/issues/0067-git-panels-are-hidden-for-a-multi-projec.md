@@ -1,17 +1,17 @@
 ---
-id: 64
+id: 67
 title: Git panels are hidden for a multi-project analysis even when grouped with other panels
 status: done
-parent: 54
+parent: 57
 branch: 64-hide-unavailable-panels
 remote: null
 created: 2026-11-09
 ---
 ## Context
 
-Seen in the browser check of #60 (`/?sample=matrix-multi`): the Diff tab stays visible next to
+Seen in the browser check of #63 (`/?sample=matrix-multi`): the Diff tab stays visible next to
 Details for a multi-project analysis ("Select a commit in the history to see its diff"), although
-#59 makes it unavailable. `dock.ts syncVisibility` hides a group only when *all* its panels are
+#62 makes it unavailable. `dock.ts syncVisibility` hides a group only when *all* its panels are
 unavailable, so an unavailable panel sharing a group with an available one stays as a tab. The
 same already happened for a single project outside git.
 

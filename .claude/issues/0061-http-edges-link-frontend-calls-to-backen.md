@@ -1,15 +1,15 @@
 ---
-id: 58
+id: 61
 title: HTTP edges link frontend calls to backend endpoints
 status: done
-parent: 54
+parent: 57
 branch: 58-http-edges
 remote: null
 created: 2026-11-09
 ---
 ## Context
 
-Needs #55 (merged graph), #56 (endpoints), #57 (calls).
+Needs #58 (merged graph), #59 (endpoints), #60 (calls).
 
 ## Acceptance criteria
 - [x] New `EdgeKind::Http` from the TS caller symbol to the Java handler method.

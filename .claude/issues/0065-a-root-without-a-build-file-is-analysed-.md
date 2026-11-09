@@ -1,8 +1,8 @@
 ---
-id: 62
+id: 65
 title: A root without a build file is analysed as its sub-projects
 status: done
-parent: 54
+parent: 57
 branch: 62-split-undetectable-root
 remote: null
 created: 2026-11-09
@@ -16,7 +16,7 @@ file itself. The user had to pass `wegf/backend wegf/frontend` by hand.
 ## Acceptance criteria
 - [x] A root with no build file of its own whose direct children (depth 1, then 2 if none)
   are detectable projects is analysed as those sub-projects, exactly as if they were passed
-  as several roots (#55), names = child dir names.
+  as several roots (#58), names = child dir names.
 - [x] A root that is itself detectable keeps today's behaviour (no splitting), so Maven/Gradle
   multi-module and Nx roots are unchanged.
 - [x] CLI and app both benefit (pipeline level); the CLI prints the detected projects.

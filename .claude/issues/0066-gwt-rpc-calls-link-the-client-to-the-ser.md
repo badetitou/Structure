@@ -1,8 +1,8 @@
 ---
-id: 63
+id: 66
 title: GWT RPC calls link the client to the server implementation
 status: done
-parent: 54
+parent: 57
 branch: 63-gwt-rpc
 remote: null
 created: 2026-11-09
@@ -16,13 +16,13 @@ gives `http: 0/0` — GWT talks RPC, not URLs. Shape in e-sedit-rh/BLGRHGwt (19 
   `IGwtServiceAb.Util.getInstance()` / `GWT.create(IGwtServiceAb.class)`;
 - server `fr.bl.server.grh.ab.GwtServiceAb extends RemoteServiceServlet implements IGwtServiceAb`.
 Client and server live in the same project here, so this must work for one root too,
-not only across roots like HTTP (#58).
+not only across roots like HTTP (#61).
 
 ## Acceptance criteria
 - [x] A call to a method `m` of an `XAsync` interface whose sync twin `X extends RemoteService`
   gives an RPC edge from the caller to `Impl#m` for each class implementing `X` (arity = async arity - 1).
-- [x] (analysis side; drawing in #66) New `EdgeKind::Rpc` (or reuse Http with a protocol tag — decide in the brief), shown in the
-  matrix like http_edges (#60: drawn, toggle, details), in single- and multi-root analyses.
+- [x] (analysis side; drawing in #69) New `EdgeKind::Rpc` (or reuse Http with a protocol tag — decide in the brief), shown in the
+  matrix like http_edges (#63: drawn, toggle, details), in single- and multi-root analyses.
 - [x] Works without SCIP (receiver typed `XAsync` field/local, or `X.Util.getInstance()` / `GWT.create(X.class)`),
   and with SCIP when available.
 - [x] e-sedit-rh BLGRHGwt: linked/total RPC calls reported, target >= 80%, unmatched listed.
@@ -30,16 +30,16 @@ not only across roots like HTTP (#58).
 
 ## Out of scope (later RPC kinds)
 - gRPC (generated stubs ↔ `*ImplBase`), Java RMI, JSON-RPC, Feign/HttpExchange clients as callers
-  (#56 already skips them as servers).
+  (#59 already skips them as servers).
 
-UI drawing moved to #66; this issue is the analysis side (IR, extraction, linking, matrix field, CLI).
+UI drawing moved to #69; this issue is the analysis side (IR, extraction, linking, matrix field, CLI).
 
 ## Brief (implementer)
 
 Goal: GWT RPC calls become `EdgeKind::Rpc` edges from the client caller method to the server
 implementation method, in single- and multi-root analyses, without SCIP.
 Read first: crates/ir/src/ir.rs (EdgeKind incl. Http rank, Symbol.http/http_calls), crates/lang-java/src/lib.rs
-(supertype resolution `index.resolve`, how #56/#65 fill per-method data, method ids `<type>#<name>(<arity>)`,
+(supertype resolution `index.resolve`, how #59/#68 fill per-method data, method ids `<type>#<name>(<arity>)`,
 Feign guard), crates/core/src/http_link.rs (shape to mirror) and pipeline/mod.rs + pipeline/multi.rs
 (where link_http runs, single-root output byte-identical rule), crates/classify/src/matrix.rs (http_edges grouping),
 crates/scip/src/metrics.rs kind names, crates/cli/src/main.rs (http: line).

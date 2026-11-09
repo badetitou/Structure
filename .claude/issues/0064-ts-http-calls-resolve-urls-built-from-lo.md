@@ -1,8 +1,8 @@
 ---
-id: 61
+id: 64
 title: TS HTTP calls resolve URLs built from local variables
 status: done
-parent: 54
+parent: 57
 branch: 61-ts-url-local-vars
 remote: null
 created: 2026-11-09
@@ -62,5 +62,5 @@ path param via encodeParam → `{}`, reassigned variable → placeholder, variab
 Rules: no unwrap/expect outside tests; no new deps.
 
 ## Result
-- wegf backend+frontend: 1417 -> 1419/2043. The 542 OpenAPI calls now resolve (`/{basePath}/habilitations/...`) but their endpoints are on generated server interfaces under `target/` -> blocked by #65. Criterion 4 left open until #65.
+- wegf backend+frontend: 1417 -> 1419/2043. The 542 OpenAPI calls now resolve (`/{basePath}/habilitations/...`) but their endpoints are on generated server interfaces under `target/` -> blocked by #68. Criterion 4 left open until #68.
 - A variable captured by a closure (declared in an outer function) stays a placeholder (scope stops at the function boundary).

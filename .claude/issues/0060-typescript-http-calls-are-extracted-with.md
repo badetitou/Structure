@@ -1,8 +1,8 @@
 ---
-id: 57
+id: 60
 title: TypeScript HTTP calls are extracted with their URL
 status: done
-parent: 54
+parent: 57
 branch: 57-ts-http-calls
 remote: null
 created: 2026-11-09
@@ -18,17 +18,17 @@ nothing in the graph (crates/lang-ts/src/lib.rs). Call edges come only from SCIP
   injected as `HttpClient`), `fetch(url, {method})`, `axios.<verb>` / `axios(...)`.
 - [x] URL from a string literal, a template literal (`${x}` → placeholder) or
   `'a/' + x` concatenation; anything else is an unknown URL, kept with its verb.
-- [x] Stored in the IR next to #56's endpoints (shared type), serde default empty.
+- [x] Stored in the IR next to #59's endpoints (shared type), serde default empty.
 - [x] Unit tests + angular-realworld: the calls in `core/**/services` are found.
 
 ## Out of scope
 - Following a URL through variables, environment files or interceptors (a
-  leading base-URL segment is handled by matching in #58).
+  leading base-URL segment is handled by matching in #61).
 
 ## Brief (implementer)
 
 Goal: TS functions/methods carry the HTTP calls they make, as `{verb, path}`, in the IR.
-Read first: crates/ir/src/ir.rs (`HttpVerb`, `HttpEndpoint`, `Symbol.http` from #56),
+Read first: crates/ir/src/ir.rs (`HttpVerb`, `HttpEndpoint`, `Symbol.http` from #59),
 crates/lang-ts/src/lib.rs (symbol creation, `collect_inject`, how member
 symbols `<classId>.<member>` are built), crates/lang-java/tests/http_endpoints.rs (test style).
 Real cases: fixtures/angular-realworld/src/app/**/services/*.service.ts, e.g.

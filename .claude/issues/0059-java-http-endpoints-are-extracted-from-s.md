@@ -1,8 +1,8 @@
 ---
-id: 56
+id: 59
 title: Java HTTP endpoints are extracted from Spring and JAX-RS annotations
 status: done
-parent: 54
+parent: 57
 branch: 56-java-http-endpoints
 remote: null
 created: 2026-11-09
@@ -36,7 +36,7 @@ fixtures/spring-boot-realworld-example-app/src/main/java/**/api/*.java for real 
 Design: in crates/ir add `pub struct HttpEndpoint { verb: HttpVerb, path: String }`
 (`HttpVerb` = Get/Post/Put/Delete/Patch/Any, serde lowercase) and
 `Symbol.http: Vec<HttpEndpoint>` with `#[serde(default, skip_serializing_if = "Vec::is_empty")]`.
-Name it neutrally: #57 will reuse the same type for TS *calls*.
+Name it neutrally: #60 will reuse the same type for TS *calls*.
 In lang-java, read annotation arguments with tree-sitter: positional string,
 `value =` / `path =`, string arrays → one endpoint each; `@RequestMapping(method = RequestMethod.X)`
 (array too; absent → Any). Join the class-level `@RequestMapping`/`@Path` prefix with the method path
@@ -47,7 +47,7 @@ Verify: cargo fmt --check; cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace with STRUCTURE_FIXTURES=/Users/benoit.verhaeghe/Documents/Perso/Structure/fixtures.
 Done: unit tests (Spring class prefix + method, arrays, RequestMethod, JAX-RS, constant → `?`);
 a fixture test that every `@RestController` method in realworld-java has ≥ 1 endpoint; goldens unchanged.
-Rules: no unwrap/expect outside tests; no new deps; don't touch pipeline/multi-root (#55 runs in parallel and also edits crates/ir — keep IR edits small and additive).
+Rules: no unwrap/expect outside tests; no new deps; don't touch pipeline/multi-root (#58 runs in parallel and also edits crates/ir — keep IR edits small and additive).
 Fixtures are already cloned and indexed by the user — never clone or build them.
 
 ## Known limits

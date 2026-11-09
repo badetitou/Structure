@@ -1,15 +1,15 @@
 ---
-id: 60
+id: 63
 title: Matrix shows front-to-back HTTP links and can hide them
 status: done
-parent: 54
+parent: 57
 branch: 60-matrix-http-links
 remote: null
 created: 2026-11-09
 ---
 ## Context
 
-#58 adds `Matrix.http_edges` (same wire form as `edges`, grouped by source cell),
+#61 adds `Matrix.http_edges` (same wire form as `edges`, grouped by source cell),
 filled only for multi-project analyses. The UI (`app/ui`) ignores it.
 
 ## Acceptance criteria
@@ -24,7 +24,7 @@ filled only for multi-project analyses. The UI (`app/ui`) ignores it.
 
 ## Brief (implementer)
 
-Goal: the matrix draws `Matrix.http_edges` (front api_client → back entry links from #58),
+Goal: the matrix draws `Matrix.http_edges` (front api_client → back entry links from #61),
 distinct from code edges, with a toggle to hide them and a list in the details panel.
 Read first: app/README.md (layout, theme rules: colours only in app.css, SVG via svgattr.ts);
 app/ui/src/expand.ts (`expandMatrix`: wire edges → CellEdge) and api.ts (`Matrix`, `http_edges?` type);

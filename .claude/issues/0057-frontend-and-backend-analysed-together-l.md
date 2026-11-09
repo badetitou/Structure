@@ -1,5 +1,5 @@
 ---
-id: 54
+id: 57
 title: Frontend and backend analysed together, linked by their HTTP API calls
 status: done
 parent: null
@@ -19,11 +19,11 @@ Test pair: `angular-realworld` + `spring-boot-realworld-example-app`
 (same RealWorld API, two separate repos).
 
 ## Acceptance criteria
-- [x] #55 Several roots → one merged graph and matrix (CLI `analyze a b`).
-- [x] #56 Java endpoints (Spring `@*Mapping`, JAX-RS `@Path`) extracted with verb + path.
-- [x] #57 TS HTTP calls (Angular `HttpClient`, `fetch`, `axios`) extracted with verb + URL template.
-- [x] #58 `EdgeKind::Http` edges from TS caller to Java handler, visible in the matrix.
-- [x] #59 Tauri app: pick several folders; `docs/api.md` updated.
+- [x] #58 Several roots → one merged graph and matrix (CLI `analyze a b`).
+- [x] #59 Java endpoints (Spring `@*Mapping`, JAX-RS `@Path`) extracted with verb + path.
+- [x] #60 TS HTTP calls (Angular `HttpClient`, `fetch`, `axios`) extracted with verb + URL template.
+- [x] #61 `EdgeKind::Http` edges from TS caller to Java handler, visible in the matrix.
+- [x] #62 Tauri app: pick several folders; `docs/api.md` updated.
 - [x] On the realworld pair, most `ArticlesService`/`UserService` calls link to their controller.
 
 ## Out of scope
@@ -32,4 +32,7 @@ Test pair: `angular-realworld` + `spring-boot-realworld-example-app`
 - Backend languages other than Java, frontend other than TS.
 
 ## Result
-Children #55–#66 done. Real projects (`--no-scip`): wegf root → http 1783/2065; e-sedit-rh BLGRHGwt → rpc 5393/5393; both together: 4 projects, 3 s. Idea not filed: map generated client packages to backend modules to resolve cross-service path collisions (6 ambiguous on wegf).
+Children #58–#69 done. Real projects (`--no-scip`): wegf root → http 1783/2065; e-sedit-rh BLGRHGwt → rpc 5393/5393; both together: 4 projects, 3 s. Idea not filed: map generated client packages to backend modules to resolve cross-service path collisions (6 ambiguous on wegf).
+
+## Numbering
+Renumbered on merge into main (ids 54-56 were taken there): old #54-#66 = new #57-#69 (+3). Commit messages on this branch use the old numbers.

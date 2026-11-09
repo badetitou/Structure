@@ -1,8 +1,8 @@
 ---
-id: 59
+id: 62
 title: App lets the user pick several project folders
 status: done
-parent: 54
+parent: 57
 branch: 59-app-multi-folders
 remote: null
 created: 2026-11-09
@@ -11,7 +11,7 @@ created: 2026-11-09
 
 Tauri `analyze(path: String)` (app/src-tauri/src/commands.rs) and the UI open
 one folder; the cache, history, impact, diff and cell_symbols are keyed by one
-canonical path. `pipeline::analyze_many` (#55) analyses several roots.
+canonical path. `pipeline::analyze_many` (#58) analyses several roots.
 
 ## Acceptance criteria
 - [x] `analyze` takes `paths: Vec<String>`; one path behaves exactly as today. Several paths
@@ -25,7 +25,7 @@ canonical path. `pipeline::analyze_many` (#55) analyses several roots.
 - [x] `docs/api.md` updated; vitest, svelte-check and `cargo test` in app/src-tauri green.
 
 ## Out of scope
-- Drawing HTTP edges (#60). Git history/impact across several repos. Saved named workspaces.
+- Drawing HTTP edges (#63). Git history/impact across several repos. Saved named workspaces.
 
 ## Brief (implementer)
 
@@ -42,7 +42,7 @@ for existing single-path code). Recent entries: `{paths, name, lastOpened}`; mig
 Multi-project = `paths.length > 1` → history/impact/diff panels `available: false`.
 Verify: `cd app/ui && npm test && npm run check`; `cd app/src-tauri && cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --check`;
 workspace `cargo test --workspace` still green. Do NOT run `cargo tauri dev` or npm install of new packages.
-Rules: no new deps; no unwrap/expect outside tests; don't draw http_edges (#60).
+Rules: no new deps; no unwrap/expect outside tests; don't draw http_edges (#63).
 
 ## Known limits
 - Not yet run in the live app (`cargo tauri dev`); unit-tested only.

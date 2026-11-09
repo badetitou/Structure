@@ -1,15 +1,15 @@
 ---
-id: 66
+id: 69
 title: Matrix shows RPC links like HTTP links
 status: done
-parent: 54
+parent: 57
 branch: 66-matrix-rpc-links
 remote: null
 created: 2026-11-09
 ---
 ## Context
 
-#63 adds `EdgeKind::Rpc` and `Matrix.rpc_edges` (GWT RPC, client → server impl). The UI from #60
+#66 adds `EdgeKind::Rpc` and `Matrix.rpc_edges` (GWT RPC, client → server impl). The UI from #63
 only draws `http_edges`.
 
 ## Acceptance criteria
@@ -20,7 +20,7 @@ only draws `http_edges`.
 
 ## Brief (implementer)
 
-Goal: the app draws `Matrix.rpc_edges` (#63) like `http_edges` (#60), visibly different, with its own toggle and details section.
+Goal: the app draws `Matrix.rpc_edges` (#66) like `http_edges` (#63), visibly different, with its own toggle and details section.
 Read first: app/README.md (theme rules, HTTP links toggle sentence); app/ui/src/expand.ts, api.ts (`httpEdges`),
 domaintree.ts (`aggregate` remap of httpEdges), graph.ts (`visibleEdges`, `httpLinks`), cellstate.ts,
 lib/components/MatrixView.svelte, matrix/MatrixEdge.svelte, mode.ts (`structure.httpEdges`), state.svelte.ts (`showHttp`, `view`),

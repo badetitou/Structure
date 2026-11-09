@@ -1,5 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HTTP_KEY, MODE_KEY, RPC_KEY, loadMode, loadShowHttp, loadShowRpc, parseMode, parseShowHttp, parseShowRpc, saveMode, saveShowHttp, saveShowRpc } from "./mode";
+import {
+  HTTP_KEY,
+  MODE_KEY,
+  RPC_KEY,
+  TRANSPOSED_KEY,
+  loadMode,
+  loadShowHttp,
+  loadShowRpc,
+  loadTransposed,
+  parseMode,
+  parseShowHttp,
+  parseShowRpc,
+  saveMode,
+  saveShowHttp,
+  saveShowRpc,
+  saveTransposed,
+} from "./mode";
 
 function memoryStorage() {
   const m = new Map<string, string>();
@@ -75,5 +91,26 @@ describe("rpc links toggle persistence", () => {
     vi.stubGlobal("localStorage", { getItem: boom, setItem: boom });
     expect(loadShowRpc()).toBe(true);
     expect(() => saveShowRpc(false)).not.toThrow();
+  });
+});
+
+describe("matrix orientation persistence", () => {
+  it("round-trips through storage, off by default", () => {
+    const st = memoryStorage();
+    vi.stubGlobal("localStorage", st);
+    expect(loadTransposed()).toBe(false);
+    saveTransposed(true);
+    expect(st.getItem(TRANSPOSED_KEY)).toBe("1");
+    expect(loadTransposed()).toBe(true);
+    saveTransposed(false);
+    expect(loadTransposed()).toBe(false);
+  });
+  it("does not throw when storage is unavailable", () => {
+    const boom = () => {
+      throw new Error("blocked");
+    };
+    vi.stubGlobal("localStorage", { getItem: boom, setItem: boom });
+    expect(loadTransposed()).toBe(false);
+    expect(() => saveTransposed(true)).not.toThrow();
   });
 });
