@@ -9,6 +9,7 @@
   import { Toggle } from "$lib/components/ui/toggle";
   import * as ToggleGroup from "$lib/components/ui/toggle-group";
   import * as Tooltip from "$lib/components/ui/tooltip";
+  import { canAlign } from "../../aligned";
   import ThemeSwitch from "../../ThemeSwitch.svelte";
   import { parseMode } from "../../mode";
   import { app } from "../../state.svelte";
@@ -83,6 +84,16 @@
       >Swap axes — {app.transposed ? "domains as rows, layers as columns" : "layers as rows, domains as columns"}</Tooltip.Content
     >
   </Tooltip.Root>
+  {#if canAlign(app.matrix?.projects, app.matrix?.httpEdges ?? [], app.matrix?.rpcEdges ?? [])}
+    <Toggle
+      variant="outline"
+      size="sm"
+      class="px-2"
+      aria-label="Align projects: front and back domains on shared rows"
+      pressed={app.aligned}
+      onPressedChange={(v) => app.setAligned(v)}>Align projects</Toggle
+    >
+  {/if}
   {#if (app.matrix?.httpEdges.length ?? 0) > 0}
     <Toggle
       variant="outline"

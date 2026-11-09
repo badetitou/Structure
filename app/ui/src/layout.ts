@@ -51,6 +51,8 @@ export interface Layout {
   transposed: boolean;
   /** Labels under cells and edges are only drawn in normal mode. */
   detailed: boolean;
+  /** Centre of each extra gap between layer segments, along the layer axis (see `layout`'s `gapsBefore`). */
+  separators: number[];
   /** Flame mode: column widths follow sizes, domain labels are cut to their column. */
   flame: boolean;
 }
@@ -83,6 +85,9 @@ export const FLAME_COL = 120;
 /** Flame mode: gap between neighbouring cells, height of an empty slot's baseline. */
 export const FLAME_GAP = 2;
 export const FLAME_BASELINE = 2;
+/** Extra room before a layer index that starts a new segment (aligned view), per mode. */
+export const GAP_NORMAL = 24;
+export const GAP_DENSE = 8;
 
 /** Flame column widths: proportional to each column's summed size, never below `FLAME_MIN_W`. */
 export function flameWidths(sizes: readonly number[]): number[] {
@@ -111,6 +116,7 @@ function flameCore(
   v0: number,
   row: number,
   fromStart: boolean,
+  offs: readonly number[],
 ): Core {
   const byId = new Map(cells.map((c) => [c.id, c]));
   const maxSize = Math.max(1, ...cells.map((c) => c.size));
@@ -125,8 +131,9 @@ function flameCore(
   }
   const tiles: Tile[] = [];
   layers.forEach((layer, r) => {
-    const start = v0 + r * row + FLAME_GAP;
-    const bottom = v0 + (r + 1) * row - FLAME_GAP;
+    const o = offs[r] ?? 0;
+    const start = v0 + o + r * row + FLAME_GAP;
+    const bottom = v0 + o + (r + 1) * row - FLAME_GAP;
     domains.forEach((domain, c) => {
       const cell = byId.get(`${layer}:${domain}`);
       const slot = columns[c];
@@ -147,9 +154,9 @@ function flameCore(
   return {
     tiles,
     columns,
-    rows: layers.map((_, i) => ({ x: v0 + i * row, w: row })),
+    rows: layers.map((_, i) => ({ x: v0 + (offs[i] ?? 0) + i * row, w: row })),
     uEnd: x + 20,
-    vEnd: v0 + layers.length * row + 20,
+    vEnd: v0 + (offs[layers.length - 1] ?? 0) + layers.length * row + 20,
   };
 }
 
@@ -160,6 +167,7 @@ function gridCore(
   cells: readonly SlotCell[],
   u0: number,
   v0: number,
+  offs: readonly number[],
 ): Core {
   const byId = new Map(cells.map((c) => [c.id, c]));
   const maxSize = Math.max(1, ...cells.map((c) => c.size));
@@ -169,7 +177,7 @@ function gridCore(
     domains.forEach((domain, c) => {
       const cell = byId.get(`${layer}:${domain}`);
       const x0 = u0 + c * pitch;
-      const y0 = v0 + r * pitch;
+      const y0 = v0 + (offs[r] ?? 0) + r * pitch;
       let side: number;
       if (dense) side = pitch;
       else if (cell) side = 20 + (PITCH - 50) * Math.sqrt(cell.size / maxSize);
@@ -189,9 +197,9 @@ function gridCore(
   return {
     tiles,
     columns: domains.map((_, i) => ({ x: u0 + i * pitch, w: pitch })),
-    rows: layers.map((_, i) => ({ x: v0 + i * pitch, w: pitch })),
+    rows: layers.map((_, i) => ({ x: v0 + (offs[i] ?? 0) + i * pitch, w: pitch })),
     uEnd: u0 + domains.length * pitch + pad,
-    vEnd: v0 + layers.length * pitch + pad,
+    vEnd: v0 + (offs[layers.length - 1] ?? 0) + layers.length * pitch + pad,
   };
 }
 
@@ -206,11 +214,15 @@ export function layout(
   domainTexts: readonly string[] = domains,
   /** Domains as rows and layers as columns. */
   transposed = false,
+  /** Header text per layer (defaults to the layer); sizes the dense margin. */
+  layerTexts: readonly string[] = layers,
+  /** Layer indices that start a new segment: each gets an extra gap before it. */
+  gapsBefore: readonly number[] = [],
 ): Layout {
   const dense = mode === "dense";
   const flame = mode === "flame";
   // Room before the domain axis holds the layer labels, room before the layer axis the domain labels.
-  const layerRoom = dense ? denseMargin(layers) : transposed ? MARGIN_T : MARGIN_L;
+  const layerRoom = dense ? denseMargin(layerTexts) : transposed ? MARGIN_T : MARGIN_L;
   const domainRoom = transposed
     ? dense
       ? denseMargin(domainTexts)
@@ -218,15 +230,22 @@ export function layout(
     : dense
       ? denseMargin(domainTexts)
       : MARGIN_T;
+  const gap = dense ? GAP_DENSE : GAP_NORMAL;
+  const offs = layers.map((_, i) => gap * gapsBefore.filter((g) => g > 0 && g <= i).length);
+  const pitch = flame ? (transposed ? FLAME_COL : FLAME_ROW) : dense ? DENSE_STEP : PITCH;
+  const separators = gapsBefore
+    .filter((g) => g > 0 && g < layers.length)
+    .map((g) => domainRoom + (offs[g] ?? 0) + g * pitch - gap / 2);
   const core = flame
-    ? flameCore(layers, domains, cells, layerRoom, domainRoom, transposed ? FLAME_COL : FLAME_ROW, transposed)
-    : gridCore(dense, layers, domains, cells, layerRoom, domainRoom);
+    ? flameCore(layers, domains, cells, layerRoom, domainRoom, transposed ? FLAME_COL : FLAME_ROW, transposed, offs)
+    : gridCore(dense, layers, domains, cells, layerRoom, domainRoom, offs);
   const common = {
     columns: core.columns,
     rows: core.rows,
     detailed: !dense && !flame,
     flame,
     transposed,
+    separators,
   };
   if (!transposed) {
     return {
@@ -239,7 +258,7 @@ export function layout(
         x: centre(core.columns[i]),
         y: dense ? domainRoom - 4 : 24,
       })),
-      layerLabels: layers.map((text, i) => ({
+      layerLabels: layerTexts.map((text, i) => ({
         text,
         x: 8,
         y: centre(core.rows[i]) + (dense ? 3 : flame ? 4 : 0),
@@ -258,7 +277,7 @@ export function layout(
       x: 8,
       y: centre(core.columns[i]) + (dense ? 3 : 4),
     })),
-    layerLabels: layers.map((text, i) => ({
+    layerLabels: layerTexts.map((text, i) => ({
       text,
       x: centre(core.rows[i]),
       y: dense ? layerRoom - 4 : 24,

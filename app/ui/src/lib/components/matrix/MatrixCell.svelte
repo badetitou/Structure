@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { layerName } from "../../../aligned";
   import { DEFAULT_FILL, hoverCellPaint, impactCellPaint } from "../../../cellstate";
   import type { Hover } from "../../../cellstate";
   import type { ImpactView, ViewCell } from "../../../domaintree";
@@ -32,7 +33,7 @@
         ? impactCellPaint(cell.id, impact.changed, impact.impacted)
         : { fill: DEFAULT_FILL, opacity: 1 },
   );
-  const label = $derived(`${cell.layer}/${cell.label} (${cell.size})`);
+  const label = $derived(`${layerName(cell.layer)}/${cell.label} (${cell.size})`);
   // Dense tiles touch: inset by half the stroke so neighbours do not overlap.
   const inset = $derived(detailed ? 0 : 0.5);
 </script>
