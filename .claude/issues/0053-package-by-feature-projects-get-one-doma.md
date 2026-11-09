@@ -1,7 +1,7 @@
 ---
 id: 53
 title: Package-by-feature projects get one domain per feature package
-status: in-review
+status: done
 parent: null
 branch: claude/auto-domain-grouping-7d1fda
 remote: null
