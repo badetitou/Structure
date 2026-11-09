@@ -30,6 +30,8 @@ fn kind_name(k: EdgeKind) -> &'static str {
         EdgeKind::Implements => "implements",
         EdgeKind::Extends => "extends",
         EdgeKind::Uses => "uses",
+        EdgeKind::Http => "http",
+        EdgeKind::Rpc => "rpc",
     }
 }
 

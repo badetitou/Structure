@@ -63,15 +63,37 @@ pub struct DomainNode {
     pub children: Vec<DomainNode>,
 }
 
+/// One analysed root of a multi-root matrix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Project {
+    pub name: String,
+    pub root: String,
+    pub language: Language,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Matrix {
+    /// With several roots: the first root's name (see `projects`).
     pub project: String,
+    /// With several roots: the first root's language (see `projects`).
     pub language: Language,
+    /// Analysed roots when there are at least two (ids and domains are then
+    /// prefixed by the project name); omitted for a single root.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub projects: Vec<Project>,
     pub layers: Vec<Layer>,
     pub domains: Vec<String>,
     pub cells: Vec<Cell>,
     /// Grouped by source cell, indices into `cells` (see docs/api.md).
     pub edges: Vec<EdgeGroup>,
+    /// Same shape as `edges`, from HTTP edges only (frontend -> backend);
+    /// omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub http_edges: Vec<EdgeGroup>,
+    /// Same shape as `edges`, from GWT RPC edges only (client -> server
+    /// implementation); omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rpc_edges: Vec<EdgeGroup>,
     pub stats: Stats,
     /// Things the user should know about this analysis (indexing failed,
     /// stale index...). Omitted from JSON when empty.

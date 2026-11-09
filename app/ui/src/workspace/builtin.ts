@@ -10,8 +10,8 @@ import { panels } from "./registry";
 // (here or in its own module imported once at startup).
 panels.register({ id: "matrix", title: "Matrix", component: MatrixPanel, available: () => app.matrix !== null });
 panels.register({ id: "details", title: "Details", component: DetailsPanel });
-panels.register({ id: "history", title: "History", component: HistorySidebar, available: () => app.history !== null });
-panels.register({ id: "diff", title: "Diff", component: DiffPanel, available: () => app.history !== null });
+panels.register({ id: "history", title: "History", component: HistorySidebar, available: () => !app.multi && app.history !== null });
+panels.register({ id: "diff", title: "Diff", component: DiffPanel, available: () => !app.multi && app.history !== null });
 
 /** History | matrix | details, with the diff as a tab beside details. */
 export function defaultLayout(api: DockviewApi): void {

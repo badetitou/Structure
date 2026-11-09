@@ -14,10 +14,10 @@
   class="flex h-6 flex-none items-center gap-2 overflow-hidden border-t bg-card px-3 text-xs whitespace-nowrap text-muted-foreground"
   aria-label="Status bar"
 >
-  <span class="min-w-16 truncate" title={app.project}>{app.project}</span>
+  <span class="min-w-16 truncate" title={app.paths.join("\n")}>{app.paths.join(" + ")}</span>
   {#if m}
     {@render sep()}
-    <span class="flex-none">{m.language}</span>
+    <span class="flex-none">{m.projects?.length ? `${m.projects.length} projects` : m.language}</span>
     {@render sep()}
     <span class="flex-none">{statsLabel(m.stats)}</span>
   {/if}

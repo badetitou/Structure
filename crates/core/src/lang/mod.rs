@@ -35,6 +35,14 @@ pub trait LanguageFrontend: Sync {
     fn indexer_hint(&self, root: &Path) -> Option<String>;
     /// Parse the project's sources into a graph (tree-sitter only).
     fn parse_project(&self, root: &Path) -> anyhow::Result<Graph>;
+    /// [`Self::parse_project`], pushing soft problems into `warnings`.
+    fn parse_project_warned(
+        &self,
+        root: &Path,
+        _warnings: &mut Vec<String>,
+    ) -> anyhow::Result<Graph> {
+        self.parse_project(root)
+    }
     /// Embedded default rules: `(toml, display name)`.
     fn default_rules(&self) -> (&'static str, &'static str);
     /// Separator of module paths in symbol ids (domain inference).

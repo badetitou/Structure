@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { createDockview } from "dockview";
+  import { createDockview, type DockviewApi } from "dockview";
   import "dockview/dist/styles/dockview.css";
   import { defaultLayout } from "../../../workspace/builtin";
-  import { SvelteRenderer, dockDnd, loadDock, restore, saveDock, structureTheme, syncVisibility } from "../../../workspace/dock";
+  import { SvelteRenderer, dockDnd, loadDock, restore, saveDock, setTabHiddenIn, structureTheme, syncVisibility } from "../../../workspace/dock";
   import { panels } from "../../../workspace/registry";
   import { workspace } from "../../../workspace/workspace.svelte";
   import MissingPanel from "./MissingPanel.svelte";
@@ -11,6 +11,9 @@
   // The dockview workspace: tabs, drag-and-drop docking and resizable splits for
   // the panels in the registry. The layout is restored and saved in localStorage.
   let host: HTMLDivElement;
+
+  const sync = (api: DockviewApi) =>
+    syncVisibility(api, panels.isAvailable, (id, hidden) => setTabHiddenIn(host, id, hidden));
 
   onMount(() => {
     const api = createDockview(host, {
@@ -25,7 +28,7 @@
     let timer: ReturnType<typeof setTimeout> | undefined;
     const subs = [
       api.onDidLayoutChange(() => {
-        syncVisibility(api, panels.isAvailable);
+        sync(api);
         clearTimeout(timer);
         timer = setTimeout(() => saveDock(api), 300);
       }),
@@ -46,7 +49,7 @@
   // Re-run when a panel's availability changes (e.g. history arrives after the matrix).
   $effect(() => {
     const api = workspace.api;
-    if (api) syncVisibility(api, panels.isAvailable);
+    if (api) sync(api);
   });
 </script>
 

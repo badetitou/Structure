@@ -64,6 +64,9 @@ describe("hover paint", () => {
 describe("edge style parity", () => {
   it("matches the old colour / marker / opacity per state", () => {
     expect(edgeStyle("fwd", 1)).toMatchObject({ stroke: "var(--fwd)", marker: "a-fwd", opacity: "0.95" });
+    expect(edgeStyle("def", 1, "rpc")).toMatchObject({ stroke: "var(--edge-rpc)", marker: "a-rpc" });
+    expect(edgeStyle("def", 1, "http")).toMatchObject({ stroke: "var(--edge-http)", marker: "a-http" });
+    expect(edgeStyle("fwd", 1, "http")).toMatchObject({ stroke: "var(--fwd)" });
     expect(edgeStyle("bwd", 1)).toMatchObject({ stroke: "var(--bwd)", marker: "a-bwd", opacity: "0.95" });
     expect(edgeStyle("imp", 1)).toMatchObject({ stroke: "var(--changed)", marker: "a-imp", opacity: "0.9" });
     expect(edgeStyle("def", 1)).toMatchObject({ stroke: "var(--edge)", marker: "a-def" });

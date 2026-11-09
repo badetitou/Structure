@@ -10,6 +10,8 @@ use tree_sitter::{Node, Parser};
 
 use structure_ir::ir::{Edge, EdgeKind, Graph, Language, Range, Symbol, SymbolKind};
 
+mod http;
+
 /// Result of parsing a single file.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FileSymbols {
@@ -169,6 +171,8 @@ struct Ctx<'a> {
     package: Option<String>,
     out: FileSymbols,
     seen_ids: HashSet<String>,
+    /// Receiver names typed or injected as `HttpClient` in the current class.
+    clients: HashSet<String>,
 }
 
 struct NewSymbol<'n> {
@@ -197,8 +201,23 @@ impl Ctx<'_> {
             name_range: rng(s.name_node),
             annotations: s.annotations,
             supertypes: s.supertypes,
+            http: vec![],
+            http_calls: vec![],
+            rpc_calls: vec![],
             package: self.package.clone(),
         });
+    }
+
+    /// Record the HTTP calls made under `node` on symbol `id`.
+    fn attach_calls(&mut self, id: &str, node: Node) {
+        let mut calls = Vec::new();
+        http::http_calls(node, self.src, &self.clients, &mut calls);
+        if calls.is_empty() {
+            return;
+        }
+        if let Some(s) = self.out.symbols.iter_mut().rev().find(|s| s.id == id) {
+            s.http_calls.extend(calls);
+        }
     }
 
     fn simple(&mut self, kind: SymbolKind, node: Node, name: Node) {
@@ -245,6 +264,7 @@ impl Ctx<'_> {
             "function_declaration" | "generator_function_declaration" => {
                 if let Some(name) = node.child_by_field_name("name") {
                     self.simple(SymbolKind::Function, node, name);
+                    self.function_calls(node, name);
                 }
             }
             "lexical_declaration" | "variable_declaration" => {
@@ -266,6 +286,7 @@ impl Ctx<'_> {
                         )
                     {
                         self.simple(SymbolKind::Function, node, name);
+                        self.function_calls(val, name);
                     }
                 }
             }
@@ -279,6 +300,15 @@ impl Ctx<'_> {
             }
             _ => {}
         }
+    }
+
+    /// Calls of a top-level function, with its own `HttpClient` variables.
+    fn function_calls(&mut self, body: Node, name: Node) {
+        let id = format!("{}#{}", self.file, text(name, self.src));
+        self.clients.clear();
+        http::http_client_names(body, self.src, &mut self.clients);
+        self.attach_calls(&id, body);
+        self.clients.clear();
     }
 
     fn import(&mut self, node: Node) {
@@ -400,6 +430,8 @@ impl Ctx<'_> {
             supertypes: supers,
         });
 
+        let outer_clients = std::mem::take(&mut self.clients);
+        http::http_client_names(node, self.src, &mut self.clients);
         let mut tparams = HashSet::new();
         if let Some(tp) = node.child_by_field_name("type_parameters") {
             let mut c = tp.walk();
@@ -412,6 +444,7 @@ impl Ctx<'_> {
         if let Some(body) = node.child_by_field_name("body") {
             self.members(body, &id, &tparams);
         }
+        self.clients = outer_clients;
     }
 
     fn uses_in_type(&mut self, from: &str, n: Node, skip: &HashSet<String>) {
@@ -464,6 +497,7 @@ impl Ctx<'_> {
                         }
                     }
                     if let Some(b) = m.child_by_field_name("body") {
+                        self.attach_calls(&format!("{class_id}.{mname}"), b);
                         let mut names = Vec::new();
                         collect_inject(b, self.src, &mut names);
                         for n in names {
@@ -488,6 +522,7 @@ impl Ctx<'_> {
                         self.uses_in_type(class_id, t, tparams);
                     }
                     if let Some(v) = m.child_by_field_name("value") {
+                        self.attach_calls(&format!("{class_id}.{mname}"), v);
                         let mut names = Vec::new();
                         collect_inject(v, self.src, &mut names);
                         for n in names {
@@ -530,6 +565,7 @@ pub fn parse_source(file: &str, src: &str, tsx: bool) -> anyhow::Result<FileSymb
         },
         out: FileSymbols::default(),
         seen_ids: HashSet::new(),
+        clients: HashSet::new(),
     };
     let root = tree.root_node();
     let mut c = root.walk();
