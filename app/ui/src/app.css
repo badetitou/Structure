@@ -55,6 +55,11 @@
   --lane-5: oklch(0.6 0.12 215);
   --lane-6: oklch(0.58 0.22 350);
   --lane-7: oklch(0.65 0.18 130);
+  /* diff panel */
+  --diff-add-bg: oklch(0.95 0.05 150);
+  --diff-add-fg: oklch(0.45 0.13 150);
+  --diff-del-bg: oklch(0.95 0.04 25);
+  --diff-del-fg: oklch(0.5 0.18 27);
   /* warnings */
   --warn-bg: oklch(0.96 0.06 95);
   --warn-fg: oklch(0.42 0.1 60);
@@ -106,6 +111,10 @@
   --lane-5: oklch(0.8 0.12 205);
   --lane-6: oklch(0.74 0.17 350);
   --lane-7: oklch(0.82 0.18 130);
+  --diff-add-bg: oklch(0.3 0.06 150);
+  --diff-add-fg: oklch(0.8 0.15 150);
+  --diff-del-bg: oklch(0.3 0.06 25);
+  --diff-del-fg: oklch(0.75 0.15 22);
   --warn-bg: oklch(0.3 0.06 80);
   --warn-fg: oklch(0.88 0.12 90);
   --warn-border: oklch(0.45 0.09 75);
@@ -134,6 +143,10 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-diff-add-bg: var(--diff-add-bg);
+  --color-diff-add-fg: var(--diff-add-fg);
+  --color-diff-del-bg: var(--diff-del-bg);
+  --color-diff-del-fg: var(--diff-del-fg);
 }
 
 @layer base {

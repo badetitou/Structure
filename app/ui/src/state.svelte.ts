@@ -1,5 +1,5 @@
 import * as api from "./api";
-import type { History, Impact, Matrix, Progress } from "./api";
+import type { Diff, History, Impact, Matrix, Progress } from "./api";
 import type { ViewCell } from "./domaintree";
 import { PAGE, appendPage } from "./cellsymbols";
 import type { SymbolList } from "./cellsymbols";
@@ -9,6 +9,15 @@ import type { Mode } from "./layout";
 import { RequestGuard, shownMatrix } from "./matrixsel";
 import { loadMode, saveMode } from "./mode";
 import { analyzeAndRecord } from "./recent";
+
+/** The diff panel's content: the requested range and its diff once loaded. */
+export interface DiffState {
+  base: string | null;
+  head: string | null;
+  loading: boolean;
+  data?: Diff;
+  error?: string;
+}
 
 const START: Progress = { step: "starting…", pct: 0 };
 
@@ -34,7 +43,11 @@ export class AppState {
   /** Progress of the running impact, null when none runs. */
   impactProgress = $state<Progress | null>(null);
 
+  /** Textual diff of the history selection (or typed range), null when none is selected. */
+  diff = $state.raw<DiffState | null>(null);
+
   private guard = new RequestGuard();
+  private diffGuard = new RequestGuard();
   private symReq = 0;
   private loadReq = 0;
 
@@ -95,6 +108,7 @@ export class AppState {
     this.impactError = "";
     this.impactBusy = false;
     this.impactProgress = null;
+    this.clearDiff();
   }
 
   toggleMode() {
@@ -163,6 +177,7 @@ export class AppState {
     this.impactError = "";
     this.impactBusy = false;
     this.impactProgress = null;
+    this.clearDiff();
     this.setImpact(null);
   }
 
@@ -172,6 +187,7 @@ export class AppState {
     const d = selectionDiff(this.history.commits, sel);
     if (!d) return;
     this.historySel = sel;
+    void this.loadDiff(d.base, d.head);
     void this.runImpact(d.base, d.head);
   }
 
@@ -179,7 +195,25 @@ export class AppState {
   runTypedImpact(base: string | null, head: string | null) {
     if (this.impactBusy) return;
     this.historySel = null;
+    void this.loadDiff(base, head);
     void this.runImpact(base, head);
+  }
+
+  /** Loads the diff of `base..head`; a later selection supersedes it. */
+  async loadDiff(base: string | null, head: string | null): Promise<void> {
+    const req = this.diffGuard.begin();
+    this.diff = { base, head, loading: true };
+    try {
+      const data = await api.diff(this.project, base, head);
+      if (this.diffGuard.isCurrent(req)) this.diff = { base, head, loading: false, data };
+    } catch (e) {
+      if (this.diffGuard.isCurrent(req)) this.diff = { base, head, loading: false, error: String(e) };
+    }
+  }
+
+  private clearDiff() {
+    this.diffGuard.invalidate();
+    this.diff = null;
   }
 
   private setImpact(imp: Impact | null) {
