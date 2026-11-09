@@ -16,14 +16,18 @@ use crate::model::{Classification, DomainNode, Matrix, Placement, Progress, Proj
 
 /// Root dir names, suffixed `-2`, `-3`... when they clash.
 pub(super) fn unique_names(roots: &[PathBuf]) -> Vec<String> {
-    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
     roots
         .iter()
         .map(|r| {
             let base = project_name(r);
-            let n = seen.entry(base.clone()).or_default();
-            *n += 1;
-            if *n == 1 { base } else { format!("{base}-{n}") }
+            let mut name = base.clone();
+            let mut n = 1;
+            while !used.insert(name.clone()) {
+                n += 1;
+                name = format!("{base}-{n}");
+            }
+            name
         })
         .collect()
 }
@@ -185,5 +189,16 @@ mod tests {
             .map(PathBuf::from)
             .collect();
         assert_eq!(unique_names(&roots), ["app", "app-2", "web", "app-3"]);
+    }
+
+    #[test]
+    fn literal_names_cannot_collide_with_suffixed_ones() {
+        let roots: Vec<PathBuf> = ["/a/app", "/b/app", "/c/app-2"]
+            .iter()
+            .map(PathBuf::from)
+            .collect();
+        let names = unique_names(&roots);
+        let set: std::collections::HashSet<_> = names.iter().collect();
+        assert_eq!(set.len(), 3, "{names:?}");
     }
 }
