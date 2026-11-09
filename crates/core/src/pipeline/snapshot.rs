@@ -5,7 +5,7 @@ use anyhow::{Context, bail};
 use crate::impact;
 use crate::model::{Impact, Progress};
 
-use super::{Analysis, Options, analyze};
+use super::{Analysis, Options, analyze, analyze_in};
 use structure_git::resolve_base;
 
 /// Most snapshots kept per repository; the least recently used are removed.
@@ -35,8 +35,7 @@ fn snapshot_bounded(root: &Path, rev: &str, max: usize) -> anyhow::Result<PathBu
     let prefix = impact::git(root, &["rev-parse", "--show-prefix"])?
         .trim()
         .to_string();
-    let common = impact::git(root, &["rev-parse", "--git-common-dir"])?;
-    let snaps = root.join(common.trim()).join("structure").join("snapshots");
+    let snaps = super::structure_dir(root)?.join("snapshots");
     std::fs::create_dir_all(&snaps).with_context(|| format!("creating {}", snaps.display()))?;
     let snaps = snaps.canonicalize().unwrap_or(snaps);
     let dir = snaps.join(&sha);
@@ -114,7 +113,7 @@ pub fn analyze_snapshot(
     progress: &dyn Fn(Progress),
 ) -> anyhow::Result<(PathBuf, Analysis)> {
     let snap = snapshot(root, head)?;
-    let analysis = analyze(&snap, opts, progress)?;
+    let analysis = analyze_in(&snap, opts, progress, !opts.exact)?;
     Ok((snap, analysis))
 }
 
