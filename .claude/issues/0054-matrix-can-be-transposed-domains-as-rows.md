@@ -1,7 +1,7 @@
 ---
 id: 54
 title: Matrix can be transposed (domains as rows, layers as columns)
-status: review
+status: done
 parent: null
 branch: claude/matrix-inversion-d4b021
 remote: null
