@@ -32,7 +32,12 @@ fn check(rel: &str, ext: &str) {
     for doc in &idx.documents {
         for x in doc.occurrences.iter().filter(|x| x.is_definition) {
             if n < 3 {
-                eprintln!("  sample {} {:?} {}", doc.relative_path, x.range, x.symbol);
+                eprintln!(
+                    "  sample {} {:?} {}",
+                    doc.relative_path,
+                    x.range,
+                    idx.name(x.symbol)
+                );
                 n += 1;
             }
             enclosing += usize::from(x.enclosing_range.is_some());
