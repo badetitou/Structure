@@ -86,6 +86,10 @@ pub struct Matrix {
     pub cells: Vec<Cell>,
     /// Grouped by source cell, indices into `cells` (see docs/api.md).
     pub edges: Vec<EdgeGroup>,
+    /// Same shape as `edges`, from HTTP edges only (frontend -> backend);
+    /// omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub http_edges: Vec<EdgeGroup>,
     pub stats: Stats,
     /// Things the user should know about this analysis (indexing failed,
     /// stale index...). Omitted from JSON when empty.

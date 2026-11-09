@@ -86,6 +86,8 @@ pub enum EdgeKind {
     Implements,
     Extends,
     Uses,
+    /// Frontend HTTP call to the backend handler method it reaches.
+    Http,
 }
 
 impl EdgeKind {
@@ -96,6 +98,7 @@ impl EdgeKind {
             EdgeKind::Implements => 1,
             EdgeKind::Extends => 2,
             EdgeKind::Uses => 3,
+            EdgeKind::Http => 4,
         }
     }
 }

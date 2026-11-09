@@ -93,6 +93,10 @@ interface Matrix {
   domains: string[];
   cells: Cell[];     // non-empty cells only, sorted by (layer, domain)
   edges: EdgeGroup[]; // cell-to-cell calls/uses, grouped by source cell
+  // Only with >= 2 roots and when non-empty: same shape as `edges`, built from
+  // `http` edges (TS caller symbol -> Java handler method, `EdgeKind::Http`,
+  // serde `http`) lifted to cells, so front `api_client` cells reach back `entry` cells.
+  http_edges?: EdgeGroup[];
   stats: Stats;
   generation?: number; // set by the app: id of the cached analysis; pass to `cell_symbols`
   warnings?: string[]; // only when non-empty: indexing failed, stale index...

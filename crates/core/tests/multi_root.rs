@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use structure_core::ir::EdgeKind;
 use structure_core::pipeline::{self, Analysis, Options};
 
 fn fixtures() -> PathBuf {
@@ -63,6 +64,46 @@ fn two_roots_give_the_union_of_both_cell_sets() {
     assert_eq!(
         both.graph.symbols.len(),
         b.graph.symbols.len() + f.graph.symbols.len()
+    );
+}
+
+#[test]
+fn http_calls_link_to_backend_handlers() {
+    let (Some(back), Some(front)) = (
+        fixture("spring-boot-realworld-example-app"),
+        fixture("angular-realworld"),
+    ) else {
+        return;
+    };
+    let a = pipeline::analyze_many(&[back, front], &offline(), &|_| {}).expect("analyze");
+    let s = a.http_stats.as_ref().expect("http stats");
+    assert_eq!(s.calls, 18);
+    assert!(s.linked >= 15, "{s:?}");
+    let has = |from: &str, to: &str| {
+        a.graph
+            .edges
+            .iter()
+            .any(|e| e.kind == EdgeKind::Http && e.from.ends_with(from) && e.to.ends_with(to))
+    };
+    assert!(has(
+        "UserService.getCurrentUser",
+        "CurrentUserApi#currentUser(2)"
+    ));
+    assert!(has(
+        "CommentsService.delete",
+        "CommentsApi#deleteComment(3)"
+    ));
+    assert!(has("ArticlesService.get", "ArticleApi#article(2)"), "{s:?}");
+    assert!(
+        a.matrix.http_edges.iter().any(|g| {
+            let from = &a.matrix.cells[g.from].id;
+            from.starts_with("api_client:angular-realworld")
+                && g.targets
+                    .iter()
+                    .any(|&(t, _)| a.matrix.cells[t].id.starts_with("entry:spring-boot"))
+        }),
+        "{:?}",
+        a.matrix.http_edges
     );
 }
 
