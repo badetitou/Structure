@@ -294,21 +294,20 @@ fn url_of(n: Node, src: &str) -> String {
     raw_url(n, src).map_or_else(|| "?".to_string(), |r| normalize(&r))
 }
 
-/// Leading `/` (unless a scheme is given), single `/`, no trailing `/`, no query.
+/// Leading `/`, single `/`, no trailing `/`, no query, no `scheme://host[:port]`.
 pub fn normalize(raw: &str) -> String {
     let raw = raw.split(['?', '#']).next().unwrap_or("");
-    let (scheme, rest) = match raw.find("://") {
-        Some(i) if raw[..i].chars().all(|c| c.is_ascii_alphabetic()) => raw.split_at(i + 3),
-        _ => ("", raw),
+    let rest = match raw.find("://") {
+        Some(i) if raw[..i].chars().all(|c| c.is_ascii_alphabetic()) => {
+            let after = &raw[i + 3..];
+            after.find('/').map_or("", |k| &after[k..])
+        }
+        _ => raw,
     };
     let body = rest
         .split('/')
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("/");
-    if scheme.is_empty() {
-        format!("/{body}")
-    } else {
-        format!("{scheme}{body}")
-    }
+    format!("/{body}")
 }

@@ -80,10 +80,7 @@ fn template_and_concatenation() {
         [p(Get, "/articles/{slug}/c/{id}"), p(Get, "/x/{}")]
     );
     assert_eq!(calls(src, "S.b"), [p(Get, "/profiles/{u}")]);
-    assert_eq!(
-        calls(src, "S.c"),
-        [p(Get, "/s"), p(Get, "https://h.io/api")]
-    );
+    assert_eq!(calls(src, "S.c"), [p(Get, "/s"), p(Get, "/api")]);
 }
 
 #[test]
@@ -132,38 +129,104 @@ fn angular_realworld_services() {
         })
         .collect();
     eprintln!("angular-realworld http calls: {all:?}");
-    assert_eq!(all.len(), 18, "{all:?}");
-    let n = |v: HttpVerb| all.iter().filter(|(_, vb, _)| *vb == v).count();
-    assert_eq!((n(Get), n(Post), n(Put), n(Delete)), (6, 6, 2, 4));
-    let has = |suffix: &str, v: HttpVerb, path: &str| {
-        all.iter()
-            .any(|(id, vb, pa)| id.ends_with(suffix) && *vb == v && *pa == path)
-    };
-    assert!(has("UserService.getCurrentUser", Get, "/user"));
-    assert!(has("UserService.update", Put, "/user"));
-    assert!(has("UserService.login", Post, "/users/login"));
-    assert!(has("UserService.register", Post, "/users"));
-    assert!(has("TagsService.getAll", Get, "/tags"));
-    assert!(has("ProfileService.get", Get, "/profiles/{username}"));
-    assert!(has(
-        "CommentsService.getAll",
-        Get,
-        "/articles/{slug}/comments"
-    ));
-    assert!(has(
-        "CommentsService.delete",
-        Delete,
-        "/articles/{slug}/comments/{commentId}"
-    ));
-    assert!(has("ArticlesService.delete", Delete, "/articles/{slug}"));
-    assert!(has(
-        "ArticlesService.favorite",
-        Post,
-        "/articles/{slug}/favorite"
-    ));
-    // `'/articles' + (cond ? '/feed' : '')` is not a plain concatenation.
-    assert!(has("ArticlesService.query", Get, "?"));
-    assert_eq!(all.iter().filter(|(_, _, p)| *p == "?").count(), 1);
+    // `ArticlesService.query` uses `'/articles' + (cond ? '/feed' : '')`: not a plain concatenation.
+    let expected: Vec<(&str, HttpVerb, &str)> = vec![
+        (
+            "src/app/core/auth/services/user.service.ts#UserService.getCurrentUser",
+            Get,
+            "/user",
+        ),
+        (
+            "src/app/core/auth/services/user.service.ts#UserService.login",
+            Post,
+            "/users/login",
+        ),
+        (
+            "src/app/core/auth/services/user.service.ts#UserService.register",
+            Post,
+            "/users",
+        ),
+        (
+            "src/app/core/auth/services/user.service.ts#UserService.update",
+            Put,
+            "/user",
+        ),
+        (
+            "src/app/features/article/services/articles.service.ts#ArticlesService.create",
+            Post,
+            "/articles",
+        ),
+        (
+            "src/app/features/article/services/articles.service.ts#ArticlesService.delete",
+            Delete,
+            "/articles/{slug}",
+        ),
+        (
+            "src/app/features/article/services/articles.service.ts#ArticlesService.favorite",
+            Post,
+            "/articles/{slug}/favorite",
+        ),
+        (
+            "src/app/features/article/services/articles.service.ts#ArticlesService.get",
+            Get,
+            "/articles/{slug}",
+        ),
+        (
+            "src/app/features/article/services/articles.service.ts#ArticlesService.query",
+            Get,
+            "?",
+        ),
+        (
+            "src/app/features/article/services/articles.service.ts#ArticlesService.unfavorite",
+            Delete,
+            "/articles/{slug}/favorite",
+        ),
+        (
+            "src/app/features/article/services/articles.service.ts#ArticlesService.update",
+            Put,
+            "/articles/{slug}",
+        ),
+        (
+            "src/app/features/article/services/comments.service.ts#CommentsService.add",
+            Post,
+            "/articles/{slug}/comments",
+        ),
+        (
+            "src/app/features/article/services/comments.service.ts#CommentsService.delete",
+            Delete,
+            "/articles/{slug}/comments/{commentId}",
+        ),
+        (
+            "src/app/features/article/services/comments.service.ts#CommentsService.getAll",
+            Get,
+            "/articles/{slug}/comments",
+        ),
+        (
+            "src/app/features/article/services/tags.service.ts#TagsService.getAll",
+            Get,
+            "/tags",
+        ),
+        (
+            "src/app/features/profile/services/profile.service.ts#ProfileService.follow",
+            Post,
+            "/profiles/{username}/follow",
+        ),
+        (
+            "src/app/features/profile/services/profile.service.ts#ProfileService.get",
+            Get,
+            "/profiles/{username}",
+        ),
+        (
+            "src/app/features/profile/services/profile.service.ts#ProfileService.unfollow",
+            Delete,
+            "/profiles/{username}/follow",
+        ),
+    ];
+    let mut got = all.clone();
+    got.sort_by_key(|(i, v, p)| (*i, *v as u8, *p));
+    let mut want = expected;
+    want.sort_by_key(|(i, v, p)| (*i, *v as u8, *p));
+    assert_eq!(got, want);
 }
 
 #[test]
@@ -193,4 +256,42 @@ fn unreadable_method_is_any() {
         calls(src, "#b"),
         [p(Any, "?"), p(Post, "/6"), p(Any, "/7"), p(Get, "/8")]
     );
+}
+
+#[test]
+fn nested_class_does_not_wipe_outer_clients() {
+    let src = "class O { constructor(private http: HttpClient) {}\n\
+      a() { class I { m() {} } return new I(); }\n\
+      b() { return this.http.get('/after'); } }";
+    assert_eq!(calls(src, "O.b"), [p(Get, "/after")]);
+}
+
+#[test]
+fn scheme_and_host_are_stripped() {
+    let src = "function a() { fetch('http://localhost:8080/api/x'); fetch('https://h/x?q=1'); fetch('https://h'); }";
+    assert_eq!(
+        calls(src, "#a"),
+        [p(Get, "/api/x"), p(Get, "/x"), p(Get, "/")]
+    );
+}
+
+#[test]
+fn calls_in_callbacks_belong_to_the_enclosing_method() {
+    let src = "class S { constructor(private http: HttpClient) {}\n\
+      a() { return o.pipe(switchMap(() => this.http.get('/x'))); }\n\
+      b() { function inner() { return this.http.post('/y', {}); } return inner(); } }";
+    let f = parse_source("a.ts", src, false).unwrap();
+    let got: Vec<_> = f
+        .symbols
+        .iter()
+        .filter(|s| !s.http_calls.is_empty())
+        .map(|s| {
+            (
+                s.id.as_str(),
+                s.http_calls[0].verb,
+                s.http_calls[0].path.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(got, [("a.ts#S.a", Get, "/x"), ("a.ts#S.b", Post, "/y")]);
 }
