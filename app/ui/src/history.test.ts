@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Commit } from "./api";
-import { clickCommit, isSelected, relativeDate, selectionDiff } from "./history";
+import { clickCommit, headIndex, isSelected, relativeDate, selectionDiff } from "./history";
 
 const mk = (id: string): Commit => ({
   id,
@@ -24,6 +24,12 @@ describe("selection", () => {
     const sel = clickCommit(first, 0, true);
     expect(selectionDiff(commits, sel)).toEqual({ base: "a^", head: "c" });
     expect([0, 1, 2].map((i) => isSelected(sel, i))).toEqual([true, true, true]);
+    expect(commits[headIndex(sel) ?? -1]?.id).toBe(selectionDiff(commits, sel)?.head);
+  });
+  it("only the head of a selection is computed; the working tree has no commit row", () => {
+    expect(headIndex(clickCommit(clickCommit(null, 2, false), 0, true))).toBe(0);
+    expect(headIndex({ kind: "worktree" })).toBeNull();
+    expect(headIndex(null)).toBeNull();
   });
   it("shift without a prior commit acts as a plain click", () => {
     const sel = clickCommit({ kind: "worktree" }, 1, true);
