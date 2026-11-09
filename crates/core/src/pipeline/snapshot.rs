@@ -275,9 +275,10 @@ mod tests {
         // Relative base resolves in the user's repo, not the snapshot's HEAD.
         let imp = impact_at(&root, Some("HEAD~2"), Some(&c1), &no_scip(), &|_| {}).unwrap();
         assert_eq!(imp.changed_symbols, vec!["B".to_string()], "{imp:?}");
-        // c2 only touches the new comment line: no symbol changed.
+        // c2 only adds a header comment: outside every class, so it marks the
+        // whole file (with c1's positions, line 0 would be class A alone).
         let imp = impact_at(&root, Some(&c1), Some(&c2), &no_scip(), &|_| {}).unwrap();
-        assert!(imp.changed_symbols.is_empty(), "{imp:?}");
+        assert_eq!(imp.changed_symbols, ["A", "B"], "{imp:?}");
         let _ = std::fs::remove_dir_all(&repo);
     }
 

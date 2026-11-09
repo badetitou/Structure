@@ -192,10 +192,23 @@ pub fn compute(
 
     let mut changed: BTreeSet<String> = BTreeSet::new();
     for ch in changes {
-        for s in graph.symbols_in_file(&ch.file) {
-            let st = s.range.start_line;
-            let en = (s.range.end_line + u32::from(s.range.end_col > 0)).max(st + 1);
-            if ch.lines.is_empty() || ch.lines.iter().any(|&(a, b)| st < b && a < en) {
+        let spans: Vec<(&Symbol, u32, u32)> = graph
+            .symbols_in_file(&ch.file)
+            .map(|s| {
+                let st = s.range.start_line;
+                let en = (s.range.end_line + u32::from(s.range.end_col > 0)).max(st + 1);
+                (s, st, en)
+            })
+            .collect();
+        // A range outside every symbol (package, imports, file comments) belongs
+        // to the whole file: it marks all of the file's symbols.
+        let whole = ch.lines.is_empty()
+            || ch
+                .lines
+                .iter()
+                .any(|&(a, b)| !spans.iter().any(|&(_, st, en)| st < b && a < en));
+        for &(s, st, en) in &spans {
+            if whole || ch.lines.iter().any(|&(a, b)| st < b && a < en) {
                 changed.extend(lift(&s.id));
             }
         }
@@ -434,14 +447,58 @@ diff --git a/D b/D\ndeleted file mode 100644\n--- a/D\n+++ /dev/null\n@@ -1,3 +0
         assert_eq!(ids, ["Impl", "User"]);
         // Impl shares the changed cell business:b; User has no placement.
         assert!(i.impacted_cells.is_empty());
+        // A file the graph does not know (e.g. a test) marks nothing.
         let none = [FileChange {
-            file: "Mapper.java".into(),
-            lines: vec![(30, 31)],
+            file: "MapperTest.java".into(),
+            lines: vec![(0, 1)],
         }];
         assert!(
             compute(&g, &c, &none, "HEAD", None)
                 .changed_symbols
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn header_change_marks_the_file_symbols() {
+        let mut g = Graph {
+            root: ".".into(),
+            language: Language::Java,
+            symbols: vec![
+                // package + imports on lines 0..4, two top-level classes.
+                sym("Api", None, "Api.java", 4, 20),
+                sym("Api#get", Some("Api"), "Api.java", 6, 10),
+                sym("Param", None, "Api.java", 22, 30),
+                sym("Other", None, "Other.java", 0, 5),
+            ],
+            edges: vec![],
+        };
+        g.edges.push(edge("Other", "Param", EdgeKind::Uses));
+        let c = Classification::default();
+        let import = [FileChange {
+            file: "Api.java".into(),
+            lines: vec![(2, 3)],
+        }];
+        let i = compute(&g, &c, &import, "HEAD", None);
+        assert_eq!(i.changed_symbols, ["Api", "Param"]);
+        assert_eq!(i.impacted_symbols[0].id, "Other");
+        // Between the two classes, too.
+        let gap = [FileChange {
+            file: "Api.java".into(),
+            lines: vec![(21, 22)],
+        }];
+        assert_eq!(
+            compute(&g, &c, &gap, "HEAD", None).changed_symbols,
+            ["Api", "Param"]
+        );
+        // Inside a method: only its class.
+        let body = [FileChange {
+            file: "Api.java".into(),
+            lines: vec![(7, 8)],
+        }];
+        assert_eq!(
+            compute(&g, &c, &body, "HEAD", None).changed_symbols,
+            ["Api"]
         );
     }
 

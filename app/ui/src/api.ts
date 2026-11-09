@@ -166,14 +166,35 @@ export async function analyze(
   }
 }
 
+/** Impact of `base..head`; a commit snapshot may be analysed first, its
+ * progress goes to `onProgress`. */
 export async function impact(
   path: string,
   base: string | null,
   head: string | null,
+  onProgress: (p: Progress) => void = () => {},
 ): Promise<Impact> {
-  const w = inTauri
-    ? await invoke<WireImpact>("impact", { path, base, head })
-    : await fetchSample<WireImpact>("impact");
+  let w: WireImpact;
+  if (inTauri) {
+    const unlisten = await listen<Progress>("analysis-progress", (e) =>
+      onProgress(e.payload),
+    );
+    try {
+      w = await invoke<WireImpact>("impact", { path, base, head });
+    } finally {
+      unlisten();
+    }
+  } else {
+    for (const [step, pct] of [
+      ["checking out", 2],
+      ["parsing", 40],
+      ["computing impact", 80],
+    ] as [string, number][]) {
+      onProgress({ step, pct });
+      await sleep(300);
+    }
+    w = await fetchSample<WireImpact>("impact");
+  }
   const { matrix, ...rest } = w;
   return matrix ? { ...rest, matrix: expandMatrix(matrix) } : rest;
 }
