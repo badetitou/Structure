@@ -1,6 +1,9 @@
 <script lang="ts">
   import ChevronIcon from "@lucide/svelte/icons/chevron-right";
+  import CollapseIcon from "@lucide/svelte/icons/chevrons-down-up";
+  import ExpandIcon from "@lucide/svelte/icons/chevrons-up-down";
   import LoaderIcon from "@lucide/svelte/icons/loader-circle";
+  import { Button } from "$lib/components/ui/button";
   import type { DiffLine } from "../../api";
   import { fileLabel, rangeLabel, startsOpen, statusLetter, totals } from "../../diffview";
   import { app } from "../../state.svelte";
@@ -14,6 +17,13 @@
     context: "",
   };
   const marker: Record<DiffLine["kind"], string> = { add: "+", del: "-", context: " " };
+
+  let filesEl: HTMLDivElement | undefined = $state();
+
+  /** Opens or closes every file section of the diff at once. */
+  function setAllOpen(open: boolean) {
+    filesEl?.querySelectorAll("details").forEach((el) => (el.open = open));
+  }
 </script>
 
 <div class="flex h-full min-h-0 flex-col text-xs">
@@ -31,8 +41,18 @@
       {:else if d.loading}
         <LoaderIcon class="ml-auto size-3.5 flex-none animate-spin" />
       {/if}
+      {#if d.data && d.data.files.length > 0}
+        <span class="flex flex-none items-center" class:ml-auto={!sum}>
+          <Button variant="ghost" size="icon-xs" title="Collapse all files" aria-label="Collapse all files" onclick={() => setAllOpen(false)}>
+            <CollapseIcon />
+          </Button>
+          <Button variant="ghost" size="icon-xs" title="Expand all files" aria-label="Expand all files" onclick={() => setAllOpen(true)}>
+            <ExpandIcon />
+          </Button>
+        </span>
+      {/if}
     </div>
-    <div class="min-h-0 flex-1 overflow-auto">
+    <div class="min-h-0 flex-1 overflow-auto" bind:this={filesEl}>
       {#if d.error}
         <div class="px-3.5 py-2.5 text-destructive">Cannot load the diff: {d.error}</div>
       {:else if d.data}
