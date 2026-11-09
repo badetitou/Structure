@@ -4,8 +4,28 @@
     {
       "name": "structure-ui",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "app/ui", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "app/ui",
+        "run",
+        "dev"
+      ],
       "port": 1420
+    },
+    {
+      "name": "structure-ui-alt",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "app/ui",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "1431",
+        "--strictPort"
+      ],
+      "port": 1431
     }
   ]
 }

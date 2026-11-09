@@ -12,8 +12,9 @@ function memoryStorage() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("matrix mode persistence", () => {
-  it("parses only dense, anything else is normal", () => {
+  it("parses dense and flame, anything else is normal", () => {
     expect(parseMode("dense")).toBe("dense");
+    expect(parseMode("flame")).toBe("flame");
     expect(parseMode("normal")).toBe("normal");
     expect(parseMode("weird")).toBe("normal");
     expect(parseMode(null)).toBe("normal");
