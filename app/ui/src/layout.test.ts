@@ -189,3 +189,33 @@ describe("layout transposed", () => {
     expect(MARGIN_L).toBe(110);
   });
 });
+
+describe("layout segments", () => {
+  const gapped = (mode: "normal" | "dense" | "flame", transposed = false) =>
+    layout(mode, layers, domains, cells, domains, transposed, layers, [2]);
+  it("defaults have no separators", () => {
+    expect(layout("normal", layers, domains, cells).separators).toEqual([]);
+  });
+  it("adds a gap before the segment start and a separator in its middle", () => {
+    for (const [mode, gap] of [["normal", 24], ["dense", 8], ["flame", 24]] as const) {
+      const base = layout(mode, layers, domains, cells);
+      const l = gapped(mode);
+      expect(l.rows[1]).toEqual(base.rows[1]);
+      expect(l.rows[2]?.x).toBe((base.rows[2]?.x ?? 0) + gap);
+      const end = (base.rows[1]?.x ?? 0) + (base.rows[1]?.w ?? 0);
+      expect(l.separators).toEqual([end + gap / 2]);
+      expect(l.height).toBe(base.height + gap);
+    }
+  });
+  it("applies along the layer axis when transposed", () => {
+    const base = layout("dense", layers, domains, cells, domains, true);
+    const l = gapped("dense", true);
+    expect(l.width).toBe(base.width + 8);
+    expect(l.height).toBe(base.height);
+    expect(l.separators).toHaveLength(1);
+  });
+  it("uses layer texts for labels", () => {
+    const l = layout("normal", layers, domains, cells, domains, false, ["A", "B", "C"]);
+    expect(l.layerLabels.map((x) => x.text)).toEqual(["A", "B", "C"]);
+  });
+});

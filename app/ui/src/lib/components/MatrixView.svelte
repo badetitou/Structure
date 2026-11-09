@@ -9,9 +9,10 @@
 
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { CellEdge, Matrix } from "../../api";
+  import type { CellEdge, DomainNode, Matrix } from "../../api";
+  import { align, canAlign, projectOf } from "../../aligned";
   import { defaultEdgeOpacity } from "../../cellstate";
-  import { FLAME_MAX_COLUMNS, aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded } from "../../domaintree";
+  import { FLAME_MAX_COLUMNS, MAX_COLUMNS, aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded } from "../../domaintree";
   import { adjacency, reach, visibleEdges, type RemoteKind } from "../../graph";
   import { BAND_DENSE, BAND_NORMAL, STROKE_DENSE, STROKE_NORMAL, layout } from "../../layout";
   import { app } from "../../state.svelte";
@@ -35,26 +36,56 @@
   // expansion; the flame view opens the tree much deeper so the matrix grows sideways.
   let override = $state.raw<{ matrix: Matrix; flame: boolean; set: Set<string> } | null>(null);
   const flame = $derived(mode === "flame");
+  // Aligned view: several projects with remote links, front and back domains share rows.
+  const alignedOn = $derived(app.aligned && canAlign(matrix.projects, matrix.httpEdges, matrix.rpcEdges));
+  const budget = $derived(flame ? FLAME_MAX_COLUMNS : MAX_COLUMNS);
+  // Aligned: each project (top-level node) gets its own column budget, so the backend opens too.
+  const defaultExpanded = (t: DomainNode[]) => {
+    if (!alignedOn) return initialExpanded(t, budget);
+    const set = new Set<string>();
+    t.forEach((n, i) => {
+      for (const k of initialExpanded([n], budget)) set.add(`g:${i}${k.slice(3)}`);
+    });
+    return set;
+  };
   const expanded = $derived(
     override && override.matrix === matrix && override.flame === flame
       ? override.set
       : tree
-        ? initialExpanded(tree, flame ? FLAME_MAX_COLUMNS : undefined)
+        ? defaultExpanded(tree)
         : new Set<string>(),
   );
   const cols = $derived(tree ? columns(tree, expanded) : flatColumns(matrix.domains));
-  const vm = $derived(aggregate(matrix, cols));
+  const vm0 = $derived(aggregate(matrix, cols));
+  const projectNames = $derived((matrix.projects ?? []).map((p) => p.name));
+  const al = $derived(
+    alignedOn ? align(vm0, cols, matrix.layers, projectNames, [...vm0.httpEdges, ...vm0.rpcEdges]) : null,
+  );
+  const vm = $derived(al ? al.vm : vm0);
+  const heads = $derived(al ? al.rows : cols.map((c) => ({ key: c.key, members: [c] })));
   const lay = $derived(
     layout(
       mode,
-      matrix.layers,
-      cols.map((c) => c.key),
+      al ? al.layers.map((l) => l.key) : matrix.layers,
+      heads.map((h) => h.key),
       vm.cells,
-      cols.map((c) => (c.group ? `▸ ${c.label}` : c.label)),
+      heads.map((h) => h.members.map((c) => (c.group ? `▸ ${c.label}` : c.label)).join(" ⇄ ")),
       transposed,
+      al ? al.layers.map((l) => l.layer) : undefined,
+      al?.segments,
     ),
   );
-  const bs = $derived(tree ? bands(tree, expanded) : []);
+  // Aligned: only the primary project's bands, shifted to its first row.
+  const bs = $derived.by(() => {
+    if (!tree) return [];
+    const all = bands(tree, expanded);
+    if (!al) return all;
+    const pi = projectNames.indexOf(al.primary);
+    const first = cols.findIndex((c) => projectOf(c, projectNames) === pi);
+    return all
+      .filter((b) => b.key === `g:${pi}` || b.key.startsWith(`g:${pi}/`))
+      .map((b) => ({ ...b, start: b.start - first }));
+  });
   const bandH = $derived(mode === "dense" ? BAND_DENSE : BAND_NORMAL);
   const top = $derived(bs.length ? (bs.reduce((d, b) => Math.max(d, b.depth), 0) + 1) * bandH : 0);
   // Bands sit above the matrix, or left of it when transposed.
@@ -86,7 +117,7 @@
   // Hover: adjacency once per view matrix, then one BFS per direction per hovered cell.
   // Tied to the matrix, mode, impact and expansion it was made under: any change drops it with no stale frame.
   let hovered = $state.raw<{ id: string; keys: unknown[] } | null>(null);
-  const hoverKeys = () => [matrix, mode, app.impact, expanded];
+  const hoverKeys = () => [matrix, mode, app.impact, expanded, alignedOn];
   const hoveredId = $derived(
     hovered && hovered.keys.every((k, i) => k === hoverKeys()[i]) ? hovered.id : null,
   );
@@ -260,7 +291,7 @@
     <g {transform}>
       <ColumnHeaders
         {lay}
-        {cols}
+        {heads}
         bands={bs}
         {bandH}
         {top}
@@ -279,6 +310,16 @@
           {:else}
             <rect class="slot-dense" x={t.x + 0.5} y={t.y + 0.5} width={t.w - 1} height={t.h - 1} />
           {/if}
+        {/each}
+        <!-- Double line between project segments, across the whole domain axis -->
+        {#each lay.separators as s (s)}
+          {#each [-1.5, 1.5] as d (d)}
+            {#if transposed}
+              <line class="segment" x1={s + d} y1={0} x2={s + d} y2={lay.height} />
+            {:else}
+              <line class="segment" x1={0} y1={s + d} x2={lay.width} y2={s + d} />
+            {/if}
+          {/each}
         {/each}
         <!-- Edges sit under the cells -->
         {#each edgeTiles as e (e.key)}
@@ -324,6 +365,10 @@
   svg.panning,
   svg.panning :global(*) {
     cursor: grabbing !important;
+  }
+  .segment {
+    stroke: var(--segment-line);
+    stroke-width: 1;
   }
   .slot {
     fill: none;

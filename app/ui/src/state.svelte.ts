@@ -7,7 +7,18 @@ import { selectionDiff } from "./history";
 import type { Selection } from "./history";
 import type { Mode } from "./layout";
 import { RequestGuard, shownMatrix } from "./matrixsel";
-import { loadMode, loadShowHttp, loadShowRpc, loadTransposed, saveMode, saveShowHttp, saveShowRpc, saveTransposed } from "./mode";
+import {
+  loadAligned,
+  loadMode,
+  loadShowHttp,
+  loadShowRpc,
+  loadTransposed,
+  saveAligned,
+  saveMode,
+  saveShowHttp,
+  saveShowRpc,
+  saveTransposed,
+} from "./mode";
 import { analyzeAndRecord } from "./recent";
 
 /** The diff panel's content: the requested range and its diff once loaded. */
@@ -43,6 +54,8 @@ export class AppState {
   showRpc = $state(loadShowRpc());
   /** Domains as rows and layers as columns. */
   transposed = $state(loadTransposed());
+  /** Multi-project matrix: front and back domains share rows, projects get their own layer segment (persisted). */
+  aligned = $state(loadAligned());
   /** Null when unavailable (not a git repo, error): the sidebar is hidden. */
   history = $state.raw<History | null>(null);
   historySel = $state.raw<Selection | null>(null);
@@ -142,6 +155,11 @@ export class AppState {
   setMode(mode: Mode) {
     this.mode = mode;
     saveMode(mode);
+  }
+
+  setAligned(on: boolean) {
+    this.aligned = on;
+    saveAligned(on);
   }
 
   setTransposed(on: boolean) {
