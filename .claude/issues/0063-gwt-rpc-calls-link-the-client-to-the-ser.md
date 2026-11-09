@@ -1,9 +1,9 @@
 ---
 id: 63
 title: GWT RPC calls link the client to the server implementation
-status: todo
+status: in-progress
 parent: 54
-branch: null
+branch: 63-gwt-rpc
 remote: null
 created: 2026-11-09
 ---
@@ -31,3 +31,50 @@ not only across roots like HTTP (#58).
 ## Out of scope (later RPC kinds)
 - gRPC (generated stubs ↔ `*ImplBase`), Java RMI, JSON-RPC, Feign/HttpExchange clients as callers
   (#56 already skips them as servers).
+
+UI drawing moved to #66; this issue is the analysis side (IR, extraction, linking, matrix field, CLI).
+
+## Brief (implementer)
+
+Goal: GWT RPC calls become `EdgeKind::Rpc` edges from the client caller method to the server
+implementation method, in single- and multi-root analyses, without SCIP.
+Read first: crates/ir/src/ir.rs (EdgeKind incl. Http rank, Symbol.http/http_calls), crates/lang-java/src/lib.rs
+(supertype resolution `index.resolve`, how #56/#65 fill per-method data, method ids `<type>#<name>(<arity>)`,
+Feign guard), crates/core/src/http_link.rs (shape to mirror) and pipeline/mod.rs + pipeline/multi.rs
+(where link_http runs, single-root output byte-identical rule), crates/classify/src/matrix.rs (http_edges grouping),
+crates/scip/src/metrics.rs kind names, crates/cli/src/main.rs (http: line).
+Real shapes, read-only: /Users/benoit.verhaeghe/Documents/Sedit/e-sedit-rh/BLGRHGwt/src —
+`fr/bl/client/grh/ab/remote/IGwtServiceAb.java` (`interface IGwtServiceAb extends RemoteService` with nested
+`Util.getInstance()` returning `IGwtServiceAbAsync`), `IGwtServiceAbAsync.java`, server
+`fr/bl/server/grh/ab/GwtServiceAb.java` (`extends RemoteServiceServlet implements IGwtServiceAb`), client call
+`fr/bl/client/grh/ab/rtt/InjectionDiminutionRTTCommand.java:40` (field `IGwtServiceAbAsync serviceAb = IGwtServiceAb.Util.getInstance()`).
+Call shapes by frequency: `IGwtServiceX.Util.getInstance().m(..)` (~4000), fields/locals typed `XAsync`
+(`serviceCoeur.m(..)`), `GWT.create(X.class)` cast to XAsync.
+Design:
+- IR: `EdgeKind::Rpc` (rank after Http, serde/kind name `rpc`). `Symbol.rpc_calls: Vec<RpcCall{service: String /* FQN of
+  the sync interface X, or simple name if unresolved */, method: String, arity: u32}>` (serde default, skip if empty).
+- lang-java (tree-sitter): a sync service = interface whose supertypes include `RemoteService` (transitively within
+  parsed code). Its async twin = `XAsync` in the same package. In a method body, a `method_invocation` whose receiver is
+  (a) `X.Util.getInstance()` / any static call on `X.<Nested>` returning `XAsync`, (b) `GWT.create(X.class)` (possibly cast),
+  (c) an identifier/`this.f` whose declared type (field, local, param) is `XAsync`, records an RpcCall on the enclosing
+  method with arity = argument count. Skip calls inside the service/async interfaces themselves.
+- Linking (new `crates/core/src/rpc_link.rs`, re-exported, pure fn over Graph → (edges, RpcLinkStats{calls, linked,
+  unresolved_service, no_impl, unmatched: Vec<String>})): for each RpcCall, implementations = classes implementing X
+  (transitively, parsed code); target = `Impl#method(arity-1)` (the AsyncCallback parameter is dropped); fall back to
+  `arity` if no such method (some services return a Request). Several implementations → one edge each. Dedup per
+  (caller, target).
+- Run it at the end of single-root analysis AND on the merged graph in multi-root (do not double-count: per-root graphs
+  feeding `merge` must not keep their own Rpc edges, or merge re-links from rpc_calls). Single-root output must stay
+  byte-identical when there are no RpcCalls (all goldens).
+- Matrix: `rpc_edges: Vec<EdgeGroup>` (serde default, skip if empty), built like `http_edges`. `edges` unchanged.
+- Stats on Analysis + CLI line `rpc: <linked>/<calls> linked, <n> no implementation, <m> unresolved service`, then up to
+  20 unmatched lines and "... and K more". docs/api.md + CLAUDE.md map (rpc_link).
+Measure (read-only, never build or write there): `cargo build --release -p structure-cli`;
+`./target/release/structure analyze --no-scip /Users/benoit.verhaeghe/Documents/Sedit/e-sedit-rh/BLGRHGwt -o <scratch>`
+and the pair `.../BLGRHGwt .../BLGRHServer`. Report the rpc: line, wall time, unmatched grouped by service, and how many
+RpcCalls target each of the 19 services. Target (CLAUDE.md rule 6): >= 80% linked; else say exactly what blocks it.
+Verify: cargo fmt --check; cargo clippy --workspace --all-targets -- -D warnings; cargo test --workspace with
+STRUCTURE_FIXTURES=/Users/benoit.verhaeghe/Documents/Perso/Structure/fixtures (goldens and http stats unchanged).
+Unit tests on a minimal GWT layout: each call shape, AsyncCallback arity drop, several impls, unresolved service, field
+shadowed by a local of another type, single root produces rpc_edges.
+Rules: no unwrap/expect outside tests; no new deps.
