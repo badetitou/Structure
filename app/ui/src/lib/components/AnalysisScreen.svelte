@@ -3,6 +3,7 @@
   import * as Tooltip from "$lib/components/ui/tooltip";
   import DetailsPanel from "./DetailsPanel.svelte";
   import HistorySidebar from "./HistorySidebar.svelte";
+  import ImpactBusy from "./ImpactBusy.svelte";
   import MatrixView from "./MatrixView.svelte";
   import type { MatrixHandle } from "./MatrixView.svelte";
   import Progress from "./Progress.svelte";
@@ -42,9 +43,12 @@
             <HistorySidebar />
           </SidePanel>
         {/if}
-        {#if app.matrix}
-          <MatrixView bind:this={matrix} matrix={app.matrix} />
-        {/if}
+        <div class="relative flex min-w-0 flex-1">
+          {#if app.matrix}
+            <MatrixView bind:this={matrix} matrix={app.matrix} />
+          {/if}
+          <ImpactBusy />
+        </div>
         <SidePanel
           side="right"
           panel={app.panels.right}

@@ -46,7 +46,7 @@
   >
     {app.mode === "dense" ? "Dense: on" : "Dense: off"}
   </Toggle>
-  <Button variant="outline" size="sm" disabled={!app.impact} onclick={() => app.clearImpact()}>Clear</Button>
+  <Button variant="outline" size="sm" disabled={!app.impact || app.impactBusy} onclick={() => app.clearImpact()}>Clear</Button>
   <span class="text-destructive">{app.impactError}</span>
   <span class="flex items-center text-sm text-muted-foreground">
     <span class="mr-1 ml-2.5 inline-block size-2.5 bg-(--fwd)"></span>reaches (forward)
