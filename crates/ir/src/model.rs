@@ -90,6 +90,10 @@ pub struct Matrix {
     /// omitted when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub http_edges: Vec<EdgeGroup>,
+    /// Same shape as `edges`, from GWT RPC edges only (client -> server
+    /// implementation); omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rpc_edges: Vec<EdgeGroup>,
     pub stats: Stats,
     /// Things the user should know about this analysis (indexing failed,
     /// stale index...). Omitted from JSON when empty.

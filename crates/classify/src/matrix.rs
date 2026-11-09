@@ -198,6 +198,7 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
     };
     let edges = group(|k| matches!(k, EdgeKind::Call | EdgeKind::Uses));
     let http_edges = group(|k| k == EdgeKind::Http);
+    let rpc_edges = group(|k| k == EdgeKind::Rpc);
 
     let files: BTreeSet<&str> = graph.symbols.iter().map(|s| s.file.as_str()).collect();
     Matrix {
@@ -209,6 +210,7 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
         cells,
         edges,
         http_edges,
+        rpc_edges,
         warnings: vec![],
         generation: 0,
         domain_tree: cls.domain_tree.clone(),
@@ -246,6 +248,7 @@ mod tests {
             supertypes: vec![],
             http: vec![],
             http_calls: vec![],
+            rpc_calls: vec![],
             package: None,
         }
     }

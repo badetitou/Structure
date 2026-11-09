@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use anyhow::bail;
 
 use super::{Analysis, Options, analyze_in, project_name};
-use crate::ir::Graph;
+use crate::ir::{EdgeKind, Graph};
 use crate::matrix;
 use crate::model::{Classification, DomainNode, Matrix, Placement, Progress, Project};
 
@@ -111,7 +111,13 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
             s.file = format!("{name}/{}", s.file);
             graph.symbols.push(s);
         }
-        for mut e in a.graph.edges {
+        // Rpc edges are linked again on the merged graph below.
+        for mut e in a
+            .graph
+            .edges
+            .into_iter()
+            .filter(|e| e.kind != EdgeKind::Rpc)
+        {
             e.from = prefix_id(name, &e.from);
             e.to = prefix_id(name, &e.to);
             graph.edges.push(e);
@@ -161,6 +167,8 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
     }
     let (http_edges, http_stats) = crate::http_link::link_http(&graph);
     graph.edges.extend(http_edges);
+    let (rpc_edges, rpc_stats) = crate::rpc_link::link_rpc(&graph);
+    graph.edges.extend(rpc_edges);
     metrics.record_edges(&graph);
 
     let classification = Classification {
@@ -176,6 +184,7 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
         matrix,
         link_stats,
         http_stats: Some(http_stats),
+        rpc_stats: (rpc_stats.calls + rpc_stats.maybe_rpc > 0).then_some(rpc_stats),
         metrics,
         warnings,
     }
