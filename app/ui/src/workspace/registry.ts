@@ -10,7 +10,7 @@ export interface PanelContribution {
   title: string;
   /** Rendered with no props: a panel reads what it needs from the app state. */
   component: Component;
-  /** Hidden (its tile takes no room) while this returns false; read reactively. */
+  /** While this returns false, a group holding only unavailable panels is hidden (takes no room); read reactively. */
   available?: () => boolean;
 }
 
@@ -18,9 +18,15 @@ export interface PanelContribution {
 export class PanelRegistry {
   private byId = new Map<string, PanelContribution>();
 
+  /**
+   * @param replace a second registration of an id replaces the first instead of throwing
+   *   (dev hot reload re-runs the registering module).
+   */
+  constructor(private readonly replace = false) {}
+
   /** Adds a contribution; throws when its id is already taken (two plugins clashing). */
   register(c: PanelContribution): void {
-    if (this.byId.has(c.id)) throw new Error(`panel "${c.id}" is already registered`);
+    if (this.byId.has(c.id) && !this.replace) throw new Error(`panel "${c.id}" is already registered`);
     this.byId.set(c.id, c);
   }
 
@@ -42,4 +48,4 @@ export class PanelRegistry {
 }
 
 /** The app's registry; built-in panels register in builtin.ts. */
-export const panels = new PanelRegistry();
+export const panels = new PanelRegistry(import.meta.env.DEV);

@@ -4,6 +4,7 @@
   import { Toggle } from "$lib/components/ui/toggle";
   import * as Tooltip from "$lib/components/ui/tooltip";
   import { app } from "../../state.svelte";
+  import ViewsMenu from "./workspace/ViewsMenu.svelte";
 
   let { onZoomIn, onZoomOut, onFit }: { onZoomIn: () => void; onZoomOut: () => void; onFit: () => void } = $props();
 
@@ -52,4 +53,5 @@
     <span class="mr-1 ml-2.5 inline-block size-2.5 bg-(--fwd)"></span>reaches (forward)
     <span class="mr-1 ml-2.5 inline-block size-2.5 bg-(--bwd)"></span>reached by (backward)
   </span>
+  <span class="ml-auto"><ViewsMenu /></span>
 </div>

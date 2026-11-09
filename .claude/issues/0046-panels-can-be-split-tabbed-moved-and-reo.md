@@ -1,24 +1,35 @@
 ---
 id: 46
-title: Panels can be split, tabbed, moved and reopened in the tiling workspace
-status: todo
+title: Workspace runs on dockview with tabs, docking and a Views menu
+status: in-review
 parent: 44
-branch: null
+branch: 46-tile-tabs
 remote: null
 created: 2026-11-09
 ---
 ## Context
 
-Part of #44, after #45. The split tree exists but its shape is fixed.
+Part of #44, after #45. #45 laid panels out in an in-house split tree. Rather
+than also writing tabs and drag-and-drop docking ourselves, the workspace moves
+to dockview (popular, zero-dependency, vanilla TS docking engine: tabs, groups,
+HTML5 drag-and-drop to split / merge, floating groups, toJSON/fromJSON). The
+panel registry from #45 stays the plugin API; dockview replaces `tiling.ts`.
 
 ## Acceptance criteria
-- [ ] A leaf can hold several panels shown as tabs; clicking a tab activates it.
-- [ ] Dragging a tab onto a tile's edge splits that tile; onto its centre or tab
-      bar moves it into that tile; emptied tiles disappear and the tree is normalised.
-- [ ] A tab can be closed; a "Views" menu lists registered panels and reopens a
-      closed one; "Reset layout" restores the default.
-- [ ] Tree operations (insert at edge, move, close, normalise) are pure and tested.
-- [ ] The layout persists as in #45; `npm test`, `npm run build` pass.
+- [x] `dockview` (pinned 8.7.1, `dockview-core` overridden to the same) renders
+      the workspace; registered Svelte panels are mounted through a small adapter
+      (`workspace/dock.ts`, `SvelteRenderer`). The in-house tiling code is removed.
+- [x] Panels can be grouped as tabs, dragged to split / merge groups, resized and
+      closed (dockview); a panel whose plugin is gone is dropped from a restored layout.
+- [x] Default layout: history | matrix | details (260 / rest / 340 px).
+- [x] A group holding only unavailable panels (history without git) is hidden and
+      comes back when the panel becomes available.
+- [x] A "Views" menu in the toolbar lists registered panels (checked = open),
+      toggles them, and has "Reset layout".
+- [x] Layout persisted in localStorage (`structure.dock`), invalid data → default.
+- [x] Dockview colours come from the app theme tokens (light / dark).
+- [x] Pure helpers tested; `npm test`, `npm run check`, `npm run build` pass.
 
 ## Out of scope
-- Floating windows, keyboard layout commands, runtime-loaded plugins.
+- Popout windows (need a popout URL / Tauri windows), keyboard layout commands,
+  runtime-loaded plugins.

@@ -18,6 +18,12 @@ describe("PanelRegistry", () => {
     r.register({ id: "a", title: "A", component: C });
     expect(() => r.register({ id: "a", title: "Other", component: C })).toThrow(/already registered/);
   });
+  it("replaces a panel in replace mode (dev hot reload)", () => {
+    const r = new PanelRegistry(true);
+    r.register({ id: "a", title: "A", component: C });
+    r.register({ id: "a", title: "A2", component: C });
+    expect(r.all().map((c) => c.title)).toEqual(["A2"]);
+  });
   it("is available when registered and its predicate holds", () => {
     const r = new PanelRegistry();
     let on = false;
