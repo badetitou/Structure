@@ -478,8 +478,9 @@ fn strip_roles<'m>(m: &'m [String], roles: &HashSet<&str>) -> &'m [String] {
 /// Role segments are module last segments found under `MIN_ROLE_PARENTS`
 /// parents or more. A feature is a module minus its trailing role segments,
 /// unless it is a container (ancestor of two or more other features). Applies
-/// only when there are at least twice as many features as roles, which keeps
-/// layer-then-feature code (`core.article`, `api.article`) out. Returns each
+/// only with at least `MIN_FEATURES` features and twice as many features as
+/// roles, which keeps layer-then-feature code (`core.article`, `api.article`)
+/// out. Returns each
 /// member's domain module: its feature, else the feature its name root
 /// matches (`entity.Invoice` -> `billing.invoices`), else its own module.
 fn feature_modules<'a>(

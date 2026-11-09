@@ -35,6 +35,8 @@ and module domains would split each feature by layer anyway.
 ## Known limits
 - A non-role segment under a role (`billing.service.foo`) is not stripped.
 - A feature named like a role elsewhere is swallowed into its parent.
+- Layer-then-feature code with >= 8 layer packages over few recurring
+  entities would still get layer-named domains.
 
 ## Out of scope
 - UI to regroup domains by hand (user rules `.structure/rules.toml` aliases /
