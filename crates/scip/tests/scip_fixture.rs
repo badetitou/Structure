@@ -28,7 +28,6 @@ fn check(rel: &str, ext: &str) {
         .any(|doc| doc.occurrences.iter().any(|x| x.is_definition));
     assert!(has_def, "no definition occurrence in a {ext} document");
     let mut n = 0;
-    let mut enclosing = 0;
     for doc in &idx.documents {
         for x in doc.occurrences.iter().filter(|x| x.is_definition) {
             if n < 3 {
@@ -40,10 +39,8 @@ fn check(rel: &str, ext: &str) {
                 );
                 n += 1;
             }
-            enclosing += usize::from(x.enclosing_range.is_some());
         }
     }
-    eprintln!("  definitions with enclosing_range: {enclosing}");
 }
 
 #[test]
