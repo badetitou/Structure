@@ -146,3 +146,213 @@ fn realworld_controller_methods_have_endpoints() {
         [(HttpVerb::Put, "/user".into())]
     );
 }
+
+fn tmp(name: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!("structure_http_{name}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    d
+}
+
+fn write(dir: &std::path::Path, rel: &str, content: &str) {
+    let p = dir.join(rel);
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    std::fs::write(p, content).unwrap();
+}
+
+fn http_of(g: &structure_ir::ir::Graph, id: &str) -> Vec<(HttpVerb, String)> {
+    g.symbols
+        .iter()
+        .find(|s| s.id == id)
+        .unwrap_or_else(|| panic!("missing {id}"))
+        .http
+        .iter()
+        .map(|e| (e.verb, e.path.clone()))
+        .collect()
+}
+
+const API: &str = r#"package p;
+@RequestMapping("/base")
+interface Api {
+  @GetMapping("/x/{id}") void get(String id);
+  @PostMapping("/y") void post();
+}"#;
+
+#[test]
+fn interface_endpoints_inherited_with_prefix() {
+    let d = tmp("inherit");
+    write(&d, "src/main/java/p/Api.java", API);
+    write(
+        &d,
+        "src/main/java/p/Ctl.java",
+        r#"package p; class Ctl implements Api { @Override public void get(String id) {}
+           @PostMapping("/own") public void post() {} }"#,
+    );
+    write(
+        &d,
+        "src/main/java/p/Sub.java",
+        r#"package p; @RequestMapping("/sub") class Sub implements Api { public void get(String id) {} }"#,
+    );
+    let g = parse_project(&d).unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+    assert_eq!(
+        http_of(&g, "p.Ctl#get(1)"),
+        [(HttpVerb::Get, "/base/x/{id}".into())]
+    );
+    // Own mapping wins; the interface method keeps its endpoint.
+    assert_eq!(
+        http_of(&g, "p.Ctl#post(0)"),
+        [(HttpVerb::Post, "/base/own".into())]
+    );
+    assert_eq!(
+        http_of(&g, "p.Api#post(0)"),
+        [(HttpVerb::Post, "/base/y".into())]
+    );
+    // Spring: the class-level mapping of the implementation replaces the interface's.
+    assert_eq!(
+        http_of(&g, "p.Sub#get(1)"),
+        [(HttpVerb::Get, "/sub/x/{id}".into())]
+    );
+}
+
+#[test]
+fn generated_interface_is_used_but_not_in_graph() {
+    let d = tmp("gen");
+    let gen_api = API
+        .replace("package p;", "package gen;")
+        .replace("Api", "HabApi");
+    write(
+        &d,
+        "target/generated-sources/openapi/src/main/java/gen/HabApi.java",
+        &gen_api,
+    );
+    write(
+        &d,
+        "build/generated/x/g/OtherApi.java",
+        r#"package g; interface OtherApi { @GetMapping("/o") void o(); }"#,
+    );
+    write(
+        &d,
+        "src/main/java/p/Ctl.java",
+        "package p; import gen.HabApi; class Ctl implements HabApi { public void get(String id) {} }",
+    );
+    write(
+        &d,
+        "src/main/java/p/Ctl2.java",
+        "package p; class Ctl2 implements OtherApi { public void o() {} }",
+    );
+    write(
+        &d,
+        "src/main/java/p/Lost.java",
+        "package p; class Lost implements MissingApi {}",
+    );
+    let mut warnings = Vec::new();
+    let g = structure_lang_java::parse_project_with_warnings(&d, &mut warnings).unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+    assert_eq!(
+        http_of(&g, "p.Ctl#get(1)"),
+        [(HttpVerb::Get, "/base/x/{id}".into())]
+    );
+    assert_eq!(http_of(&g, "p.Ctl2#o(0)"), [(HttpVerb::Get, "/o".into())]);
+    assert!(
+        g.symbols
+            .iter()
+            .all(|s| !s.id.starts_with("gen.") && !s.id.starts_with("g."))
+    );
+    assert!(g.edges.iter().all(|e| !e.to.starts_with("gen.")));
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].starts_with("1 class"), "{warnings:?}");
+}
+
+#[test]
+fn feign_interface_and_fallback_serve_nothing() {
+    let d = tmp("feign");
+    write(
+        &d,
+        "src/main/java/p/FooClient.java",
+        r#"package p; @FeignClient(name = "x") @RequestMapping("/f")
+        interface FooClient { @GetMapping("/a") void a(); }"#,
+    );
+    write(
+        &d,
+        "src/main/java/p/FooClientFallback.java",
+        "package p; class FooClientFallback implements FooClient { public void a() {} }",
+    );
+    let g = parse_project(&d).unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+    assert!(http_of(&g, "p.FooClient#a(0)").is_empty());
+    assert!(http_of(&g, "p.FooClientFallback#a(0)").is_empty());
+}
+
+#[test]
+fn transitive_and_abstract_superclass_inheritance() {
+    let d = tmp("trans");
+    write(
+        &d,
+        "src/main/java/p/A.java",
+        r#"package p; @RequestMapping("/a") interface A { @GetMapping("/m") void m(); }"#,
+    );
+    write(
+        &d,
+        "src/main/java/p/B.java",
+        "package p; abstract class B implements A { }",
+    );
+    write(
+        &d,
+        "src/main/java/p/C.java",
+        "package p; class C extends B { public void m() {} }",
+    );
+    write(
+        &d,
+        "src/main/java/p/Base.java",
+        r#"package p; abstract class Base { @PutMapping("/z") abstract void z(); }"#,
+    );
+    write(
+        &d,
+        "src/main/java/p/D.java",
+        r#"package p; @RequestMapping("/d") class D extends Base { void z() {} }"#,
+    );
+    let g = parse_project(&d).unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+    assert_eq!(http_of(&g, "p.C#m(0)"), [(HttpVerb::Get, "/a/m".into())]);
+    assert_eq!(http_of(&g, "p.D#z(0)"), [(HttpVerb::Put, "/d/z".into())]);
+}
+
+#[test]
+fn same_simple_name_generated_apis_resolve_by_import() {
+    let d = tmp("twin");
+    let g1 = "target/generated-sources/openapi/src/main/java/one/HabApi.java";
+    let g2 = "target/generated-sources/openapi/src/main/java/two/HabApi.java";
+    write(
+        &d,
+        g1,
+        r#"package one; interface HabApi { @GetMapping("/one") void h(); }"#,
+    );
+    write(
+        &d,
+        g2,
+        r#"package two; interface HabApi { @GetMapping("/two") void h(); }"#,
+    );
+    write(
+        &d,
+        "src/main/java/p/Ctl.java",
+        "package p; import two.HabApi; class Ctl implements HabApi { public void h() {} }",
+    );
+    let g = parse_project(&d).unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+    assert_eq!(http_of(&g, "p.Ctl#h(0)"), [(HttpVerb::Get, "/two".into())]);
+}
+
+#[test]
+fn no_generated_dir_leaves_methods_without_endpoints() {
+    let d = tmp("nogen");
+    write(
+        &d,
+        "src/main/java/p/Ctl.java",
+        "package p; class Ctl implements HabApi { public void get(String id) {} }",
+    );
+    let mut warnings = Vec::new();
+    let g = structure_lang_java::parse_project_with_warnings(&d, &mut warnings).unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+    assert!(http_of(&g, "p.Ctl#get(1)").is_empty());
+    assert_eq!(warnings.len(), 1);
+}

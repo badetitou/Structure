@@ -82,6 +82,14 @@ impl LanguageFrontend for JavaFrontend {
         java::parse_project(root)
     }
 
+    fn parse_project_warned(
+        &self,
+        root: &Path,
+        warnings: &mut Vec<String>,
+    ) -> anyhow::Result<Graph> {
+        java::parse_project_with_warnings(root, warnings)
+    }
+
     fn default_rules(&self) -> (&'static str, &'static str) {
         (
             include_str!("../../../../rules/java.toml"),
