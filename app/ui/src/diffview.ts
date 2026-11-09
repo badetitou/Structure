@@ -36,10 +36,14 @@ export function totals(d: Diff): DiffTotals {
   );
 }
 
+/** A git ref for display: full SHAs shortened to 7 characters, names kept. */
+export function shortSha(ref: string): string {
+  return /^[0-9a-f]{40}$/i.test(ref) ? ref.slice(0, 7) : ref;
+}
+
 /** Short title for the range: "abc1234", "abc1234..def5678" or "working tree". */
 export function rangeLabel(base: string | null, head: string | null): string {
-  const short = (r: string) => (/^[0-9a-f]{40}$/.test(r) ? r.slice(0, 7) : r);
   if (base === null) return "working tree";
-  if (head === null) return `${short(base)}..working tree`;
-  return `${short(base)}..${short(head)}`;
+  if (head === null) return `${shortSha(base)}..working tree`;
+  return `${shortSha(base)}..${shortSha(head)}`;
 }
