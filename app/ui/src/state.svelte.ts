@@ -30,7 +30,10 @@ export class AppState {
   history = $state.raw<History | null>(null);
   historySel = $state.raw<Selection | null>(null);
   impactError = $state("");
+  /** True while an impact runs (it may analyse a commit snapshot first); new diffs are ignored meanwhile. */
   impactBusy = $state(false);
+  /** Progress of the running impact, null when none runs. */
+  impactProgress = $state<Progress | null>(null);
   panels = $state(loadPanels());
 
   private guard = new RequestGuard();
@@ -93,6 +96,7 @@ export class AppState {
     this.historySel = null;
     this.impactError = "";
     this.impactBusy = false;
+    this.impactProgress = null;
   }
 
   toggleMode() {
@@ -135,19 +139,27 @@ export class AppState {
     }
   }
 
-  /** Diff of two refs (null = HEAD / working tree); shows the commit snapshot when there is one. */
+  /** Diff of two refs (null = HEAD / working tree); shows the commit snapshot when there is one.
+   * Ignored while another impact runs. */
   async runImpact(base: string | null, head: string | null): Promise<void> {
+    if (this.impactBusy) return;
     const req = this.guard.begin();
     this.impactError = "";
     this.impactBusy = true;
+    this.impactProgress = START;
     try {
-      const res = await api.impact(this.project, base, head);
+      const res = await api.impact(this.project, base, head, (p) => {
+        if (this.guard.isCurrent(req)) this.impactProgress = p;
+      });
       if (!this.guard.isCurrent(req)) return; // superseded or cleared meanwhile
       this.setImpact(res);
     } catch (e) {
       if (this.guard.isCurrent(req)) this.impactError = `Impact failed: ${String(e)}`;
     } finally {
-      if (this.guard.isCurrent(req)) this.impactBusy = false;
+      if (this.guard.isCurrent(req)) {
+        this.impactBusy = false;
+        this.impactProgress = null;
+      }
     }
   }
 
@@ -156,12 +168,13 @@ export class AppState {
     this.historySel = null;
     this.impactError = "";
     this.impactBusy = false;
+    this.impactProgress = null;
     this.setImpact(null);
   }
 
   /** Select history entry `sel`; its diff drives the impact. */
   pickHistory(sel: Selection) {
-    if (!this.history) return;
+    if (!this.history || this.impactBusy) return;
     const d = selectionDiff(this.history.commits, sel);
     if (!d) return;
     this.historySel = sel;
@@ -170,6 +183,7 @@ export class AppState {
 
   /** A typed diff is not a sidebar selection. */
   runTypedImpact(base: string | null, head: string | null) {
+    if (this.impactBusy) return;
     this.historySel = null;
     void this.runImpact(base, head);
   }

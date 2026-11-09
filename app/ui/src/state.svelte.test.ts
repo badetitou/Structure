@@ -133,12 +133,12 @@ describe("AppState", () => {
     const s = new AppState();
     await s.load("/p");
     s.pickHistory({ kind: "range", newer: 0, older: 1, anchor: 0 });
-    expect(mocked.impact).toHaveBeenCalledWith("/p", "empty", "c2");
+    expect(mocked.impact).toHaveBeenCalledWith("/p", "empty", "c2", expect.any(Function));
     expect(s.historySel?.kind).toBe("range");
     await flush();
     s.runTypedImpact("x", null);
     expect(s.historySel).toBeNull();
-    expect(mocked.impact).toHaveBeenLastCalledWith("/p", "x", null);
+    expect(mocked.impact).toHaveBeenLastCalledWith("/p", "x", null, expect.any(Function));
   });
 
   it("pages the symbols of the selected cell and reports errors", async () => {
@@ -200,20 +200,41 @@ describe("AppState", () => {
     await expect(loadC).resolves.toBeUndefined();
   });
 
-  it("busy and error belong to the latest impact request", async () => {
-    const s = await loaded();
-    let resolveOld: (i: Impact) => void = () => {};
-    mocked.impact.mockReturnValueOnce(new Promise((r) => (resolveOld = r)));
-    const old = s.runImpact("a", "b");
-    let rejectNew: (e: unknown) => void = () => {};
-    mocked.impact.mockReturnValueOnce(new Promise((_, r) => (rejectNew = r)));
-    const latest = s.runImpact("c", "d");
-    resolveOld(imp());
-    await old;
+  it("ignores new diffs while an impact runs and reports its progress", async () => {
+    const commits = [{ id: "c1", short: "c1", parents: [], base: "e", subject: "s", author: "a", date: "", refs: [] }];
+    mocked.analyze.mockResolvedValue(mx("work"));
+    mocked.history.mockResolvedValue({ dirty: true, commits });
+    const s = new AppState();
+    await s.load("/p");
+    mocked.impact.mockClear();
+    let resolve: (i: Impact) => void = () => {};
+    let report: (p: { step: string; pct: number }) => void = () => {};
+    mocked.impact.mockImplementationOnce((_p, _b, _h, onProgress) => {
+      report = onProgress ?? report;
+      return new Promise((r) => (resolve = r));
+    });
+    s.pickHistory({ kind: "range", newer: 0, older: 0, anchor: 0 });
     expect(s.impactBusy).toBe(true);
-    expect(s.impact).toBeNull();
-    rejectNew(new Error("bad ref"));
-    await latest;
+    expect(s.impactProgress?.pct).toBe(0);
+    report({ step: "parsing", pct: 40 });
+    expect(s.impactProgress).toEqual({ step: "parsing", pct: 40 });
+
+    s.pickHistory({ kind: "worktree" });
+    s.runTypedImpact("x", null);
+    await s.runImpact("c", "d");
+    expect(mocked.impact).toHaveBeenCalledTimes(1);
+    expect(s.historySel).toEqual({ kind: "range", newer: 0, older: 0, anchor: 0 });
+
+    resolve(imp());
+    await flush();
+    expect(s.impactBusy).toBe(false);
+    expect(s.impactProgress).toBeNull();
+  });
+
+  it("an impact failure is reported and cleared by Clear", async () => {
+    const s = await loaded();
+    mocked.impact.mockRejectedValueOnce(new Error("bad ref"));
+    await s.runImpact("c", "d");
     expect(s.impactBusy).toBe(false);
     expect(s.impactError).toContain("bad ref");
     s.clearImpact();
@@ -228,9 +249,10 @@ describe("AppState", () => {
     const s = new AppState();
     await s.load("/p");
     s.pickHistory({ kind: "worktree" });
-    expect(mocked.impact).toHaveBeenLastCalledWith("/p", null, null);
+    expect(mocked.impact).toHaveBeenLastCalledWith("/p", null, null, expect.any(Function));
+    await flush();
     s.pickHistory({ kind: "range", newer: 1, older: 1, anchor: 1 });
-    expect(mocked.impact).toHaveBeenLastCalledWith("/p", "e", "c1");
+    expect(mocked.impact).toHaveBeenLastCalledWith("/p", "e", "c1", expect.any(Function));
   });
 
   it("lists snapshot symbols against the snapshot head", async () => {
