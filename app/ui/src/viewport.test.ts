@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fit, oneToOne, panBy, resize, toUser, zoomAt, zoomAtClamped, zoomLevel } from "./viewport";
+import { fit, oneToOne, panBy, resize, toUser, wheelZoomFactor, zoomAt, zoomAtClamped, zoomLevel } from "./viewport";
 
 const close = (a: number, b: number) => expect(a).toBeCloseTo(b, 9);
 
@@ -98,5 +98,31 @@ describe("resize", () => {
   it("keeps scale and origin", () => {
     const vb = resize({ x: 3, y: 4, w: 400, h: 200 }, 800, 400, 100);
     expect(vb).toEqual({ x: 3, y: 4, w: 200, h: 50 });
+  });
+});
+
+describe("wheelZoomFactor", () => {
+  it("zooms in on scroll up and out on scroll down, symmetrically", () => {
+    const up = wheelZoomFactor(-100, 0, false);
+    const down = wheelZoomFactor(100, 0, false);
+    expect(up).toBeGreaterThan(1);
+    expect(down).toBeLessThan(1);
+    expect(up * down).toBeCloseTo(1, 12);
+  });
+  it("keeps one mouse notch a moderate step", () => {
+    const f = wheelZoomFactor(-100, 0, false);
+    expect(f).toBeGreaterThan(1.1);
+    expect(f).toBeLessThan(1.5);
+  });
+  it("scales line and page deltas to pixels", () => {
+    expect(wheelZoomFactor(-3, 1, false)).toBeCloseTo(wheelZoomFactor(-48, 0, false), 12);
+    expect(wheelZoomFactor(-1, 2, false)).toBeCloseTo(wheelZoomFactor(-400, 0, false), 12);
+  });
+  it("uses the faster pinch rate when ctrl is held", () => {
+    expect(wheelZoomFactor(-10, 0, true)).toBeGreaterThan(wheelZoomFactor(-10, 0, false));
+  });
+  it("is neutral for no delta and huge deltas stay finite", () => {
+    expect(wheelZoomFactor(0, 0, false)).toBe(1);
+    expect(wheelZoomFactor(1e9, 0, true)).toBe(1);
   });
 });
