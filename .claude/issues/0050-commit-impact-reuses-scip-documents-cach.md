@@ -1,7 +1,7 @@
 ---
 id: 50
 title: Commit impact reuses SCIP documents cached per file blob instead of re-running the indexer
-status: in-review
+status: done
 parent: null
 branch: 50-scip-blob-cache
 remote: null
