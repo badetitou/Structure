@@ -39,7 +39,6 @@ pub struct ScipOccurrence {
     pub symbol: SymbolId,
     pub range: Range,
     pub is_definition: bool,
-    pub enclosing_range: Option<Range>,
 }
 
 #[derive(Debug, Clone)]
@@ -239,7 +238,7 @@ struct DecodedDocument {
     language: String,
     /// Distinct symbols of the occurrences; `occurrences` index into it.
     names: Vec<String>,
-    occurrences: Vec<(u32, Range, bool, Option<Range>)>,
+    occurrences: Vec<(u32, Range, bool)>,
     infos: Vec<types::SymbolInformation>,
 }
 
@@ -248,12 +247,12 @@ fn decode_document(raw: &[u8]) -> anyhow::Result<DecodedDocument> {
     let mut local: HashMap<String, u32> = HashMap::new();
     let mut occurrences = Vec::with_capacity(doc.occurrences.len());
     for o in doc.occurrences {
-        let Some((range, is_definition, enclosing_range)) = convert_occ(&o) else {
+        let Some((range, is_definition)) = convert_occ(&o) else {
             continue;
         };
         let next = local.len() as u32;
         let i = *local.entry(o.symbol).or_insert(next);
-        occurrences.push((i, range, is_definition, enclosing_range));
+        occurrences.push((i, range, is_definition));
     }
     let mut names = vec![String::new(); local.len()];
     for (name, i) in local {
@@ -287,14 +286,11 @@ fn decode_batch(batch: &mut Vec<Vec<u8>>, out: &mut ScipIndex) -> anyhow::Result
         let occurrences = d
             .occurrences
             .into_iter()
-            .map(
-                |(i, range, is_definition, enclosing_range)| ScipOccurrence {
-                    symbol: ids[i as usize],
-                    range,
-                    is_definition,
-                    enclosing_range,
-                },
-            )
+            .map(|(i, range, is_definition)| ScipOccurrence {
+                symbol: ids[i as usize],
+                range,
+                is_definition,
+            })
             .collect();
         out.documents.push(ScipDocument {
             relative_path: d.relative_path,
@@ -350,19 +346,13 @@ fn add_symbol(out: &mut ScipIndex, info: &types::SymbolInformation) -> anyhow::R
     Ok(())
 }
 
-/// Range, definition flag and enclosing range of an occurrence; `None` when
-/// it has no symbol or a malformed range.
-fn convert_occ(o: &types::Occurrence) -> Option<(Range, bool, Option<Range>)> {
+/// Range and definition flag of an occurrence; `None` when it has no symbol
+/// or a malformed range. Its enclosing range is not kept: nothing reads it.
+fn convert_occ(o: &types::Occurrence) -> Option<(Range, bool)> {
     if o.symbol.is_empty() {
         return None;
     }
-    let range = convert_range(&o.range)?;
-    let enclosing_range = if o.enclosing_range.is_empty() {
-        None
-    } else {
-        convert_range(&o.enclosing_range)
-    };
-    Some((range, o.symbol_roles & 0x1 != 0, enclosing_range))
+    Some((convert_range(&o.range)?, o.symbol_roles & 0x1 != 0))
 }
 
 /// `[sl, sc, ec]` or `[sl, sc, el, ec]`; `None` if malformed.
@@ -513,9 +503,6 @@ mod tests {
             ]
         );
         assert_eq!(got(1), vec![(JAVA.to_string(), [4, 1, 4, 9], false)]);
-        let e = m.documents[0].occurrences[0].enclosing_range.unwrap();
-        assert_eq!((e.start_line, e.end_line, e.end_col), (1, 3, 1));
-        assert!(m.documents[1].occurrences[0].enclosing_range.is_none());
         let s = m.symbol(JAVA).unwrap();
         assert_eq!(s.display_name.as_deref(), Some("getAccount"));
         assert!(s.relationships[0].is_implementation);

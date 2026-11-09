@@ -440,7 +440,6 @@ mod tests {
                     symbol: idx.intern(&s).unwrap(),
                     range,
                     is_definition,
-                    enclosing_range: None,
                 })
                 .collect();
             idx.documents.push(ScipDocument {
