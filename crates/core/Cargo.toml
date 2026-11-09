@@ -18,3 +18,5 @@ ignore.workspace = true
 
 [dev-dependencies]
 toml.workspace = true
+protobuf.workspace = true
+scip.workspace = true
