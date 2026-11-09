@@ -238,6 +238,7 @@ mod tests {
             annotations: vec![],
             supertypes: vec![],
             http: vec![],
+            http_calls: vec![],
             package: None,
         }
     }

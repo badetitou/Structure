@@ -56,6 +56,9 @@ pub struct Symbol {
     /// `path` is `?` when it is not a literal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub http: Vec<HttpEndpoint>,
+    /// HTTP requests made by this symbol. `path` is `?` when it is not a literal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub http_calls: Vec<HttpEndpoint>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -158,6 +161,7 @@ mod tests {
             supertypes: vec![],
             package: None,
             http: vec![],
+            http_calls: vec![],
         }
     }
 
