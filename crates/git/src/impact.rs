@@ -116,13 +116,12 @@ pub fn changed_lines(
 
     if base.is_none() && head.is_none() {
         for rel in untracked(project)? {
-            let total = std::fs::read(project.join(&rel))
-                .map(|b| {
-                    let nl = b.iter().filter(|&&c| c == b'\n').count() as u32;
-                    nl + u32::from(b.last().is_some_and(|&c| c != b'\n'))
-                })
-                .unwrap_or(1)
-                .max(1);
+            // The SCIP index written into the project is a build artefact
+            // (often ~1 GB): never read it.
+            if rel == SCIP_INDEX || rel.ends_with(&format!("/{SCIP_INDEX}")) {
+                continue;
+            }
+            let total = line_count(&project.join(&rel)).unwrap_or(1).max(1);
             changes.push(FileChange {
                 file: rel,
                 lines: vec![(0, total)],
@@ -130,6 +129,33 @@ pub fn changed_lines(
         }
     }
     Ok(changes)
+}
+
+/// File name of the SCIP index the pipeline writes into a project root.
+const SCIP_INDEX: &str = "index.scip";
+
+/// Lines of a regular file (a last line without '\n' counts), read in fixed-size
+/// chunks; `None` for anything else (symlink, directory, unreadable).
+fn line_count(path: &Path) -> Option<u32> {
+    use std::io::Read;
+    if !std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_file()) {
+        return None;
+    }
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut buf = vec![0u8; 64 * 1024];
+    let (mut lines, mut last) = (0u32, b'\n');
+    loop {
+        let n = match f.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return None,
+        };
+        let chunk = &buf[..n];
+        lines = lines.saturating_add(chunk.iter().filter(|&&c| c == b'\n').count() as u32);
+        last = chunk[n - 1];
+    }
+    Some(lines + u32::from(last != b'\n'))
 }
 
 /// Untracked, non-ignored files under `project`, relative to it.
