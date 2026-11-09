@@ -483,6 +483,7 @@ dependencies = [
  "ignore",
  "protobuf",
  "scip",
+ "serde_json",
  "structure-classify",
  "structure-git",
  "structure-ir",

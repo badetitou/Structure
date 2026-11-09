@@ -18,5 +18,6 @@ ignore.workspace = true
 
 [dev-dependencies]
 toml.workspace = true
+serde_json.workspace = true
 protobuf.workspace = true
 scip.workspace = true
