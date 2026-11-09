@@ -429,7 +429,7 @@ impl Ctx<'_> {
             supertypes: supers,
         });
 
-        self.clients.clear();
+        let outer_clients = std::mem::take(&mut self.clients);
         http::http_client_names(node, self.src, &mut self.clients);
         let mut tparams = HashSet::new();
         if let Some(tp) = node.child_by_field_name("type_parameters") {
@@ -443,7 +443,7 @@ impl Ctx<'_> {
         if let Some(body) = node.child_by_field_name("body") {
             self.members(body, &id, &tparams);
         }
-        self.clients.clear();
+        self.clients = outer_clients;
     }
 
     fn uses_in_type(&mut self, from: &str, n: Node, skip: &HashSet<String>) {
