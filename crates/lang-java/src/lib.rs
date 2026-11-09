@@ -14,7 +14,9 @@ use anyhow::{Context, Result, anyhow};
 use rayon::prelude::*;
 use tree_sitter::{Node, Parser};
 
-use structure_ir::ir::{Edge, EdgeKind, Graph, Language, Range, Symbol, SymbolKind};
+use structure_ir::ir::{
+    Edge, EdgeKind, Graph, HttpEndpoint, HttpVerb, Language, Range, Symbol, SymbolKind,
+};
 
 /// Result of parsing one Java source file.
 #[derive(Debug, Clone, Default)]
@@ -115,6 +117,158 @@ fn annotations_of(n: Node, src: &str) -> Vec<String> {
     out
 }
 
+fn annotation_nodes<'t>(n: Node<'t>, src: &str) -> Vec<(String, Node<'t>)> {
+    let mut out = Vec::new();
+    let mut cur = n.walk();
+    for m in n.children(&mut cur).filter(|c| c.kind() == "modifiers") {
+        let mut c2 = m.walk();
+        for a in m.children(&mut c2) {
+            if matches!(a.kind(), "annotation" | "marker_annotation")
+                && let Some(name) = a.child_by_field_name("name")
+            {
+                let t = text(name, src);
+                out.push((t.rsplit('.').next().unwrap_or(t).to_string(), a));
+            }
+        }
+    }
+    out
+}
+
+/// Value expressions of annotation argument `keys` (or the positional one if
+/// `positional`); an array initializer is flattened.
+fn annotation_values<'t>(a: Node<'t>, src: &str, keys: &[&str], positional: bool) -> Vec<Node<'t>> {
+    let Some(args) = a.child_by_field_name("arguments") else {
+        return Vec::new();
+    };
+    let mut found = None;
+    let mut cur = args.walk();
+    for c in args.named_children(&mut cur) {
+        if c.kind() == "element_value_pair" {
+            let k = c.child_by_field_name("key").map_or("", |k| text(k, src));
+            if keys.contains(&k) {
+                found = c.child_by_field_name("value");
+            }
+        } else if positional && found.is_none() {
+            found = Some(c);
+        }
+    }
+    let Some(v) = found else {
+        return Vec::new();
+    };
+    if matches!(
+        v.kind(),
+        "element_value_array_initializer" | "array_initializer"
+    ) {
+        let mut c = v.walk();
+        v.named_children(&mut c).collect()
+    } else {
+        vec![v]
+    }
+}
+
+/// Literal string value, or `?` for anything that is not a plain literal.
+fn literal_or_unknown(v: Node, src: &str) -> String {
+    let t = text(v, src);
+    if v.kind() == "string_literal" && !t.starts_with("\"\"\"") && t.len() >= 2 {
+        t[1..t.len() - 1].to_string()
+    } else {
+        "?".to_string()
+    }
+}
+
+/// Paths of a mapping annotation; one empty path when none is given.
+fn annotation_paths(a: Node, src: &str, positional: bool) -> Vec<String> {
+    let paths: Vec<String> = annotation_values(a, src, &["value", "path"], positional)
+        .into_iter()
+        .map(|v| literal_or_unknown(v, src))
+        .collect();
+    if paths.is_empty() {
+        vec![String::new()]
+    } else {
+        paths
+    }
+}
+
+fn join_paths(prefix: &str, path: &str) -> String {
+    if prefix == "?" || path == "?" {
+        return "?".to_string();
+    }
+    let parts: Vec<&str> = prefix
+        .split('/')
+        .chain(path.split('/'))
+        .filter(|p| !p.is_empty())
+        .collect();
+    format!("/{}", parts.join("/"))
+}
+
+fn class_prefixes(class: Node, src: &str) -> Vec<String> {
+    for (name, a) in annotation_nodes(class, src) {
+        if matches!(name.as_str(), "RequestMapping" | "Path") {
+            return annotation_paths(a, src, true);
+        }
+    }
+    vec![String::new()]
+}
+
+fn verb_of(name: &str) -> Option<HttpVerb> {
+    Some(match name {
+        "GET" | "Get" => HttpVerb::Get,
+        "POST" | "Post" => HttpVerb::Post,
+        "PUT" | "Put" => HttpVerb::Put,
+        "DELETE" | "Delete" => HttpVerb::Delete,
+        "PATCH" | "Patch" => HttpVerb::Patch,
+        _ => return None,
+    })
+}
+
+/// Endpoints served by a method: Spring mappings or JAX-RS `@Path` + verb.
+fn method_endpoints(m: Node, src: &str, prefixes: &[String]) -> Vec<HttpEndpoint> {
+    let anns = annotation_nodes(m, src);
+    let mut routes: Vec<(HttpVerb, Vec<String>)> = Vec::new();
+    let jaxrs_path = anns.iter().find(|(n, _)| n == "Path").map(|(_, a)| *a);
+    for (name, a) in &anns {
+        if let Some(v) = name.strip_suffix("Mapping").and_then(verb_of) {
+            routes.push((v, annotation_paths(*a, src, true)));
+        } else if name == "RequestMapping" {
+            let mut verbs: Vec<HttpVerb> = annotation_values(*a, src, &["method"], false)
+                .into_iter()
+                .map(|v| {
+                    let t = text(v, src);
+                    verb_of(t.rsplit('.').next().unwrap_or(t)).unwrap_or(HttpVerb::Any)
+                })
+                .collect();
+            if verbs.is_empty() {
+                verbs.push(HttpVerb::Any);
+            }
+            let paths = annotation_paths(*a, src, true);
+            for v in verbs {
+                routes.push((v, paths.clone()));
+            }
+        } else if name.chars().all(|c| c.is_ascii_uppercase())
+            && let Some(v) = verb_of(name)
+        {
+            let paths =
+                jaxrs_path.map_or_else(|| vec![String::new()], |p| annotation_paths(p, src, true));
+            routes.push((v, paths));
+        }
+    }
+    let mut out: Vec<HttpEndpoint> = Vec::new();
+    for (verb, paths) in routes {
+        for pre in prefixes {
+            for p in &paths {
+                let e = HttpEndpoint {
+                    verb,
+                    path: join_paths(pre, p),
+                };
+                if !out.contains(&e) {
+                    out.push(e);
+                }
+            }
+        }
+    }
+    out
+}
+
 fn collect_types(n: Node, src: &str, out: &mut Vec<String>) {
     if let Some(name) = type_name(n, src) {
         out.push(name);
@@ -153,6 +307,8 @@ struct Ctx<'a> {
     src: &'a str,
     package: Option<String>,
     out: FileSymbols,
+    /// Class-level path prefixes (Spring `@RequestMapping`, JAX-RS `@Path`).
+    prefixes: Vec<String>,
 }
 
 impl Ctx<'_> {
@@ -175,6 +331,7 @@ impl Ctx<'_> {
             annotations: annotations_of(node, self.src),
             supertypes: vec![],
             package: self.package.clone(),
+            http: vec![],
         });
         self.out.symbols.len() - 1
     }
@@ -196,6 +353,7 @@ impl Ctx<'_> {
             (None, None) => name.to_string(),
         };
         let idx = self.symbol(id.clone(), kind, node, name_node, container);
+        let saved_prefixes = std::mem::replace(&mut self.prefixes, class_prefixes(node, self.src));
 
         let mut supers = Vec::new();
         let mut cur = node.walk();
@@ -239,6 +397,7 @@ impl Ctx<'_> {
         if let Some(body) = node.child_by_field_name("body") {
             self.members(body, &id, &tp, rec_arity);
         }
+        self.prefixes = saved_prefixes;
     }
 
     /// Record a `Uses` entry for the type of a (formal or spread) parameter.
@@ -275,7 +434,8 @@ impl Ctx<'_> {
                             text(n, self.src),
                             arity(m.child_by_field_name("parameters"))
                         );
-                        self.symbol(id, SymbolKind::Method, m, n, Some(tid));
+                        let idx = self.symbol(id, SymbolKind::Method, m, n, Some(tid));
+                        self.out.symbols[idx].http = method_endpoints(m, self.src, &self.prefixes);
                     }
                 }
                 "annotation_type_element_declaration" => {
@@ -373,6 +533,7 @@ pub fn parse_source(file: &str, src: &str) -> Result<FileSymbols> {
         src,
         package: package.clone(),
         out: FileSymbols::default(),
+        prefixes: vec![String::new()],
     };
     let mut cur = root.walk();
     for n in root.children(&mut cur) {

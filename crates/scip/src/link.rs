@@ -405,6 +405,7 @@ mod tests {
             name_range: nr,
             annotations: vec![],
             supertypes: vec![],
+            http: vec![],
             package: None,
         }
     }
