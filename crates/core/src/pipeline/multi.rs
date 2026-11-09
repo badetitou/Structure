@@ -95,7 +95,8 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
     let mut projects: Vec<Project> = vec![];
     let mut warnings: Vec<String> = vec![];
     let mut metrics = crate::metrics::Metrics::default();
-    let mut link_stats = None;
+    // The first root's link stats only (not summed, not a later root's).
+    let link_stats = parts[0].link_stats;
     let mut elapsed = 0;
 
     for ((root, name), a) in roots.iter().zip(&names).zip(parts) {
@@ -157,7 +158,6 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
         metrics.phases.extend(a.metrics.phases);
         metrics.scip_documents += a.metrics.scip_documents;
         metrics.scip_occurrences += a.metrics.scip_occurrences;
-        link_stats = link_stats.or(a.link_stats);
     }
     metrics.record_edges(&graph);
 

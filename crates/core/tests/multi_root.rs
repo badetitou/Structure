@@ -73,7 +73,12 @@ fn one_root_is_unchanged() {
     };
     let single = pipeline::analyze(&root, &offline(), &|_| {}).expect("analyze");
     let many = pipeline::analyze_many(&[root], &offline(), &|_| {}).expect("analyze");
-    assert!(many.matrix.projects.is_empty());
-    assert_eq!(single.matrix.cells, many.matrix.cells);
-    assert_eq!(single.matrix.domains, many.matrix.domains);
+    // Timings differ between runs; everything else must be identical.
+    let json = |mut m: structure_core::model::Matrix| {
+        m.stats.elapsed_ms = 0;
+        serde_json::to_string(&m).expect("serialize")
+    };
+    let (single, many) = (json(single.matrix), json(many.matrix));
+    assert_eq!(single, many);
+    assert!(!many.contains("\"projects\""));
 }
