@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button } from "$lib/components/ui/button";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
+  import { httpLinks } from "../../graph";
   import { hasMore } from "../../cellsymbols";
   import { initialCaps, moreLabel, showMore } from "../../symbolcap";
   import { symbolName } from "../../symbolname";
@@ -14,6 +15,14 @@
     void app.impact;
     shown = initialCaps();
   });
+  // Links between view cells (collapsed domains merged), only while the toolbar toggle is on.
+  const http = $derived(
+    app.showHttp && app.selected && app.view ? httpLinks(app.view.httpEdges, [app.selected.id]) : null,
+  );
+  const viewName = (id: string) => {
+    const c = app.view?.cells.find((x) => x.id === id);
+    return c ? `${c.layer} / ${c.label}` : id;
+  };
   const list = $derived(app.selected && app.symbols?.cell === app.selected.id ? app.symbols : null);
 </script>
 
@@ -56,6 +65,17 @@
     {#if app.selected}
       {@const c = app.selected}
       {@render heading(`${c.layer}/${c.label} — ${c.size} symbols`)}
+      {#if http && (http.out.length > 0 || http.in.length > 0)}
+        {@render heading("HTTP")}
+        <ul class="m-0 list-disc pl-4">
+          {#each http.out as l (l.other)}
+            <li>calls {viewName(l.other)} <small class="text-muted-foreground">({l.count})</small></li>
+          {/each}
+          {#each http.in as l (l.other)}
+            <li>called by {viewName(l.other)} <small class="text-muted-foreground">({l.count})</small></li>
+          {/each}
+        </ul>
+      {/if}
       {#if list && list.items.length > 0}
         {@render items(
           list.items.map((x) => ({ name: x.name, sub: x.file })),

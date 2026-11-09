@@ -1,13 +1,13 @@
 import * as api from "./api";
 import type { Diff, History, Impact, Matrix, Progress } from "./api";
-import type { ViewCell } from "./domaintree";
+import type { ViewCell, ViewMatrix } from "./domaintree";
 import { PAGE, appendPage } from "./cellsymbols";
 import type { SymbolList } from "./cellsymbols";
 import { selectionDiff } from "./history";
 import type { Selection } from "./history";
 import type { Mode } from "./layout";
 import { RequestGuard, shownMatrix } from "./matrixsel";
-import { loadMode, saveMode } from "./mode";
+import { loadMode, loadShowHttp, saveMode, saveShowHttp } from "./mode";
 import { analyzeAndRecord } from "./recent";
 
 /** The diff panel's content: the requested range and its diff once loaded. */
@@ -35,6 +35,10 @@ export class AppState {
   selected = $state.raw<ViewCell | null>(null);
   symbols = $state.raw<SymbolList | null>(null);
   mode = $state<Mode>(loadMode());
+  /** The aggregated matrix currently drawn (set by MatrixView; tracks expansion). */
+  view = $state.raw<ViewMatrix | null>(null);
+  /** Draw front-to-back HTTP links (persisted). */
+  showHttp = $state(loadShowHttp());
   /** Null when unavailable (not a git repo, error): the sidebar is hidden. */
   history = $state.raw<History | null>(null);
   historySel = $state.raw<Selection | null>(null);
@@ -123,6 +127,10 @@ export class AppState {
     this.clearDiff();
   }
 
+  setShowHttp(on: boolean) {
+    this.showHttp = on;
+    saveShowHttp(on);
+  }
   setMode(mode: Mode) {
     this.mode = mode;
     saveMode(mode);

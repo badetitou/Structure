@@ -9,10 +9,10 @@
 
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { Matrix } from "../../api";
+  import type { CellEdge, Matrix } from "../../api";
   import { defaultEdgeOpacity } from "../../cellstate";
   import { FLAME_MAX_COLUMNS, aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded } from "../../domaintree";
-  import { adjacency, reach } from "../../graph";
+  import { adjacency, reach, visibleEdges } from "../../graph";
   import { BAND_DENSE, BAND_NORMAL, STROKE_DENSE, STROKE_NORMAL, layout } from "../../layout";
   import { app } from "../../state.svelte";
   import { fit, isFit, oneToOne, panBy, resize as resizeVb, toUser, zoomAtClamped } from "../../viewport";
@@ -64,14 +64,15 @@
     return tile ? [{ cell, tile }] : [];
   }));
   // Edges are drawn in normal mode only.
+  const showHttp = $derived(app.showHttp);
+  const tiled = (list: readonly CellEdge[], http: boolean) =>
+    list.flatMap((edge) => {
+      const from = tileById.get(edge.from);
+      const to = tileById.get(edge.to);
+      return from && to ? [{ edge, from, to, http, key: `${http ? "h" : "c"}${edge.from}\u0000${edge.to}` }] : [];
+    });
   const edgeTiles = $derived(
-    lay.detailed
-      ? vm.edges.flatMap((edge) => {
-          const from = tileById.get(edge.from);
-          const to = tileById.get(edge.to);
-          return from && to ? [{ edge, from, to, key: `${edge.from}\u0000${edge.to}` }] : [];
-        })
-      : [],
+    lay.detailed ? [...tiled(vm.edges, false), ...(showHttp ? tiled(vm.httpEdges, true) : [])] : [],
   );
 
   // Hover: adjacency once per view matrix, then one BFS per direction per hovered cell.
@@ -82,13 +83,21 @@
     hovered && hovered.keys.every((k, i) => k === hoverKeys()[i]) ? hovered.id : null,
   );
   const setHover = (id: string | null) => (hovered = id ? { id, keys: hoverKeys() } : null);
-  const adj = $derived(adjacency(vm.edges));
+  const adj = $derived(adjacency(visibleEdges(vm.edges, vm.httpEdges, showHttp)));
   const hover = $derived(
     hoveredId ? { id: hoveredId, fwd: reach(hoveredId, adj, "forward"), bwd: reach(hoveredId, adj, "backward") } : null,
   );
   const impact = $derived(app.impact ? aggregateImpact(app.impact, vm.cellMap) : null);
   const selTile = $derived(app.selected ? tileById.get(app.selected.id) : undefined);
   const selWidth = $derived((mode === "dense" ? STROKE_DENSE : STROKE_NORMAL)[1]);
+
+  // Publish the aggregated view so the details panel names visible cells.
+  $effect(() => {
+    app.view = vm;
+    return () => {
+      app.view = null;
+    };
+  });
 
   // A mode switch can change the expansion (flame opens deeper): drop a selection whose cell left the view.
   $effect(() => {
@@ -234,7 +243,7 @@
     {onclickcapture}
   >
     <defs>
-      {#each [["a-def", "var(--edge)"], ["a-fwd", "var(--fwd)"], ["a-bwd", "var(--bwd)"], ["a-imp", "var(--changed)"]] as [id, color] (id)}
+      {#each [["a-def", "var(--edge)"], ["a-fwd", "var(--fwd)"], ["a-bwd", "var(--bwd)"], ["a-imp", "var(--changed)"], ["a-http", "var(--edge-http)"]] as [id, color] (id)}
         <marker {id} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
           <path d="M0,0 L10,5 L0,10 z" style:fill={color} />
         </marker>
@@ -265,7 +274,7 @@
         {/each}
         <!-- Edges sit under the cells -->
         {#each edgeTiles as e (e.key)}
-          <MatrixEdge edge={e.edge} from={e.from} to={e.to} {hover} {impact} />
+          <MatrixEdge edge={e.edge} from={e.from} to={e.to} {hover} {impact} http={e.http} />
         {/each}
         {#each cellTiles as c (c.cell.id)}
           <MatrixCell

@@ -1,9 +1,8 @@
-import type { CellEdge, Matrix, WireMatrix } from "./api";
+import type { CellEdge, EdgeGroup, Matrix, WireMatrix } from "./api";
 
-/** Expand grouped, index-based edges to `{from, to, weight}` with cell ids. */
-export function expandMatrix(w: WireMatrix): Matrix {
+function expandGroups(w: WireMatrix, groups: readonly EdgeGroup[]): CellEdge[] {
   const edges: CellEdge[] = [];
-  for (const g of w.edges) {
+  for (const g of groups) {
     const from = w.cells[g.from]?.id;
     if (from === undefined) continue;
     for (const [t, weight] of g.targets) {
@@ -11,5 +10,11 @@ export function expandMatrix(w: WireMatrix): Matrix {
       if (to !== undefined) edges.push({ from, to, weight });
     }
   }
-  return { ...w, edges };
+  return edges;
+}
+
+/** Expand grouped, index-based edges to `{from, to, weight}` with cell ids (code edges and HTTP links). */
+export function expandMatrix(w: WireMatrix): Matrix {
+  const { http_edges, ...rest } = w;
+  return { ...rest, edges: expandGroups(w, w.edges), httpEdges: expandGroups(w, http_edges ?? []) };
 }
