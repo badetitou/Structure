@@ -62,9 +62,24 @@ pub fn field_env(body: Node, src: &str) -> Env {
     env
 }
 
+/// A local: (start byte of the declaration, byte range where it is visible,
+/// name, receiver).
+type Decl = (usize, (usize, usize), String, Option<Receiver>);
+
 struct Locals {
-    /// (start byte of the declaration, name, receiver)
-    decls: Vec<(usize, String, Option<Receiver>)>,
+    decls: Vec<Decl>,
+}
+
+/// `n`'s `levels`-th ancestor (or the outermost one reached).
+fn up(n: Node, levels: usize) -> Node {
+    let mut cur = n;
+    for _ in 0..levels {
+        match cur.parent() {
+            Some(p) => cur = p,
+            None => break,
+        }
+    }
+    cur
 }
 
 fn param_name<'t>(p: Node<'t>) -> Option<Node<'t>> {
@@ -77,10 +92,15 @@ fn param_name<'t>(p: Node<'t>) -> Option<Node<'t>> {
 }
 
 fn collect_locals(n: Node, src: &str, out: &mut Locals) {
-    let mut add = |at: Node, name: Option<Node>, recv: Option<Receiver>| {
+    // `scope`: the node whose extent bounds the visibility of the local.
+    let mut add = |at: Node, scope: Node, name: Option<Node>, recv: Option<Receiver>| {
         if let Some(nm) = name {
-            out.decls
-                .push((at.start_byte(), text(nm, src).to_string(), recv));
+            out.decls.push((
+                at.start_byte(),
+                (scope.start_byte(), scope.end_byte()),
+                text(nm, src).to_string(),
+                recv,
+            ));
         }
     };
     match n.kind() {
@@ -95,36 +115,36 @@ fn collect_locals(n: Node, src: &str, out: &mut Locals) {
                 } else {
                     ty.and_then(|t| from_type(t, src))
                 };
-                add(d, d.child_by_field_name("name"), recv);
+                add(d, up(n, 1), d.child_by_field_name("name"), recv);
             }
         }
         "formal_parameter" | "spread_parameter" => {
             let recv = n
                 .child_by_field_name("type")
                 .and_then(|t| from_type(t, src));
-            add(n, param_name(n), recv);
+            add(n, up(n, 2), param_name(n), recv);
         }
-        "catch_formal_parameter" => add(n, n.child_by_field_name("name"), None),
+        "catch_formal_parameter" => add(n, up(n, 1), n.child_by_field_name("name"), None),
         "enhanced_for_statement" => {
             let recv = n
                 .child_by_field_name("type")
                 .and_then(|t| from_type(t, src));
-            add(n, n.child_by_field_name("name"), recv);
+            add(n, n, n.child_by_field_name("name"), recv);
         }
         "resource" => {
             let recv = n
                 .child_by_field_name("type")
                 .and_then(|t| from_type(t, src));
-            add(n, n.child_by_field_name("name"), recv);
+            add(n, up(n, 2), n.child_by_field_name("name"), recv);
         }
         "lambda_expression" => {
             if let Some(p) = n.child_by_field_name("parameters") {
                 if p.kind() == "identifier" {
-                    add(n, Some(p), None);
+                    add(n, n, Some(p), None);
                 } else if p.kind() == "inferred_parameters" {
                     let mut c = p.walk();
                     for id in p.named_children(&mut c) {
-                        add(n, Some(id), None);
+                        add(n, n, Some(id), None);
                     }
                 }
             }
@@ -147,12 +167,7 @@ fn lookup_field(name: &str, fields: &[Env]) -> Option<Receiver> {
 
 /// Receiver denoted by an expression, when it is one of the RPC shapes.
 /// `locals` are (declaration offset, name, receiver) already known before `at`.
-fn receiver(
-    n: Node,
-    src: &str,
-    locals: &[(usize, String, Option<Receiver>)],
-    fields: &[Env],
-) -> Option<Receiver> {
+fn receiver(n: Node, src: &str, locals: &[Decl], fields: &[Env]) -> Option<Receiver> {
     match n.kind() {
         "parenthesized_expression" => n
             .named_child(0)
@@ -179,10 +194,10 @@ fn receiver(
             let at = n.start_byte();
             let local = locals
                 .iter()
-                .filter(|(pos, nm, _)| *pos <= at && nm == name)
+                .filter(|(pos, (lo, hi), nm, _)| *pos <= at && *lo <= at && at < *hi && nm == name)
                 .max_by_key(|(pos, ..)| *pos);
             match local {
-                Some((_, _, r)) => r.clone(),
+                Some((.., r)) => r.clone(),
                 None => lookup_field(name, fields),
             }
         }
@@ -229,7 +244,7 @@ fn visit(
     n: Node,
     src: &str,
     caller: &str,
-    locals: &[(usize, String, Option<Receiver>)],
+    locals: &[Decl],
     fields: &[Env],
     out: &mut Vec<RawRpcCall>,
 ) {

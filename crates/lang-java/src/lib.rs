@@ -931,21 +931,31 @@ fn attach_rpc(all: &mut [Symbol], parsed: &[FileSymbols], index: &TypeIndex) {
         .collect();
     for fs in parsed {
         for raw in &fs.rpc_raw {
+            // (service, maybe)
             let service = match &raw.recv {
-                Receiver::Async(n) => index
-                    .resolve(fs, n)
-                    .and_then(|id| id.strip_suffix("Async").map(str::to_string))
-                    .filter(|sync| remote.contains(sync)),
+                Receiver::Async(n) => match index.resolve(fs, n) {
+                    Some(id) => id
+                        .strip_suffix("Async")
+                        .filter(|sync| remote.contains(*sync))
+                        .map(|sync| (sync.to_string(), false)),
+                    // `XAsync` from another root: keep `X`, the merged link decides.
+                    None => n.strip_suffix("Async").map(|x| (x.to_string(), false)),
+                },
                 Receiver::Sync { name, strict } => match index.resolve(fs, name) {
-                    Some(id) => remote.contains(&id).then_some(id),
-                    None => (!strict).then(|| name.clone()),
+                    Some(id) => remote.contains(&id).then_some((id, false)),
+                    // Unknown `X`: plausible only if an `XAsync` type is parsed.
+                    None => (!strict).then(|| {
+                        let twin = index.simple.contains_key(&format!("{name}Async"));
+                        (name.clone(), !twin)
+                    }),
                 },
             };
-            if let (Some(service), Some(&i)) = (service, by_id.get(&raw.caller)) {
+            if let (Some((service, maybe)), Some(&i)) = (service, by_id.get(&raw.caller)) {
                 all[i].rpc_calls.push(RpcCall {
                     service,
                     method: raw.method.clone(),
                     arity: raw.arity,
+                    maybe,
                 });
             }
         }

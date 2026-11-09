@@ -73,6 +73,11 @@ pub struct RpcCall {
     pub method: String,
     /// Argument count at the call site (async: includes the `AsyncCallback`).
     pub arity: u32,
+    /// The service is not in the parsed code and nothing says it is one (the
+    /// receiver was `X.Util.getInstance()` or a `GWT.create` cast, no `XAsync`
+    /// type): linked when the merged graph has such a service, else dropped.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub maybe: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
