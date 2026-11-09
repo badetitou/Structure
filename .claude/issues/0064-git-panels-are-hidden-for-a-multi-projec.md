@@ -1,7 +1,7 @@
 ---
 id: 64
 title: Git panels are hidden for a multi-project analysis even when grouped with other panels
-status: in-progress
+status: done
 parent: 54
 branch: 64-hide-unavailable-panels
 remote: null
@@ -16,9 +16,9 @@ unavailable, so an unavailable panel sharing a group with an available one stays
 same already happened for a single project outside git.
 
 ## Acceptance criteria
-- [ ] Unavailable panels are not shown as tabs (hidden or removed and restored when available again),
+- [x] Unavailable panels are not shown as tabs (hidden or removed and restored when available again),
   without losing the persisted layout.
-- [ ] vitest for `syncVisibility` with a mixed group; checked in the browser with `?sample=matrix-multi`.
+- [x] vitest for `syncVisibility` with a mixed group; checked in the browser with `?sample=matrix-multi`.
 
 ## Brief (implementer)
 
@@ -34,3 +34,7 @@ Verify: `cd app/ui && npm test && npm run check && npm run build` (`npm ci` firs
 (or its replacement) with a mixed group [details (available), diff (unavailable)] → diff hidden, details shown; then diff available → restored
 in the same group; layout saved without dropping diff. Single-project behaviour with git (all panels available) must be unchanged.
 Rules: no new deps.
+
+## Result
+- Browser (`?sample=matrix-multi`): History and Diff tabs hidden with 2 projects; back with a single project (jpetstore sample); `structure.dock` still holds `diff`.
+- Known limit: hiding is an inline style on the dockview tab (`data-tab-panel-id`), re-applied on layout changes.

@@ -1,7 +1,7 @@
 ---
 id: 62
 title: A root without a build file is analysed as its sub-projects
-status: in-progress
+status: done
 parent: 54
 branch: 62-split-undetectable-root
 remote: null
@@ -14,13 +14,13 @@ created: 2026-11-09
 file itself. The user had to pass `wegf/backend wegf/frontend` by hand.
 
 ## Acceptance criteria
-- [ ] A root with no build file of its own whose direct children (depth 1, then 2 if none)
+- [x] A root with no build file of its own whose direct children (depth 1, then 2 if none)
   are detectable projects is analysed as those sub-projects, exactly as if they were passed
   as several roots (#55), names = child dir names.
-- [ ] A root that is itself detectable keeps today's behaviour (no splitting), so Maven/Gradle
+- [x] A root that is itself detectable keeps today's behaviour (no splitting), so Maven/Gradle
   multi-module and Nx roots are unchanged.
-- [ ] CLI and app both benefit (pipeline level); the CLI prints the detected projects.
-- [ ] Test on a temp dir layout; wegf root gives backend + frontend + we-elements and the same
+- [x] CLI and app both benefit (pipeline level); the CLI prints the detected projects.
+- [x] Test on a temp dir layout; wegf root gives backend + frontend + we-elements and the same
   http stats as passing backend + frontend (+ we-elements).
 
 ## Out of scope
@@ -56,3 +56,8 @@ STRUCTURE_FIXTURES=/Users/benoit.verhaeghe/Documents/Perso/Structure/fixtures; a
 Unit tests with tempdirs: undetectable root → children, depth-2 fallback, detectable root kept (a Maven multi-module or Nx root
 is NOT split), skipped dirs, nothing found → error, mixed list of a detectable root plus an undetectable one.
 Rules: no unwrap/expect outside tests; no new deps.
+
+## Result
+- `analyze --no-scip …/wegf` → backend, frontend, we-elements; identical to passing the 3 dirs (`http: 1783/2065`).
+- `analyze --no-scip …/e-sedit-rh …/wegf` → 4 projects, 359k symbols, 3 s; http 1783/2065, rpc 5393/5393.
+- Known limits (review, low): a parent passed with its own child gives duplicate roots; symlinked children are followed; read_dir errors read as "none found"; the app cache key uses the unexpanded paths.
