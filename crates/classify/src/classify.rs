@@ -52,7 +52,9 @@ pub enum Strategy {
     #[default]
     NameRoot,
     /// Per symbol like `name_root` (or `path_segment` when `after` is set);
-    /// project-wide, switches to module domains (package / directory) when
+    /// project-wide, switches to feature domains when the code is
+    /// package-by-feature (`app.billing.{controller,service}`, see
+    /// `feature_modules`), else to module domains (package / directory) when
     /// at least 75% of the symbols using the default spec are alone in their
     /// domain. An explicit `name_root` never switches.
     Auto,
@@ -401,16 +403,20 @@ pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Class
             }
         }
         let alone = per_domain.values().filter(|n| **n == 1).count();
-        if !auto_ids.is_empty() && alone * 4 >= auto_ids.len() * 3 {
-            let sep = module_separator;
-            let members: Vec<(&str, Vec<String>)> = auto_ids
-                .iter()
-                .filter_map(|id| {
-                    slot_of_id
-                        .get(id)
-                        .map(|&i| (*id, module_path(facts[i].sym, sep)))
-                })
-                .collect();
+        let sep = module_separator;
+        let members: Vec<(&str, Vec<String>)> = auto_ids
+            .iter()
+            .filter_map(|id| {
+                slot_of_id
+                    .get(id)
+                    .map(|&i| (*id, module_path(facts[i].sym, sep)))
+            })
+            .collect();
+        let name_root = |id: &str| placements.get(id).map(|p| p.domain.clone());
+        let features = feature_modules(&members, &name_root);
+        let fragmented = !auto_ids.is_empty() && alone * 4 >= auto_ids.len() * 3;
+        if features.is_some() || fragmented {
+            let members = features.unwrap_or(members);
             let (domains, tree) = module_domains(&members, sep, &default_spec.fallback);
             for (id, d) in domains {
                 if let Some(p) = placements.get_mut(id) {
@@ -438,6 +444,111 @@ fn module_path(s: &Symbol, sep: char) -> Vec<String> {
         .filter(|x| !x.is_empty())
         .map(str::to_string)
         .collect()
+}
+
+/// A module's last segment found under at least this many distinct parents is
+/// a role (`controller`, `service`, `mapper`...), not a domain.
+const MIN_ROLE_PARENTS: usize = 3;
+
+/// Fewest features for feature mode: with fewer, a handful of layer packages
+/// over recurring entity names (`web.article`, `repo.article`) looks the same.
+const MIN_FEATURES: usize = 8;
+
+/// Name key that ignores case, separators and plural `s`/`x` anywhere:
+/// `bordereaux_preparatoires` and `BordereauPreparatoire` share one.
+fn loose_key(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .filter(|c| !matches!(c, 's' | 'x'))
+        .collect()
+}
+
+/// `m` without its trailing role segments (never empty when `m` is not).
+fn strip_roles<'m>(m: &'m [String], roles: &HashSet<&str>) -> &'m [String] {
+    let mut m = m;
+    while m.len() > 1 && roles.contains(m[m.len() - 1].as_str()) {
+        m = &m[..m.len() - 1];
+    }
+    m
+}
+
+/// Package-by-feature detection (`app.billing.{controller,service,mapper}`).
+///
+/// Role segments are module last segments found under `MIN_ROLE_PARENTS`
+/// parents or more. A feature is a module minus its trailing role segments,
+/// unless it is a container (ancestor of two or more other features). Applies
+/// only with at least `MIN_FEATURES` features and twice as many features as
+/// roles, which keeps layer-then-feature code (`core.article`, `api.article`)
+/// out. Returns each
+/// member's domain module: its feature, else the feature its name root
+/// matches (`entity.Invoice` -> `billing.invoices`), else its own module.
+fn feature_modules<'a>(
+    members: &[(&'a str, Vec<String>)],
+    name_root: &dyn Fn(&str) -> Option<String>,
+) -> Option<Vec<(&'a str, Vec<String>)>> {
+    let modules: BTreeSet<&[String]> = members.iter().map(|(_, m)| m.as_slice()).collect();
+    let mut parents: HashMap<&str, BTreeSet<&[String]>> = HashMap::new();
+    for m in &modules {
+        if let Some((last, parent)) = m.split_last()
+            && !parent.is_empty()
+        {
+            parents.entry(last.as_str()).or_default().insert(parent);
+        }
+    }
+    let roles: HashSet<&str> = parents
+        .iter()
+        .filter(|(_, p)| p.len() >= MIN_ROLE_PARENTS)
+        .map(|(s, _)| *s)
+        .collect();
+    if roles.is_empty() {
+        return None;
+    }
+    let candidates: BTreeSet<&[String]> = modules
+        .iter()
+        .filter_map(|m| {
+            let f = strip_roles(m, &roles);
+            (f.len() < m.len()).then_some(f)
+        })
+        .collect();
+    let mut below: HashMap<&[String], usize> = HashMap::new();
+    for c in &candidates {
+        for k in 1..c.len() {
+            *below.entry(&c[..k]).or_default() += 1;
+        }
+    }
+    let features: BTreeSet<&[String]> = candidates
+        .into_iter()
+        .filter(|c| below.get(c).copied().unwrap_or(0) < 2)
+        .collect();
+    if features.len() < MIN_FEATURES || features.len() < 2 * roles.len() {
+        return None;
+    }
+    let mut by_key: HashMap<String, Option<&[String]>> = HashMap::new();
+    for f in &features {
+        if let Some(last) = f.last() {
+            let key = loose_key(last);
+            by_key
+                .entry(key)
+                .and_modify(|e| *e = None)
+                .or_insert(Some(f));
+        }
+    }
+    let out = members
+        .iter()
+        .map(|(id, m)| {
+            let stripped = strip_roles(m, &roles);
+            if features.contains(stripped) {
+                return (*id, stripped.to_vec());
+            }
+            let joined = name_root(id)
+                .map(|r| loose_key(&r))
+                .filter(|k| k.len() >= 3)
+                .and_then(|k| by_key.get(&k).copied().flatten());
+            (*id, joined.unwrap_or(m.as_slice()).to_vec())
+        })
+        .collect();
+    Some(out)
 }
 
 #[derive(Default)]
@@ -1498,11 +1609,13 @@ aliases = { billing = ["invoices"] }
     }
 
     fn mods(paths: &[&[&str]]) -> Vec<(&'static str, Vec<String>)> {
-        const IDS: [&str; 4] = ["m0", "m1", "m2", "m3"];
         paths
             .iter()
             .enumerate()
-            .map(|(i, m)| (IDS[i], m.iter().map(|x| x.to_string()).collect()))
+            .map(|(i, m)| {
+                let id: &'static str = Box::leak(format!("m{i}").into_boxed_str());
+                (id, m.iter().map(|x| x.to_string()).collect())
+            })
             .collect()
     }
 
@@ -1519,5 +1632,150 @@ aliases = { billing = ["invoices"] }
         let (out, _) = module_domains(&members, '.', "misc");
         let names: Vec<&str> = out.iter().map(|(_, d)| d.as_str()).collect();
         assert_eq!(names, ["a.x", "b.x", "y"]);
+    }
+
+    /// `app.<feature>.{controller,service,mapper}` for eight features, plus
+    /// package-by-layer `app.entity` / `app.repository` classes.
+    fn feature_graph() -> Graph {
+        let mut syms = vec![];
+        for f in [
+            "billing",
+            "orders",
+            "shipping",
+            "users",
+            "stock",
+            "invoices",
+            "payments",
+            "bordereaux_preparatoires",
+        ] {
+            let cap = f[..1].to_uppercase() + &f[1..];
+            syms.push(java(
+                &format!("{cap}Ctl"),
+                SymbolKind::Class,
+                &format!("app.{f}.controller"),
+            ));
+            syms.push(java(
+                &format!("{cap}Svc"),
+                SymbolKind::Class,
+                &format!("app.{f}.service"),
+            ));
+            syms.push(java(
+                &format!("{cap}Conv"),
+                SymbolKind::Class,
+                &format!("app.{f}.mapper"),
+            ));
+        }
+        syms.push(java("Order", SymbolKind::Class, "app.entity"));
+        syms.push(java(
+            "BordereauPreparatoire",
+            SymbolKind::Class,
+            "app.entity",
+        ));
+        syms.push(java("Audit", SymbolKind::Class, "app.entity"));
+        syms.push(java("OrderRepository", SymbolKind::Class, "app.repository"));
+        syms.push(java("App", SymbolKind::Class, "app"));
+        graph(Language::Java, syms, vec![])
+    }
+
+    #[test]
+    fn auto_groups_package_by_feature_code() {
+        let c = classify(&feature_graph(), &builtin(Language::Java).unwrap());
+        // the three layers of a feature share its domain
+        for id in [
+            "app.billing.controller.BillingCtl",
+            "app.billing.service.BillingSvc",
+            "app.billing.mapper.BillingConv",
+        ] {
+            assert_eq!(p(&c, id).1, "billing");
+        }
+        // layer packages join the feature named like the class (plural, `_`)
+        assert_eq!(p(&c, "app.entity.Order").1, "orders");
+        assert_eq!(p(&c, "app.repository.OrderRepository").1, "orders");
+        assert_eq!(
+            p(&c, "app.entity.BordereauPreparatoire").1,
+            "bordereaux_preparatoires"
+        );
+        // no matching feature: own module
+        assert_eq!(p(&c, "app.entity.Audit").1, "entity");
+        assert_eq!(p(&c, "app.App").1, "app");
+        let tree = c.domain_tree.clone().unwrap();
+        let mut ls = vec![];
+        tree.iter().for_each(|n| leaves(n, &mut ls));
+        let mut doms: Vec<_> = c.placements.values().map(|p| p.domain.clone()).collect();
+        doms.sort();
+        doms.dedup();
+        ls.sort();
+        assert_eq!(ls, doms);
+        assert_eq!(doms.len(), 10);
+
+        // explicit name_root never switches
+        let mut rules = builtin(Language::Java).unwrap();
+        rules.domain.as_mut().unwrap().strategy = Strategy::NameRoot;
+        let c = classify(&feature_graph(), &rules);
+        assert!(c.domain_tree.is_none());
+    }
+
+    #[test]
+    fn feature_mode_needs_more_features_than_roles() {
+        // layer-then-feature: `article`/`user` recur under 3 layers, but there
+        // are only 3 "features" (the layers) for 2 roles.
+        let m = mods(&[
+            &["app", "core", "article"],
+            &["app", "core", "user"],
+            &["app", "api", "article"],
+            &["app", "api", "user"],
+            &["app", "infra", "article"],
+            &["app", "infra", "user"],
+        ]);
+        assert!(feature_modules(&m, &|_| None).is_none());
+        // 4 layers x 2 entities: the ratio holds, but too few "features"
+        let mut paths: Vec<Vec<&str>> = vec![];
+        for layer in ["web", "service", "repo", "dto"] {
+            for entity in ["article", "user"] {
+                paths.push(vec!["app", layer, entity]);
+            }
+        }
+        let refs: Vec<&[&str]> = paths.iter().map(|p| p.as_slice()).collect();
+        assert!(feature_modules(&mods(&refs), &|_| None).is_none());
+        // a single name under 3 layers
+        let m = mods(&[
+            &["app", "core", "article"],
+            &["app", "api", "article"],
+            &["app", "infra", "article"],
+        ]);
+        assert!(feature_modules(&m, &|_| None).is_none());
+        // no role segment at all
+        let m = mods(&[&["a", "x"], &["b", "y"]]);
+        assert!(feature_modules(&m, &|_| None).is_none());
+    }
+
+    #[test]
+    fn container_of_features_is_not_a_feature() {
+        // `app.config` strips to `app`, which holds the other features.
+        let mut paths: Vec<Vec<&str>> = vec![];
+        for f in ["a", "b", "c", "d", "e", "f", "g", "h"] {
+            paths.push(vec!["app", f, "config"]);
+            paths.push(vec!["app", f, "web"]);
+        }
+        paths.push(vec!["app", "config"]);
+        let refs: Vec<&[&str]> = paths.iter().map(|p| p.as_slice()).collect();
+        let m = mods(&refs);
+        let out = feature_modules(&m, &|_| None).unwrap();
+        let last = out.last().unwrap();
+        assert_eq!(last.1, ["app", "config"]);
+        assert_eq!(out[0].1, ["app", "a"]);
+    }
+
+    #[test]
+    fn loose_key_ignores_case_separators_and_plurals() {
+        assert_eq!(
+            loose_key("bordereaux_preparatoires"),
+            loose_key("BordereauPreparatoire")
+        );
+        assert_eq!(
+            loose_key("organismesregroupement"),
+            loose_key("OrganismeRegroupement")
+        );
+        assert_ne!(loose_key("orders"), loose_key("users"));
     }
 }
