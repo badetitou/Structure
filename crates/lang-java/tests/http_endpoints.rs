@@ -201,7 +201,7 @@ fn interface_endpoints_inherited_with_prefix() {
     // Own mapping wins; the interface method keeps its endpoint.
     assert_eq!(
         http_of(&g, "p.Ctl#post(0)"),
-        [(HttpVerb::Post, "/own".into())]
+        [(HttpVerb::Post, "/base/own".into())]
     );
     assert_eq!(
         http_of(&g, "p.Api#post(0)"),
@@ -261,6 +261,85 @@ fn generated_interface_is_used_but_not_in_graph() {
     assert!(g.edges.iter().all(|e| !e.to.starts_with("gen.")));
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].starts_with("1 class"), "{warnings:?}");
+}
+
+#[test]
+fn feign_interface_and_fallback_serve_nothing() {
+    let d = tmp("feign");
+    write(
+        &d,
+        "src/main/java/p/FooClient.java",
+        r#"package p; @FeignClient(name = "x") @RequestMapping("/f")
+        interface FooClient { @GetMapping("/a") void a(); }"#,
+    );
+    write(
+        &d,
+        "src/main/java/p/FooClientFallback.java",
+        "package p; class FooClientFallback implements FooClient { public void a() {} }",
+    );
+    let g = parse_project(&d).unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+    assert!(http_of(&g, "p.FooClient#a(0)").is_empty());
+    assert!(http_of(&g, "p.FooClientFallback#a(0)").is_empty());
+}
+
+#[test]
+fn transitive_and_abstract_superclass_inheritance() {
+    let d = tmp("trans");
+    write(
+        &d,
+        "src/main/java/p/A.java",
+        r#"package p; @RequestMapping("/a") interface A { @GetMapping("/m") void m(); }"#,
+    );
+    write(
+        &d,
+        "src/main/java/p/B.java",
+        "package p; abstract class B implements A { }",
+    );
+    write(
+        &d,
+        "src/main/java/p/C.java",
+        "package p; class C extends B { public void m() {} }",
+    );
+    write(
+        &d,
+        "src/main/java/p/Base.java",
+        r#"package p; abstract class Base { @PutMapping("/z") abstract void z(); }"#,
+    );
+    write(
+        &d,
+        "src/main/java/p/D.java",
+        r#"package p; @RequestMapping("/d") class D extends Base { void z() {} }"#,
+    );
+    let g = parse_project(&d).unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+    assert_eq!(http_of(&g, "p.C#m(0)"), [(HttpVerb::Get, "/a/m".into())]);
+    assert_eq!(http_of(&g, "p.D#z(0)"), [(HttpVerb::Put, "/d/z".into())]);
+}
+
+#[test]
+fn same_simple_name_generated_apis_resolve_by_import() {
+    let d = tmp("twin");
+    let g1 = "target/generated-sources/openapi/src/main/java/one/HabApi.java";
+    let g2 = "target/generated-sources/openapi/src/main/java/two/HabApi.java";
+    write(
+        &d,
+        g1,
+        r#"package one; interface HabApi { @GetMapping("/one") void h(); }"#,
+    );
+    write(
+        &d,
+        g2,
+        r#"package two; interface HabApi { @GetMapping("/two") void h(); }"#,
+    );
+    write(
+        &d,
+        "src/main/java/p/Ctl.java",
+        "package p; import two.HabApi; class Ctl implements HabApi { public void h() {} }",
+    );
+    let g = parse_project(&d).unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+    assert_eq!(http_of(&g, "p.Ctl#h(0)"), [(HttpVerb::Get, "/two".into())]);
 }
 
 #[test]

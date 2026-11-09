@@ -373,7 +373,9 @@ impl Ctx<'_> {
         };
         let idx = self.symbol(id.clone(), kind, node, name_node, container);
         let own_prefixes = class_prefixes(node, self.src);
-        if let Some(p) = &own_prefixes {
+        // An empty list marks an HTTP client (Feign...): it serves nothing and
+        // must not feed inheritance.
+        if let Some(p) = own_prefixes.as_ref().filter(|p| !p.is_empty()) {
             self.out.type_prefixes.insert(id.clone(), p.clone());
         }
         let saved_prefixes = std::mem::replace(
@@ -463,7 +465,7 @@ impl Ctx<'_> {
                         let idx = self.symbol(id, SymbolKind::Method, m, n, Some(tid));
                         self.out.symbols[idx].http = method_endpoints(m, self.src, &self.prefixes);
                         let raw = method_endpoints(m, self.src, &[String::new()]);
-                        if !raw.is_empty() {
+                        if !raw.is_empty() && !self.prefixes.is_empty() {
                             let mid = self.out.symbols[idx].id.clone();
                             self.out.routes.insert(mid, raw);
                         }
@@ -900,15 +902,21 @@ fn inherit_endpoints(
             prefixes.entry(k.clone()).or_insert_with(|| v.clone());
         }
     }
-    for s in all
-        .iter_mut()
-        .filter(|s| s.kind == SymbolKind::Method && s.http.is_empty())
-    {
+    for s in all.iter_mut().filter(|s| s.kind == SymbolKind::Method) {
         let (Some(tid), Some((_, suffix))) = (s.container.as_deref(), s.id.split_once('#')) else {
             continue;
         };
-        let Some(raw) = inherited_routes(&supers, &routes, tid, suffix, &mut HashSet::new()) else {
-            continue;
+        // Own mapping, else the overridden one; either way the prefix is the
+        // nearest type-level mapping (own class, then supertypes).
+        let raw = match routes.get(&s.id) {
+            Some(r) => r,
+            None if s.http.is_empty() => {
+                match inherited_routes(&supers, &routes, tid, suffix, &mut HashSet::new()) {
+                    Some(r) => r,
+                    None => continue,
+                }
+            }
+            None => continue,
         };
         let pres = effective_prefixes(&supers, &prefixes, tid, &mut HashSet::new())
             .unwrap_or_else(|| vec![String::new()]);
