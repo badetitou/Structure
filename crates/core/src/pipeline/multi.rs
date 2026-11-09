@@ -250,6 +250,7 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
         rpc_stats: (rpc_stats.calls + rpc_stats.maybe_rpc > 0).then_some(rpc_stats),
         metrics,
         warnings,
+        impact_index: Default::default(),
     }
 }
 

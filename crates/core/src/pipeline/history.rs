@@ -89,9 +89,10 @@ pub fn impact(
     let mut changes = impact::changed_lines(root, base, head)?;
     // The SCIP index we write into the project is a build artefact, not a change.
     changes.retain(|c| c.file != "index.scip");
-    let mut result = impact::compute(
+    let mut result = impact::compute_with(
         &analysis.graph,
         &analysis.classification,
+        analysis.impact_index(),
         &changes,
         base.unwrap_or("HEAD"),
         head,
