@@ -14,6 +14,8 @@ use tauri::{AppHandle, Emitter, Manager};
 struct Entry<T> {
     key: String,
     /// Directory that was analysed (the project, or the commit's snapshot).
+    /// For a multi-root working-tree entry it is the first (sorted) root;
+    /// nothing reads it for working-tree entries (only snapshot entries use it).
     dir: PathBuf,
     /// `pipeline::worktree_fingerprint` taken before the analysis.
     fingerprint: Option<String>,
@@ -180,10 +182,17 @@ fn canonical_many(paths: &[String]) -> Result<(Vec<PathBuf>, String), String> {
 /// Fingerprint of a set of roots: one root's own, else every root's joined;
 /// none when any root has none.
 fn combined_fingerprint(roots: &[PathBuf]) -> Option<String> {
-    let fps = roots
-        .iter()
-        .map(|r| pipeline::worktree_fingerprint(r).ok())
-        .collect::<Option<Vec<_>>>()?;
+    combine_fingerprints(
+        roots
+            .iter()
+            .map(|r| pipeline::worktree_fingerprint(r).ok())
+            .collect(),
+    )
+}
+
+/// One fingerprint is kept as is, several are joined; none when any is missing.
+fn combine_fingerprints(fps: Vec<Option<String>>) -> Option<String> {
+    let fps = fps.into_iter().collect::<Option<Vec<_>>>()?;
     Some(fps.join("\n"))
 }
 
@@ -463,6 +472,18 @@ mod tests {
         assert!(a.contains('\n'));
         assert!(canonical_many(&[]).is_err());
         assert!(canonical_many(&["/definitely/not/here".to_string()]).is_err());
+    }
+
+    #[test]
+    fn combine_fingerprints_keeps_one_joins_many_and_needs_all() {
+        let f = |s: &str| Some(s.to_string());
+        assert_eq!(combine_fingerprints(vec![f("a")]), f("a"));
+        assert_eq!(combine_fingerprints(vec![f("a"), f("b")]), f("a\nb"));
+        assert_eq!(combine_fingerprints(vec![f("a"), None]), None);
+        assert_eq!(combine_fingerprints(vec![]), f(""));
+        // Not a repository: no fingerprint, so a single root has none either.
+        let none = PathBuf::from("/definitely/not/here");
+        assert_eq!(combined_fingerprint(&[none]), None);
     }
 
     #[test]

@@ -56,9 +56,9 @@ export class AppState {
   get project(): string {
     return this.paths[0] ?? "";
   }
-  /** Several folders analysed together: git panels (history, impact, diff) are unavailable. */
+  /** Several distinct projects analysed together (per the loaded matrix, as the backend dedups roots): git panels are unavailable. */
   get multi(): boolean {
-    return this.paths.length > 1;
+    return (this.work?.projects?.length ?? 0) > 1;
   }
 
   /** The matrix to display: the commit snapshot's when the impact carries one, else the working tree. */
@@ -94,7 +94,7 @@ export class AppState {
     if (req !== this.loadReq) return;
     this.work = m;
     this.phase = "ready";
-    if (paths.length > 1) return; // no git history across several repos
+    if (this.multi) return; // no git history across several repos
     try {
       const h = await api.history(paths[0]);
       if (req === this.loadReq) this.history = h;
