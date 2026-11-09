@@ -5,7 +5,7 @@
 //! `<project>::<id>`, files `<project>/<file>` and domains `<project>/<domain>`.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::bail;
 
@@ -32,12 +32,75 @@ pub(super) fn unique_names(roots: &[PathBuf]) -> Vec<String> {
         .collect()
 }
 
-/// One root behaves exactly as [`super::analyze`].
+const SKIPPED_DIRS: &[&str] = &["node_modules", "target", "build", "dist"];
+
+fn detectable(dir: &Path) -> bool {
+    crate::lang::all().iter().any(|f| f.detect(dir))
+}
+
+/// Visible, non-build sub-directories of `dir`, sorted by path.
+fn subdirs(dir: &Path) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return vec![];
+    };
+    let mut out: Vec<PathBuf> = rd
+        .filter_map(Result::ok)
+        .filter(|e| e.path().is_dir())
+        .filter(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            !n.starts_with('.') && !SKIPPED_DIRS.contains(&n.as_str())
+        })
+        .map(|e| e.path())
+        .collect();
+    out.sort();
+    out
+}
+
+/// A detectable root is kept; an undetectable one is replaced by its
+/// detectable children, else grandchildren. Nothing found: the usual
+/// "cannot detect language" error, with a hint.
+pub fn expand_roots(roots: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
+    let mut out = vec![];
+    for root in roots {
+        if detectable(root) {
+            out.push(root.clone());
+            continue;
+        }
+        let kids = subdirs(root);
+        let mut found: Vec<PathBuf> = kids.iter().filter(|p| detectable(p)).cloned().collect();
+        if found.is_empty() {
+            found = kids
+                .iter()
+                .flat_map(|d| subdirs(d))
+                .filter(|p| detectable(p))
+                .collect();
+        }
+        if found.is_empty() {
+            let err = super::detect_language(root)
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default();
+            bail!(
+                "{err} (also looked for a project in its sub-directories, depth 1 and 2: none found)"
+            );
+        }
+        out.extend(found);
+    }
+    Ok(out)
+}
+
+/// One root behaves exactly as [`super::analyze`]. Undetectable roots are
+/// first expanded to their sub-projects ([`expand_roots`]).
 pub fn analyze_many(
     roots: &[PathBuf],
     opts: &Options,
     progress: &dyn Fn(Progress),
 ) -> anyhow::Result<Analysis> {
+    if roots.is_empty() {
+        bail!("no project root given");
+    }
+    let expanded = expand_roots(roots)?;
+    let roots = expanded.as_slice();
     match roots {
         [] => bail!("no project root given"),
         [one] => super::analyze(one, opts, progress),
@@ -193,6 +256,81 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn touch(root: &Path, rel: &str) {
+        let p = root.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, "{}").unwrap();
+    }
+
+    fn names(v: &[PathBuf]) -> Vec<String> {
+        v.iter().map(|p| project_name(p)).collect()
+    }
+
+    fn tmp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("structure-expand-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn undetectable_root_becomes_its_children() {
+        let d = tmp("kids");
+        touch(&d, "backend/pom.xml");
+        touch(&d, "frontend/package.json");
+        touch(&d, "database/x.sql");
+        let out = expand_roots(std::slice::from_ref(&d)).unwrap();
+        assert_eq!(names(&out), ["backend", "frontend"]);
+    }
+
+    #[test]
+    fn depth_two_fallback() {
+        let d = tmp("deep");
+        touch(&d, "apps/web/package.json");
+        touch(&d, "apps/api/pom.xml");
+        let out = expand_roots(std::slice::from_ref(&d)).unwrap();
+        assert_eq!(names(&out), ["api", "web"]);
+    }
+
+    #[test]
+    fn detectable_root_is_kept() {
+        let d = tmp("maven");
+        touch(&d, "pom.xml");
+        touch(&d, "module-a/pom.xml");
+        touch(&d, "frontend/package.json");
+        let out = expand_roots(std::slice::from_ref(&d)).unwrap();
+        assert_eq!(out, vec![d]);
+    }
+
+    #[test]
+    fn skipped_dirs_are_ignored() {
+        let d = tmp("skip");
+        touch(&d, "node_modules/pkg/package.json");
+        touch(&d, ".hidden/package.json");
+        touch(&d, "target/pom.xml");
+        touch(&d, "app/package.json");
+        let out = expand_roots(std::slice::from_ref(&d)).unwrap();
+        assert_eq!(names(&out), ["app"]);
+    }
+
+    #[test]
+    fn nothing_found_is_an_error() {
+        let d = tmp("none");
+        touch(&d, "docs/readme.md");
+        let err = expand_roots(std::slice::from_ref(&d)).unwrap_err();
+        assert!(err.to_string().contains("cannot detect language"), "{err}");
+    }
+
+    #[test]
+    fn mixed_list_keeps_detectable_and_expands_other() {
+        let d = tmp("mixed");
+        touch(&d, "solo/pom.xml");
+        touch(&d, "multi/a/pom.xml");
+        touch(&d, "multi/b/package.json");
+        let out = expand_roots(&[d.join("solo"), d.join("multi")]).unwrap();
+        assert_eq!(names(&out), ["solo", "a", "b"]);
+    }
 
     #[test]
     fn names_are_deduplicated() {
