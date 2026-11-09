@@ -1,7 +1,7 @@
 ---
 id: 66
 title: Matrix shows RPC links like HTTP links
-status: in-progress
+status: done
 parent: 54
 branch: 66-matrix-rpc-links
 remote: null
@@ -13,10 +13,10 @@ created: 2026-11-09
 only draws `http_edges`.
 
 ## Acceptance criteria
-- [ ] `rpc_edges` expanded and drawn like http edges, with its own token/dash so HTTP and RPC differ;
+- [x] `rpc_edges` expanded and drawn like http edges, with its own token/dash so HTTP and RPC differ;
   same hover/selection; a toolbar toggle per kind (or one "Remote links" toggle with both — decide in the brief).
-- [ ] Details panel section lists RPC calls/called-by like HTTP.
-- [ ] A docs/samples sample with rpc_edges (no absolute paths); vitest, svelte-check, build green; checked in browser.
+- [x] Details panel section lists RPC calls/called-by like HTTP.
+- [x] A docs/samples sample with rpc_edges (no absolute paths); vitest, svelte-check, build green; checked in browser.
 
 ## Brief (implementer)
 
@@ -41,3 +41,7 @@ Verify: `cd app/ui && npm test && npm run check && npm run build` (run `npm ci` 
 Unit tests: expand rpc_edges, aggregate remap of rpcEdges, adjacency with rpc shown/hidden, toggle persistence, generic links helper
 for both kinds. HTTP behaviour unchanged (existing tests).
 Rules: no new deps; no colour literals outside app.css.
+
+## Result
+- Checked in the browser (`?sample=matrix-rpc`): dotted `2 3`, `--edge-rpc` (dark oklch(0.74 0.14 300), light oklch(0.55 0.18 300)), toggle 2 -> 0 -> 2 persisted, details "RPC: calls unknown / server.rpc (2)".
+- Known limits: a cell pair with both an HTTP and an RPC link draws both on the same path (overlap); DetailsPanel and mode.ts duplicate the HTTP code for RPC.
