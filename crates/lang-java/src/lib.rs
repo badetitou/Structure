@@ -230,16 +230,20 @@ fn method_endpoints(m: Node, src: &str, prefixes: &[String]) -> Vec<HttpEndpoint
         if let Some(v) = name.strip_suffix("Mapping").and_then(verb_of) {
             routes.push((v, annotation_paths(*a, src, true)));
         } else if name == "RequestMapping" {
-            let mut verbs: Vec<HttpVerb> = annotation_values(*a, src, &["method"], false)
-                .into_iter()
-                .map(|v| {
-                    let t = text(v, src);
-                    verb_of(t.rsplit('.').next().unwrap_or(t)).unwrap_or(HttpVerb::Any)
-                })
-                .collect();
-            if verbs.is_empty() {
-                verbs.push(HttpVerb::Any);
-            }
+            let methods = annotation_values(*a, src, &["method"], false);
+            // Absent `method` means any verb; values that are not a known
+            // verb (constant, HEAD, OPTIONS) yield no endpoint, not a guess.
+            let verbs: Vec<HttpVerb> = if methods.is_empty() {
+                vec![HttpVerb::Any]
+            } else {
+                methods
+                    .into_iter()
+                    .filter_map(|v| {
+                        let t = text(v, src);
+                        verb_of(t.rsplit('.').next().unwrap_or(t))
+                    })
+                    .collect()
+            };
             let paths = annotation_paths(*a, src, true);
             for v in verbs {
                 routes.push((v, paths.clone()));

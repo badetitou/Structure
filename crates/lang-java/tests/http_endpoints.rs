@@ -43,6 +43,18 @@ fn spring_arrays_and_request_method() {
 }
 
 #[test]
+fn unknown_request_method_gives_no_endpoint() {
+    let src = r#"class A {
+  @RequestMapping(value = "/h", method = RequestMethod.HEAD) void a() {}
+  @RequestMapping(value = "/c", method = Consts.M) void b() {}
+  @RequestMapping(value = "/m", method = {RequestMethod.GET, RequestMethod.OPTIONS}) void c() {}
+}"#;
+    assert!(eps(src, "a").is_empty());
+    assert!(eps(src, "b").is_empty());
+    assert_eq!(eps(src, "c"), [(HttpVerb::Get, "/m".into())]);
+}
+
+#[test]
 fn jaxrs_path_and_verb() {
     let src = r#"@Path("/api") class A {
   @GET @Path("/items/{id}") void a() {}
