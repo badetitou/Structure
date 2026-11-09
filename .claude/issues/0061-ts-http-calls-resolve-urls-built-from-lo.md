@@ -1,7 +1,7 @@
 ---
 id: 61
 title: TS HTTP calls resolve URLs built from local variables
-status: in-progress
+status: done
 parent: 54
 branch: 61-ts-url-local-vars
 remote: null
@@ -21,12 +21,12 @@ Another 68 call `{apiComptaUrl}/Dette/...`, `/UcCollectivite/...` (the `casino` 
 backend has no such endpoint, so they are correctly unmatched.
 
 ## Acceptance criteria
-- [ ] In a template/concatenated URL, an identifier substitution resolves to the string/template
+- [x] In a template/concatenated URL, an identifier substitution resolves to the string/template
   initialiser of a `const`/`let` in the same function (or a readonly class field), if that variable
   is never reassigned; resolution is one level deep, otherwise placeholder as today.
-- [ ] Adjacent placeholders with no `/` between them (`${a}${b}`) no longer fuse into one segment
+- [x] Adjacent placeholders with no `/` between them (`${a}${b}`) no longer fuse into one segment
   when `b` resolves to a path starting with `/`.
-- [ ] Unit tests for the OpenAPI generator shape (with `encodeParam` path params), reassignment → placeholder.
+- [x] Unit tests for the OpenAPI generator shape (with `encodeParam` path params), reassignment → placeholder.
 - [ ] wegf backend + frontend: linked ratio reported before/after, target >= 80% of calls whose
   endpoint exists in the backend (casino calls excluded and counted separately); angular-realworld
   test stays exact (18 calls).
@@ -60,3 +60,7 @@ cargo test --workspace with STRUCTURE_FIXTURES=/Users/benoit.verhaeghe/Documents
 (angular-realworld exact 18-call test and realworld 17/18 must stay). Unit tests: OpenAPI shape,
 path param via encodeParam → `{}`, reassigned variable → placeholder, variable declared after the call → placeholder.
 Rules: no unwrap/expect outside tests; no new deps.
+
+## Result
+- wegf backend+frontend: 1417 -> 1419/2043. The 542 OpenAPI calls now resolve (`/{basePath}/habilitations/...`) but their endpoints are on generated server interfaces under `target/` -> blocked by #65. Criterion 4 left open until #65.
+- A variable captured by a closure (declared in an outer function) stays a placeholder (scope stops at the function boundary).
