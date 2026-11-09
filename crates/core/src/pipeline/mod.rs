@@ -5,6 +5,7 @@ mod history;
 mod indexer;
 mod process;
 mod progress;
+pub mod scip_cache;
 mod snapshot;
 #[cfg(test)]
 mod test_support;
@@ -41,6 +42,9 @@ pub struct Options {
     pub use_scip: bool,
     /// Indexer wall-clock limit in seconds; 0 = no limit.
     pub indexer_timeout_secs: u64,
+    /// Snapshots: always run the indexer, never build the index from SCIP
+    /// documents cached by earlier analyses (see [`scip_cache`]).
+    pub exact: bool,
 }
 
 /// Timeout from `STRUCTURE_INDEXER_TIMEOUT` (seconds, 0 = none), else the default.
@@ -58,6 +62,7 @@ impl Default for Options {
             reindex_if_stale: true,
             use_scip: true,
             indexer_timeout_secs: default_indexer_timeout(),
+            exact: false,
         }
     }
 }
@@ -84,6 +89,21 @@ pub fn detect_language(root: &Path) -> anyhow::Result<Language> {
     )
 }
 
+/// `<git-common-dir>/structure` of the repository containing `root`, shared
+/// by all its worktrees (snapshots, SCIP document cache).
+pub(super) fn structure_dir(root: &Path) -> anyhow::Result<std::path::PathBuf> {
+    let common = crate::impact::git(root, &["rev-parse", "--git-common-dir"])?;
+    Ok(root.join(common.trim()).join("structure"))
+}
+
+/// Cache key of the indexer whose documents a language reuses.
+fn scip_cache_tag(lang: Language) -> String {
+    match lang {
+        Language::Java => format!("scip-java-{SCIP_JAVA_VERSION}"),
+        Language::TypeScript => format!("scip-typescript-{SCIP_TS_VERSION}"),
+    }
+}
+
 fn project_name(root: &Path) -> String {
     let canon = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     canon
@@ -96,6 +116,17 @@ pub fn analyze(
     root: &Path,
     opts: &Options,
     progress: &dyn Fn(Progress),
+) -> anyhow::Result<Analysis> {
+    analyze_in(root, opts, progress, false)
+}
+
+/// [`analyze`]; with `from_cache` (a clean checkout without its own
+/// `index.scip`), the SCIP index is first composed from cached documents.
+pub(super) fn analyze_in(
+    root: &Path,
+    opts: &Options,
+    progress: &dyn Fn(Progress),
+    from_cache: bool,
 ) -> anyhow::Result<Analysis> {
     let started = Instant::now();
     let step = |s: &str, pct: u8| {
@@ -115,7 +146,21 @@ pub fn analyze(
 
     step("indexing", 5);
     let t = Instant::now();
-    let index_path = if opts.use_scip {
+    let exts = crate::lang::frontend(lang).extensions();
+    let tag = scip_cache_tag(lang);
+    let reuse = opts.use_scip && !opts.reindex && from_cache && !root.join("index.scip").is_file();
+    let composed = if reuse {
+        // The cache is only a shortcut: on error, index as usual.
+        scip_cache::compose(root, exts, &tag).unwrap_or_else(|e| {
+            warnings.push(format!("cannot reuse cached SCIP documents: {e:#}"));
+            None
+        })
+    } else {
+        None
+    };
+    let index_path = if composed.is_some() || !opts.use_scip {
+        None
+    } else {
         ensure_index_with_progress(
             root,
             lang,
@@ -130,17 +175,26 @@ pub fn analyze(
                 })
             },
         )?
-    } else {
-        None
     };
+    if let Some(p) = &index_path
+        && let Err(e) = scip_cache::store(root, p, exts, &tag)
+    {
+        warnings.push(format!("cannot cache SCIP documents: {e:#}"));
+    }
 
-    let note = match (opts.use_scip, index_path.is_some(), ran_indexer.get()) {
-        (false, _, _) => "skipped (--no-scip)",
-        (true, false, _) => "no index (tree-sitter only)",
-        (true, true, true) => "ran indexer",
-        (true, true, false) => "reused index.scip",
+    let note = match (
+        opts.use_scip,
+        &composed,
+        index_path.is_some(),
+        ran_indexer.get(),
+    ) {
+        (false, ..) => "skipped (--no-scip)".to_string(),
+        (true, Some((_, c)), ..) => format!("cached documents for {}/{} files", c.covered, c.total),
+        (true, None, false, _) => "no index (tree-sitter only)".into(),
+        (true, None, true, true) => "ran indexer".into(),
+        (true, None, true, false) => "reused index.scip".into(),
     };
-    metrics.phase("indexer", t, Some(note));
+    metrics.phase("indexer", t, Some(&note));
 
     step("parsing", 35);
     let t = Instant::now();
@@ -151,20 +205,27 @@ pub fn analyze(
 
     step("linking", 60);
     let t = Instant::now();
-    let loaded = index_path.map(|p| (scip::load(&p), p));
+    let loaded = match composed {
+        Some((idx, coverage)) => {
+            warnings.push(coverage.warning());
+            Some(Ok(idx))
+        }
+        None => index_path.map(|p| {
+            scip::load(&p).map_err(|e| {
+                anyhow::anyhow!("cannot read {}: {e:#}; using tree-sitter only", p.display())
+            })
+        }),
+    };
     metrics.phase("scip load", t, None);
     let t = Instant::now();
     let (graph, link_stats) = match loaded {
-        Some((Ok(idx), _)) => {
+        Some(Ok(idx)) => {
             metrics.record_scip(&idx);
             let (g, st) = link(graph, &idx);
             (g, Some(st))
         }
-        Some((Err(e), p)) => {
-            warnings.push(format!(
-                "cannot read {}: {e:#}; using tree-sitter only",
-                p.display()
-            ));
+        Some(Err(e)) => {
+            warnings.push(e.to_string());
             (graph, None)
         }
         None => (graph, None),
