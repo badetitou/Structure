@@ -1,9 +1,9 @@
 ---
 id: 61
 title: TS HTTP calls resolve URLs built from local variables
-status: todo
+status: in-progress
 parent: 54
-branch: null
+branch: 61-ts-url-local-vars
 remote: null
 created: 2026-11-09
 ---
@@ -33,3 +33,30 @@ backend has no such endpoint, so they are correctly unmatched.
 
 ## Out of scope
 - Cross-function data flow, environment files, interceptors.
+
+## Brief (implementer)
+
+Goal: TS URL extraction follows a local variable holding the path, so OpenAPI-generated
+clients (`${this.configuration.basePath}${localVarPath}`) produce real paths.
+Read first: crates/lang-ts/src/http.rs (`raw_url`, placeholder, `normalize`), crates/lang-ts/src/lib.rs
+(where calls are attached), crates/lang-ts/tests/http_calls.rs; crates/core/src/http_link.rs (matching:
+suffix match, `{...}` = one segment, >= 1 literal segment). Real input, read-only:
+/Users/benoit.verhaeghe/Documents/WeMagnus/wegf/frontend/generated/wegf-open-api-compta/api/habilitations.service.ts
+(lines ~149-150) and another file with a path parameter (`encodeParam`).
+Design: when a template substitution or `+` operand is an identifier, look in the enclosing function
+body for `const|let <id> = <string|template|concat>` declared before the call and never assigned again
+in that body (`id =`, `id +=`); if found, inline its URL form (recursively through raw_url, depth 1,
+no further variable lookup), else placeholder as today. Also readonly/initialised class fields read as
+`this.<id>` only if trivial; skip otherwise. Placeholders adjacent to a resolved `/…` stay separate
+segments: `${base}${p}` with p=`/a/b` → `/{base}/a/b`.
+Measure: `cargo build --release -p structure-cli` then
+`./target/release/structure analyze --no-scip /Users/benoit.verhaeghe/Documents/WeMagnus/wegf/backend /Users/benoit.verhaeghe/Documents/WeMagnus/wegf/frontend -o <scratch>.json`
+— before: `http: 1417/2043 linked, 1 unknown path, 10 ambiguous`. Report after, the unmatched grouped by
+first segment, and the ratio excluding `{apiComptaUrl}` casino calls (endpoints not in that backend).
+Target (CLAUDE.md rule 6): >= 80% of calls whose endpoint exists; if not reached, say exactly what blocks it.
+Don't write anything in the wegf tree, don't build it, don't run its npm/maven.
+Verify: cargo fmt --check; cargo clippy --workspace --all-targets -- -D warnings;
+cargo test --workspace with STRUCTURE_FIXTURES=/Users/benoit.verhaeghe/Documents/Perso/Structure/fixtures
+(angular-realworld exact 18-call test and realworld 17/18 must stay). Unit tests: OpenAPI shape,
+path param via encodeParam → `{}`, reassigned variable → placeholder, variable declared after the call → placeholder.
+Rules: no unwrap/expect outside tests; no new deps.
