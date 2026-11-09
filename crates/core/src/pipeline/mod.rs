@@ -75,6 +75,8 @@ pub struct Analysis {
     pub classification: Classification,
     pub matrix: Matrix,
     pub link_stats: Option<LinkStats>,
+    /// HTTP call matching; only with several roots.
+    pub http_stats: Option<crate::http_link::HttpLinkStats>,
     pub metrics: Metrics,
     pub warnings: Vec<String>,
 }
@@ -269,6 +271,7 @@ pub(super) fn analyze_in(
         classification,
         matrix,
         link_stats,
+        http_stats: None,
         metrics,
         warnings,
     })

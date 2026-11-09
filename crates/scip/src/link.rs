@@ -370,7 +370,7 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
             EdgeKind::Call => stats.call_edges += 1,
             EdgeKind::Uses => stats.uses_edges += 1,
             EdgeKind::Implements => stats.implements_edges += 1,
-            EdgeKind::Extends => {}
+            EdgeKind::Extends | EdgeKind::Http => {}
         }
         if e.to.starts_with("ext:") {
             stats.ext_edges += 1;

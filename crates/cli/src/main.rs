@@ -85,6 +85,15 @@ fn run_analysis(
         Some(s) => eprintln!("link: {s:?}"),
         None => eprintln!("link: none (tree-sitter only)"),
     }
+    if let Some(h) = &analysis.http_stats {
+        eprintln!(
+            "http: {}/{} linked, {} unknown path, {} ambiguous",
+            h.linked, h.calls, h.unknown_path, h.ambiguous
+        );
+        for u in &h.unmatched {
+            eprintln!("  unmatched: {u}");
+        }
+    }
     for w in &analysis.warnings {
         eprintln!("warning: {w}");
     }

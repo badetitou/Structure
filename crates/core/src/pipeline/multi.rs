@@ -159,6 +159,8 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
         metrics.scip_documents += a.metrics.scip_documents;
         metrics.scip_occurrences += a.metrics.scip_occurrences;
     }
+    let (http_edges, http_stats) = crate::http_link::link_http(&graph);
+    graph.edges.extend(http_edges);
     metrics.record_edges(&graph);
 
     let classification = Classification {
@@ -173,6 +175,7 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
         classification,
         matrix,
         link_stats,
+        http_stats: Some(http_stats),
         metrics,
         warnings,
     }

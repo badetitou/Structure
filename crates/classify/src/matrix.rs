@@ -170,28 +170,34 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
                 .copied()
         })
         .collect();
-    let mut weights: BTreeMap<(usize, usize), u32> = BTreeMap::new();
-    for (f, t, _, kind, n) in class_edge_indices(graph) {
-        if !matches!(kind, EdgeKind::Call | EdgeKind::Uses) {
-            continue;
+    let class_edges = class_edge_indices(graph);
+    let group = |keep: fn(EdgeKind) -> bool| -> Vec<EdgeGroup> {
+        let mut weights: BTreeMap<(usize, usize), u32> = BTreeMap::new();
+        for &(f, t, _, kind, n) in &class_edges {
+            if !keep(kind) {
+                continue;
+            }
+            let (Some(i), Some(j)) = (cell_of_symbol[f], cell_of_symbol[t]) else {
+                continue;
+            };
+            if i != j {
+                *weights.entry((i, j)).or_insert(0) += n;
+            }
         }
-        let (Some(i), Some(j)) = (cell_of_symbol[f], cell_of_symbol[t]) else {
-            continue;
-        };
-        if i != j {
-            *weights.entry((i, j)).or_insert(0) += n;
+        let mut groups: Vec<EdgeGroup> = Vec::new();
+        for ((from, to), weight) in weights {
+            match groups.last_mut() {
+                Some(g) if g.from == from => g.targets.push((to, weight)),
+                _ => groups.push(EdgeGroup {
+                    from,
+                    targets: vec![(to, weight)],
+                }),
+            }
         }
-    }
-    let mut edges: Vec<EdgeGroup> = Vec::new();
-    for ((from, to), weight) in weights {
-        match edges.last_mut() {
-            Some(g) if g.from == from => g.targets.push((to, weight)),
-            _ => edges.push(EdgeGroup {
-                from,
-                targets: vec![(to, weight)],
-            }),
-        }
-    }
+        groups
+    };
+    let edges = group(|k| matches!(k, EdgeKind::Call | EdgeKind::Uses));
+    let http_edges = group(|k| k == EdgeKind::Http);
 
     let files: BTreeSet<&str> = graph.symbols.iter().map(|s| s.file.as_str()).collect();
     Matrix {
@@ -202,6 +208,7 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
         domains,
         cells,
         edges,
+        http_edges,
         warnings: vec![],
         generation: 0,
         domain_tree: cls.domain_tree.clone(),
