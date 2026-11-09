@@ -314,52 +314,106 @@ fn is_function(n: Node) -> bool {
     )
 }
 
-/// Initialiser of `const|let <id>` declared before `id` in the enclosing function body
-/// and never assigned in that body.
+/// Initialiser of the `const|let <id>` that lexically encloses `id`'s use (a direct
+/// declaration in an enclosing block, before the use), never assigned in the function.
+/// Parameters and loop-header variables of the same name are not resolved.
 fn local_initialiser<'t>(id: Node<'t>, src: &str) -> Option<Node<'t>> {
     let name = text(id, src);
-    let mut f = id.parent()?;
-    while !is_function(f) {
-        f = f.parent()?;
-    }
-    let body = f.child_by_field_name("body")?;
-    let mut found = None;
-    let mut assigned = false;
-    scan_var(body, src, name, id.start_byte(), &mut found, &mut assigned);
-    if assigned { None } else { found }
-}
-
-fn scan_var<'t>(
-    n: Node<'t>,
-    src: &str,
-    name: &str,
-    before: usize,
-    found: &mut Option<Node<'t>>,
-    assigned: &mut bool,
-) {
-    match n.kind() {
-        "variable_declarator" => {
-            if let Some(nm) = n.child_by_field_name("name")
-                && nm.kind() == "identifier"
-                && text(nm, src) == name
-            {
-                match n.child_by_field_name("value") {
-                    Some(v) if n.end_byte() <= before && found.is_none() => *found = Some(v),
-                    _ => *assigned = true,
+    let use_at = id.start_byte();
+    let mut found: Option<Option<Node<'t>>> = None;
+    let mut cur = id;
+    let func = loop {
+        let p = cur.parent()?;
+        if is_function(p) {
+            if declares_param(p, src, name) {
+                return None;
+            }
+            break p;
+        }
+        match p.kind() {
+            "statement_block" | "program" if found.is_none() => {
+                let mut c = p.walk();
+                for st in p.named_children(&mut c) {
+                    if st.kind() != "lexical_declaration" || st.end_byte() > use_at {
+                        continue;
+                    }
+                    let mut c2 = st.walk();
+                    for d in st.named_children(&mut c2) {
+                        if d.kind() == "variable_declarator"
+                            && d.child_by_field_name("name")
+                                .is_some_and(|n| n.kind() == "identifier" && text(n, src) == name)
+                        {
+                            // Latest declaration wins; no initialiser means unresolved.
+                            found = Some(d.child_by_field_name("value"));
+                        }
+                    }
                 }
             }
+            "for_in_statement" | "for_statement" if found.is_none() => {
+                let header = if p.kind() == "for_statement" {
+                    p.child_by_field_name("initializer")
+                } else {
+                    p.child_by_field_name("left")
+                };
+                if let Some(h) = header
+                    && p.child_by_field_name("body")
+                        .is_some_and(|b| b.id() == cur.id())
+                    && mentions(h, src, name)
+                {
+                    return None;
+                }
+            }
+            _ => {}
         }
+        cur = p;
+    };
+    let init = found??;
+    let body = func.child_by_field_name("body")?;
+    let mut assigned = false;
+    scan_assign(body, src, name, &mut assigned);
+    if assigned { None } else { Some(init) }
+}
+
+fn declares_param(f: Node, src: &str, name: &str) -> bool {
+    f.child_by_field_name("parameters")
+        .or_else(|| f.child_by_field_name("parameter"))
+        .is_some_and(|p| mentions(p, src, name))
+}
+
+/// True when an identifier called `name` appears anywhere under `n`.
+fn mentions(n: Node, src: &str, name: &str) -> bool {
+    if matches!(
+        n.kind(),
+        "identifier" | "shorthand_property_identifier" | "shorthand_property_identifier_pattern"
+    ) && text(n, src) == name
+    {
+        return true;
+    }
+    let mut c = n.walk();
+    n.named_children(&mut c).any(|ch| mentions(ch, src, name))
+}
+
+fn scan_assign(n: Node, src: &str, name: &str, assigned: &mut bool) {
+    match n.kind() {
         "assignment_expression" | "augmented_assignment_expression" => {
             if let Some(l) = n.child_by_field_name("left")
-                && l.kind() == "identifier"
-                && text(l, src) == name
+                && mentions(l, src, name)
             {
                 *assigned = true;
             }
         }
         "update_expression" => {
             if let Some(a) = n.child_by_field_name("argument")
-                && text(a, src) == name
+                && mentions(a, src, name)
+            {
+                *assigned = true;
+            }
+        }
+        // `for (p of xs)` on a pre-declared variable (no `const|let|var` in the header).
+        "for_in_statement" => {
+            if n.child_by_field_name("kind").is_none()
+                && let Some(l) = n.child_by_field_name("left")
+                && mentions(l, src, name)
             {
                 *assigned = true;
             }
@@ -368,7 +422,7 @@ fn scan_var<'t>(
     }
     let mut c = n.walk();
     for ch in n.named_children(&mut c) {
-        scan_var(ch, src, name, before, found, assigned);
+        scan_assign(ch, src, name, assigned);
     }
 }
 
