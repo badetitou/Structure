@@ -295,3 +295,23 @@ fn calls_in_callbacks_belong_to_the_enclosing_method() {
         .collect();
     assert_eq!(got, [("a.ts#S.a", Get, "/x"), ("a.ts#S.b", Post, "/y")]);
 }
+
+#[test]
+fn url_from_local_variable() {
+    let src = "class S { constructor(private httpClient: HttpClient) {}\n\
+      a() { let localVarPath = `/habilitations/has`;\n\
+        return this.httpClient.request<boolean>('get', `${this.configuration.basePath}${localVarPath}`, {}); }\n\
+      b(id: number) { let localVarPath = `/users/${this.configuration.encodeParam({name: 'id', value: id})}/roles`;\n\
+        return this.httpClient.request('delete', `${this.configuration.basePath}${localVarPath}`); }\n\
+      c() { let p = '/a'; p = '/b'; return this.httpClient.get(`${p}/x`); }\n\
+      d() { let p = '/a'; p += '/b'; return this.httpClient.get(`/api${p}`); }\n\
+      e() { const r = this.httpClient.get(`/api${p}`); const p = '/late'; return r; }\n\
+      f() { const q = '/a'; const p = `${q}/b`; return this.httpClient.get(`/api${p}`); } }";
+    assert_eq!(calls(src, "S.a"), [p(Get, "/{basePath}/habilitations/has")]);
+    assert_eq!(calls(src, "S.b"), [p(Delete, "/{basePath}/users/{}/roles")]);
+    assert_eq!(calls(src, "S.c"), [p(Get, "/{p}/x")]);
+    assert_eq!(calls(src, "S.d"), [p(Get, "/api{p}")]);
+    assert_eq!(calls(src, "S.e"), [p(Get, "/api{p}")]);
+    // One level deep only: `q` inside `p` stays a placeholder.
+    assert_eq!(calls(src, "S.f"), [p(Get, "/api{q}/b")]);
+}

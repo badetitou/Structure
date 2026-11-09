@@ -136,7 +136,7 @@ fn call_at(n: Node, src: &str, clients: &HashSet<String>) -> Option<HttpEndpoint
                         verb: object_method(a.get(1).copied(), src),
                         path: url(0),
                     })
-                } else if raw_url(first, src).is_some() {
+                } else if raw_url(first, src, 0).is_some() {
                     Some(HttpEndpoint {
                         verb: HttpVerb::Get,
                         path: url(0),
@@ -246,7 +246,7 @@ fn placeholder(n: Node, src: &str) -> String {
 }
 
 /// Raw URL text with placeholders; None when it is not a literal-based form.
-fn raw_url(n: Node, src: &str) -> Option<String> {
+fn raw_url(n: Node, src: &str, depth: u8) -> Option<String> {
     match n.kind() {
         "string" => Some(text(n, src).trim_matches(['"', '\'']).to_string()),
         "template_string" => {
@@ -258,7 +258,7 @@ fn raw_url(n: Node, src: &str) -> Option<String> {
                     "template_substitution" => {
                         let mut c2 = ch.walk();
                         match ch.named_children(&mut c2).next() {
-                            Some(e) => s.push_str(&placeholder(e, src)),
+                            Some(e) => s.push_str(&substitution(e, src, depth)),
                             None => s.push_str("{}"),
                         }
                     }
@@ -272,26 +272,108 @@ fn raw_url(n: Node, src: &str) -> Option<String> {
         {
             let l = n.child_by_field_name("left")?;
             let r = n.child_by_field_name("right")?;
-            Some(operand(l, src)? + &operand(r, src)?)
+            Some(operand(l, src, depth)? + &operand(r, src, depth)?)
         }
         "parenthesized_expression" => {
             let mut c = n.walk();
-            raw_url(n.named_children(&mut c).next()?, src)
+            raw_url(n.named_children(&mut c).next()?, src, depth)
         }
         _ => None,
     }
 }
 
 /// A concatenation operand: literal-based, identifier or member.
-fn operand(n: Node, src: &str) -> Option<String> {
+fn operand(n: Node, src: &str, depth: u8) -> Option<String> {
     match n.kind() {
-        "identifier" | "member_expression" => Some(placeholder(n, src)),
-        _ => raw_url(n, src),
+        "identifier" | "member_expression" => Some(substitution(n, src, depth)),
+        _ => raw_url(n, src, depth),
+    }
+}
+
+/// Placeholder for `e`, or the URL form of the local variable it names (one level deep).
+fn substitution(e: Node, src: &str, depth: u8) -> String {
+    if depth == 0
+        && e.kind() == "identifier"
+        && let Some(init) = local_initialiser(e, src)
+        && let Some(r) = raw_url(init, src, depth + 1)
+    {
+        return r;
+    }
+    placeholder(e, src)
+}
+
+fn is_function(n: Node) -> bool {
+    matches!(
+        n.kind(),
+        "function_declaration"
+            | "function_expression"
+            | "arrow_function"
+            | "method_definition"
+            | "generator_function_declaration"
+            | "generator_function"
+    )
+}
+
+/// Initialiser of `const|let <id>` declared before `id` in the enclosing function body
+/// and never assigned in that body.
+fn local_initialiser<'t>(id: Node<'t>, src: &str) -> Option<Node<'t>> {
+    let name = text(id, src);
+    let mut f = id.parent()?;
+    while !is_function(f) {
+        f = f.parent()?;
+    }
+    let body = f.child_by_field_name("body")?;
+    let mut found = None;
+    let mut assigned = false;
+    scan_var(body, src, name, id.start_byte(), &mut found, &mut assigned);
+    if assigned { None } else { found }
+}
+
+fn scan_var<'t>(
+    n: Node<'t>,
+    src: &str,
+    name: &str,
+    before: usize,
+    found: &mut Option<Node<'t>>,
+    assigned: &mut bool,
+) {
+    match n.kind() {
+        "variable_declarator" => {
+            if let Some(nm) = n.child_by_field_name("name")
+                && nm.kind() == "identifier"
+                && text(nm, src) == name
+            {
+                match n.child_by_field_name("value") {
+                    Some(v) if n.end_byte() <= before && found.is_none() => *found = Some(v),
+                    _ => *assigned = true,
+                }
+            }
+        }
+        "assignment_expression" | "augmented_assignment_expression" => {
+            if let Some(l) = n.child_by_field_name("left")
+                && l.kind() == "identifier"
+                && text(l, src) == name
+            {
+                *assigned = true;
+            }
+        }
+        "update_expression" => {
+            if let Some(a) = n.child_by_field_name("argument")
+                && text(a, src) == name
+            {
+                *assigned = true;
+            }
+        }
+        _ => {}
+    }
+    let mut c = n.walk();
+    for ch in n.named_children(&mut c) {
+        scan_var(ch, src, name, before, found, assigned);
     }
 }
 
 fn url_of(n: Node, src: &str) -> String {
-    raw_url(n, src).map_or_else(|| "?".to_string(), |r| normalize(&r))
+    raw_url(n, src, 0).map_or_else(|| "?".to_string(), |r| normalize(&r))
 }
 
 /// Leading `/`, single `/`, no trailing `/`, no query, no `scheme://host[:port]`.
