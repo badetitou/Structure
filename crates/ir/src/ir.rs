@@ -59,6 +59,25 @@ pub struct Symbol {
     /// HTTP requests made by this symbol. `path` is `?` when it is not a literal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub http_calls: Vec<HttpEndpoint>,
+    /// GWT RPC calls made by this symbol (Java methods).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rpc_calls: Vec<RpcCall>,
+}
+
+/// A call to a method of a GWT RPC service, as seen from the client.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RpcCall {
+    /// FQN of the sync interface (`X extends RemoteService`), or its simple
+    /// name when it is not in the parsed code.
+    pub service: String,
+    pub method: String,
+    /// Argument count at the call site (async: includes the `AsyncCallback`).
+    pub arity: u32,
+    /// The service is not in the parsed code and nothing says it is one (the
+    /// receiver was `X.Util.getInstance()` or a `GWT.create` cast, no `XAsync`
+    /// type): linked when the merged graph has such a service, else dropped.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub maybe: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -88,6 +107,8 @@ pub enum EdgeKind {
     Uses,
     /// Frontend HTTP call to the backend handler method it reaches.
     Http,
+    /// Client call to the server implementation of a GWT RPC service method.
+    Rpc,
 }
 
 impl EdgeKind {
@@ -99,6 +120,7 @@ impl EdgeKind {
             EdgeKind::Extends => 2,
             EdgeKind::Uses => 3,
             EdgeKind::Http => 4,
+            EdgeKind::Rpc => 5,
         }
     }
 }
@@ -165,6 +187,7 @@ mod tests {
             package: None,
             http: vec![],
             http_calls: vec![],
+            rpc_calls: vec![],
         }
     }
 

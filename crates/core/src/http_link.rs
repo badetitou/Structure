@@ -200,6 +200,7 @@ mod tests {
             package: None,
             http,
             http_calls: calls,
+            rpc_calls: vec![],
         }
     }
 

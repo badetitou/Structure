@@ -105,6 +105,11 @@ interface Matrix {
   // `http` edges (TS caller symbol -> Java handler method, `EdgeKind::Http`,
   // serde `http`) lifted to cells, so front `api_client` cells reach back `entry` cells.
   http_edges?: EdgeGroup[];
+  // Only when non-empty, one or several roots: same shape as `edges`, built from
+  // `rpc` edges (GWT RPC: client caller method -> server implementation method,
+  // `EdgeKind::Rpc`, serde `rpc`) lifted to cells. Linked by `rpc_link` from
+  // `Symbol.rpc_calls` (calls on `XAsync` receivers, `X extends RemoteService`).
+  rpc_edges?: EdgeGroup[];
   stats: Stats;
   generation?: number; // set by the app: id of the cached analysis; pass to `cell_symbols`
   warnings?: string[]; // only when non-empty: indexing failed, stale index...

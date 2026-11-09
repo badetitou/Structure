@@ -77,6 +77,8 @@ pub struct Analysis {
     pub link_stats: Option<LinkStats>,
     /// HTTP call matching; only with several roots.
     pub http_stats: Option<crate::http_link::HttpLinkStats>,
+    /// GWT RPC call matching; only when the graph has RPC calls.
+    pub rpc_stats: Option<crate::rpc_link::RpcLinkStats>,
     pub metrics: Metrics,
     pub warnings: Vec<String>,
 }
@@ -222,7 +224,7 @@ pub(super) fn analyze_in(
     };
     metrics.phase("scip load", t, None);
     let t = Instant::now();
-    let (graph, link_stats) = match loaded {
+    let (mut graph, link_stats) = match loaded {
         Some(Ok(idx)) => {
             metrics.record_scip(&idx);
             let (g, st) = link(graph, &idx);
@@ -234,6 +236,8 @@ pub(super) fn analyze_in(
         }
         None => (graph, None),
     };
+    let (rpc_edges, rpc_stats) = crate::rpc_link::link_rpc(&graph);
+    graph.edges.extend(rpc_edges);
     metrics.phase("link", t, None);
     metrics.record_edges(&graph);
 
@@ -272,6 +276,7 @@ pub(super) fn analyze_in(
         matrix,
         link_stats,
         http_stats: None,
+        rpc_stats: (rpc_stats.calls + rpc_stats.maybe_rpc > 0).then_some(rpc_stats),
         metrics,
         warnings,
     })
