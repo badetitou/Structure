@@ -8,17 +8,24 @@ names are snake_case; enums are snake_case strings. Rust definitions live in
 ## Commands
 
 ```ts
-invoke<Matrix>("analyze", { path: string });
+invoke<Matrix>("analyze", { paths: string[] });
 invoke<Impact>("impact", { path: string, base: string | null, head: string | null });
 invoke<History>("history", { path: string, limit: number | null });
 invoke<Diff>("diff", { path: string, base: string | null, head: string | null });
 invoke<CellSymbols>("cell_symbols", {
-  path: string, head: string | null, generation: number, cells: string[],
+  paths: string[], head: string | null, generation: number, cells: string[],
   offset: number | null, limit: number | null,
 });
 ```
 
-- `analyze(path)` analyzes the Java/TypeScript project at `path` and returns the matrix.
+- `analyze(paths)` analyzes the Java/TypeScript project at `paths` (one folder) and returns the matrix.
+  With several paths it runs `pipeline::analyze_many` (front + back analysed
+  together; the matrix carries `projects`, and `http_edges` when found). The
+  cache key is the sorted, deduplicated canonical paths joined with `"\n"`, so
+  one path keeps its old key and the order of `paths` does not matter. An empty
+  list is an error. `impact`, `history` and `diff` still take one `path` and
+  are not meant for a multi-project analysis: the UI makes no such call
+  (their panels are unavailable when `paths.length > 1`).
 - `impact(path, base, head)`: `base = null` means HEAD vs working tree;
   otherwise `base..head` (`head = null` means working tree). Impact cell ids
   and symbol ids refer to the ids in the `Matrix` from `analyze`.
@@ -30,9 +37,10 @@ invoke<CellSymbols>("cell_symbols", {
   `index.scip`. The result then carries `matrix`, the snapshot's matrix: show
   it instead of the working-tree one (cells as of that commit; the impact ids
   refer to it). With `head = null`, `matrix` is absent.
-- `cell_symbols(path, head, generation, cells, offset, limit)`: the top-level symbols of
+- `cell_symbols(paths, head, generation, cells, offset, limit)`: the top-level symbols of
   the given cell ids (the matrix carries counts only), sorted by (name, id),
-  concatenated in the order of `cells`. `head = null` reads the working-tree
+  concatenated in the order of `cells`. `paths` is the set given to `analyze`
+  (same key scheme). `head = null` reads the working-tree
   analysis, otherwise the snapshot of that commit: pass the full SHA of
   `Impact.head` (the backend resolves any `head` you gave `impact` to a full
   SHA, and snapshots are cached under it). `generation` is `Matrix.generation`

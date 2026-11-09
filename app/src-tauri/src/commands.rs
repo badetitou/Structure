@@ -14,6 +14,8 @@ use tauri::{AppHandle, Emitter, Manager};
 struct Entry<T> {
     key: String,
     /// Directory that was analysed (the project, or the commit's snapshot).
+    /// For a multi-root working-tree entry it is the first (sorted) root;
+    /// nothing reads it for working-tree entries (only snapshot entries use it).
     dir: PathBuf,
     /// `pipeline::worktree_fingerprint` taken before the analysis.
     fingerprint: Option<String>,
@@ -156,26 +158,64 @@ fn canonical(path: &str) -> Result<(PathBuf, String), String> {
     Ok((p, key))
 }
 
+/// Canonical roots of a (multi-)project analysis, sorted and deduplicated, and
+/// the cache key: the canonical paths joined with "\n". One path gives the
+/// same key as `canonical`.
+fn canonical_many(paths: &[String]) -> Result<(Vec<PathBuf>, String), String> {
+    if paths.is_empty() {
+        return Err("no project given".to_string());
+    }
+    let mut roots = paths
+        .iter()
+        .map(|p| canonical(p).map(|(p, _)| p))
+        .collect::<Result<Vec<_>, _>>()?;
+    roots.sort();
+    roots.dedup();
+    let key = roots
+        .iter()
+        .map(|p| p.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok((roots, key))
+}
+
+/// Fingerprint of a set of roots: one root's own, else every root's joined;
+/// none when any root has none.
+fn combined_fingerprint(roots: &[PathBuf]) -> Option<String> {
+    combine_fingerprints(
+        roots
+            .iter()
+            .map(|r| pipeline::worktree_fingerprint(r).ok())
+            .collect(),
+    )
+}
+
+/// One fingerprint is kept as is, several are joined; none when any is missing.
+fn combine_fingerprints(fps: Vec<Option<String>>) -> Option<String> {
+    let fps = fps.into_iter().collect::<Option<Vec<_>>>()?;
+    Some(fps.join("\n"))
+}
+
 /// Analyze (warnings travel in `Matrix::warnings`), emit progress, and cache
 /// the result. The previous entry for `key` is dropped first.
 fn run_analyze(
     app: &AppHandle,
-    path: &Path,
+    roots: &[PathBuf],
     key: &str,
     opts: &Options,
 ) -> Result<Arc<Analysis>, String> {
     let cache = app.state::<AnalysisCache>();
     cache.remove(key)?;
     // Taken before the analysis: a change made meanwhile invalidates the entry.
-    let fingerprint = pipeline::worktree_fingerprint(path).ok();
-    let mut a = pipeline::analyze(path, opts, &|p| emit_progress_event(app, p))
+    let fingerprint = combined_fingerprint(roots);
+    let mut a = pipeline::analyze_many(roots, opts, &|p| emit_progress_event(app, p))
         .map_err(|e| format!("{e:#}"))?;
     let generation = cache.next_generation();
     a.matrix.generation = generation;
     let a = Arc::new(a);
     cache.put(Entry {
         key: key.to_string(),
-        dir: path.to_path_buf(),
+        dir: roots.first().cloned().unwrap_or_default(),
         fingerprint,
         generation,
         snapshot: false,
@@ -194,11 +234,11 @@ fn short_rev(rev: &str) -> &str {
 }
 
 #[tauri::command]
-pub async fn analyze(app: AppHandle, path: String) -> Result<Matrix, String> {
+pub async fn analyze(app: AppHandle, paths: Vec<String>) -> Result<Matrix, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let (p, key) = canonical(&path)?;
+        let (roots, key) = canonical_many(&paths)?;
         // An explicit Analyze re-indexes when sources are newer than index.scip.
-        run_analyze(&app, &p, &key, &Options::default()).map(|a| a.matrix.clone())
+        run_analyze(&app, &roots, &key, &Options::default()).map(|a| a.matrix.clone())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -308,7 +348,7 @@ pub async fn impact(
                     reindex_if_stale: false,
                     ..Options::default()
                 };
-                run_analyze(&app, &p, &key, &opts)?
+                run_analyze(&app, std::slice::from_ref(&p), &key, &opts)?
             }
         };
         emit_progress(&app, "computing impact", 50);
@@ -327,7 +367,7 @@ pub async fn impact(
 #[tauri::command]
 pub async fn cell_symbols(
     app: AppHandle,
-    path: String,
+    paths: Vec<String>,
     head: Option<String>,
     generation: u64,
     cells: Vec<String>,
@@ -335,7 +375,7 @@ pub async fn cell_symbols(
     limit: Option<usize>,
 ) -> Result<CellSymbols, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let (_, key) = canonical(&path)?;
+        let (_, key) = canonical_many(&paths)?;
         let key = match head.as_deref() {
             Some(h) => snapshot_key(&key, h),
             None => key,
@@ -413,6 +453,37 @@ mod tests {
     #[test]
     fn canonical_reports_missing_path() {
         assert!(canonical("/definitely/not/here").is_err());
+    }
+
+    #[test]
+    fn canonical_many_sorts_dedups_and_keeps_single_key() {
+        let tmp = std::env::temp_dir();
+        let t = tmp.to_string_lossy().into_owned();
+        let (_, one) = canonical(&t).unwrap();
+        let (roots, key) = canonical_many(std::slice::from_ref(&t)).unwrap();
+        assert_eq!((roots.len(), &key), (1, &one));
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let (_, a) = canonical_many(&[t.clone(), cwd.clone()]).unwrap();
+        let (_, b) = canonical_many(&[cwd.clone(), t.clone(), t]).unwrap();
+        assert_eq!(a, b);
+        assert!(a.contains('\n'));
+        assert!(canonical_many(&[]).is_err());
+        assert!(canonical_many(&["/definitely/not/here".to_string()]).is_err());
+    }
+
+    #[test]
+    fn combine_fingerprints_keeps_one_joins_many_and_needs_all() {
+        let f = |s: &str| Some(s.to_string());
+        assert_eq!(combine_fingerprints(vec![f("a")]), f("a"));
+        assert_eq!(combine_fingerprints(vec![f("a"), f("b")]), f("a\nb"));
+        assert_eq!(combine_fingerprints(vec![f("a"), None]), None);
+        assert_eq!(combine_fingerprints(vec![]), f(""));
+        // Not a repository: no fingerprint, so a single root has none either.
+        let none = PathBuf::from("/definitely/not/here");
+        assert_eq!(combined_fingerprint(&[none]), None);
     }
 
     #[test]
