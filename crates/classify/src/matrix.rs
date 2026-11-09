@@ -410,6 +410,31 @@ mod tests {
     }
 
     #[test]
+    fn http_edges_are_kept_apart_from_edges() {
+        let (mut g, cls) = fixture();
+        g.edges = vec![
+            edge("Ctl#a", "Repo#q", EdgeKind::Http),
+            edge("Ctl#a", "Aaa", EdgeKind::Http),
+            edge("Svc#m", "Aaa", EdgeKind::Http), // intra-cell
+        ];
+        let m = build(&g, &cls, "p", 0);
+        assert!(m.edges.is_empty());
+        let e: Vec<_> = m
+            .http_edges
+            .iter()
+            .flat_map(|g| g.targets.iter().map(move |&(t, w)| (g.from, t, w)))
+            .collect();
+        let id = |c: &str| m.cells.iter().position(|x| x.id == c).unwrap();
+        assert_eq!(
+            e,
+            [
+                (id("entry:account"), id("business:account"), 1),
+                (id("entry:account"), id("persistence:account"), 1),
+            ]
+        );
+    }
+
+    #[test]
     fn json_roundtrip() {
         let (g, cls) = fixture();
         let m = build(&g, &cls, "p", 1);

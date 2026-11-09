@@ -54,7 +54,8 @@ fn score(call: &[&str], endpoint: &[&str]) -> Option<(usize, usize)> {
         }
         literal += 1;
     }
-    Some((literal, both))
+    // Placeholders alone (e.g. `/{apiUrl}`) must not match everything.
+    (literal >= 1).then_some((literal, both))
 }
 
 /// `Http` edges from each calling symbol to the handler it reaches, plus stats.
@@ -216,6 +217,18 @@ mod tests {
         let (e, s) = link_http(&g);
         assert_eq!(pairs(&e), [("c1", "h"), ("c2", "h")]);
         assert_eq!(s.linked, 2);
+    }
+
+    #[test]
+    fn a_match_needs_one_literal_segment() {
+        let g = graph(vec![
+            sym("h", vec![ep(Get, "/tags")], vec![]),
+            sym("c1", vec![], vec![ep(Get, "/{apiUrl}")]),
+            sym("c2", vec![], vec![ep(Get, "/{base}/tags")]),
+        ]);
+        let (e, s) = link_http(&g);
+        assert_eq!(pairs(&e), [("c2", "h")]);
+        assert_eq!(s.unmatched, ["c1 GET /{apiUrl}"]);
     }
 
     #[test]
