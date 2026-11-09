@@ -45,3 +45,25 @@ export function saveShowHttp(on: boolean) {
     // storage unavailable: the choice just is not persisted
   }
 }
+
+export const RPC_KEY = "structure.rpcEdges";
+
+export function parseShowRpc(raw: string | null): boolean {
+  return raw !== "false";
+}
+
+export function loadShowRpc(): boolean {
+  try {
+    return parseShowRpc(localStorage.getItem(RPC_KEY));
+  } catch {
+    return true;
+  }
+}
+
+export function saveShowRpc(on: boolean) {
+  try {
+    localStorage.setItem(RPC_KEY, String(on));
+  } catch {
+    // storage unavailable: the choice just is not persisted
+  }
+}

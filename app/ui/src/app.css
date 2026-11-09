@@ -36,6 +36,7 @@
   --band-stroke: oklch(0.7 0.03 255);
   --edge: oklch(0.65 0 0);
   --edge-http: oklch(0.62 0.19 50);
+  --edge-rpc: oklch(0.55 0.18 300);
   --fwd: oklch(0.6 0.17 150);
   --bwd: oklch(0.52 0.2 262);
   --both: oklch(0.6 0.22 305);
@@ -95,6 +96,7 @@
   --band-stroke: oklch(0.55 0.04 255);
   --edge: oklch(0.62 0.01 260);
   --edge-http: oklch(0.76 0.15 60);
+  --edge-rpc: oklch(0.74 0.14 300);
   --fwd: oklch(0.78 0.18 150);
   --bwd: oklch(0.72 0.15 255);
   --both: oklch(0.74 0.17 305);

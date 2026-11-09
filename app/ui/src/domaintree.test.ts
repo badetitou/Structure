@@ -56,6 +56,7 @@ const m: Matrix = {
     cell("ui", "b", 1),
   ],
   httpEdges: [],
+  rpcEdges: [],
   edges: [
     { from: "ui:a1", to: "ui:a2", weight: 5 },
     { from: "ui:a1", to: "model:a3", weight: 2 },
@@ -81,6 +82,18 @@ describe("aggregate", () => {
       { from: "ui:a2", to: "model:g:0/2", weight: 3 },
       { from: "ui:a2", to: "ui:b", weight: 1 },
     ]);
+  });
+  it("remaps rpc edges like edges", () => {
+    const withRpc: Matrix = {
+      ...m,
+      rpcEdges: [
+        { from: "ui:a1", to: "ui:a3", weight: 2 },
+        { from: "ui:a1", to: "ui:a4", weight: 3 },
+        { from: "ui:a3", to: "ui:a4", weight: 9 },
+      ],
+    };
+    const v = aggregate(withRpc, columns(tree, new Set(["g:0"])));
+    expect(v.rpcEdges).toEqual([{ from: "ui:a1", to: "ui:g:0/2", weight: 5 }]);
   });
   it("remaps http edges like edges: merged targets summed, internal ones dropped", () => {
     const withHttp: Matrix = {

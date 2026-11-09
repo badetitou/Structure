@@ -105,6 +105,8 @@ export interface ViewMatrix {
   edges: CellEdge[];
   /** HTTP links, re-mapped like `edges`. */
   httpEdges: CellEdge[];
+  /** RPC links, re-mapped like `edges`. */
+  rpcEdges: CellEdge[];
   /** Original cell id -> view cell id. */
   cellMap: Map<string, string>;
 }
@@ -146,6 +148,7 @@ export function aggregate(m: Matrix, cols: Column[]): ViewMatrix {
     cells: [...cells.values()],
     edges: remap(m.edges),
     httpEdges: remap(m.httpEdges),
+    rpcEdges: remap(m.rpcEdges),
     cellMap,
   };
 }

@@ -19,7 +19,7 @@ cd app/src-tauri && cargo tauri build --debug --no-bundle   # binary in target/d
 
 `app/ui/public/samples/` is a git-ignored copy of `docs/samples/`, refreshed by
 `predev`/`prebuild`; it is the browser fallback (no `__TAURI_INTERNALS__`).
-`npm test` runs vitest; `npm run check` runs svelte-check (`.ts` and `.svelte`; `npm run build` runs it too). Hovering a cell temporarily overrides impact colouring. The "HTTP links" toolbar toggle (kept in localStorage as `structure.httpEdges`, shown only when the matrix has front-to-back http links) shows or hides the dashed link edges; in a plain browser `/?sample=matrix-multi` loads `docs/samples/matrix-multi.json`. The "Dense" toolbar toggle (kept in localStorage) packs the matrix into uniform tiles without labels or edges (`layout.ts`).
+`npm test` runs vitest; `npm run check` runs svelte-check (`.ts` and `.svelte`; `npm run build` runs it too). Hovering a cell temporarily overrides impact colouring. The "HTTP links" toolbar toggle (kept in localStorage as `structure.httpEdges`, shown only when the matrix has front-to-back http links) shows or hides the dashed link edges; The "RPC links" toggle (`structure.rpcEdges`, shown only when the matrix has GWT RPC edges) does the same for dotted, purple RPC links (`/?sample=matrix-rpc`); in a plain browser `/?sample=matrix-multi` loads `docs/samples/matrix-multi.json`. The "Dense" toolbar toggle (kept in localStorage) packs the matrix into uniform tiles without labels or edges (`layout.ts`).
 
 ## Layout
 

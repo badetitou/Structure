@@ -4,6 +4,7 @@
   import type { ImpactView } from "../../../domaintree";
   import type { CellEdge } from "../../../api";
   import type { Tile } from "../../../layout";
+  import type { RemoteKind } from "../../../graph";
   import { edgePath } from "../../../matrixgeom";
 
   // An edge only knows its kind (default / forward / backward / impact). The default
@@ -15,21 +16,21 @@
     to,
     hover,
     impact,
-    http = false,
+    kind,
   }: {
     edge: CellEdge;
     from: Tile;
     to: Tile;
     hover: Hover | null;
     impact: ImpactView | null;
-    /** Front-to-back HTTP link: dashed, own colour while not highlighted. */
-    http?: boolean;
+    /** Remote link: HTTP dashed, RPC dotted, own colour while not highlighted. */
+    kind?: RemoteKind;
   } = $props();
 
-  const st = $derived(edgeStyle(edgeKind(edge.from, edge.to, hover, impact), edge.weight, http));
+  const st = $derived(edgeStyle(edgeKind(edge.from, edge.to, hover, impact), edge.weight, kind));
 </script>
 
-<path class:http d={edgePath(from, to)} style:stroke={st.stroke} style:opacity={st.opacity} stroke-width={st.width} marker-end="url(#{st.marker})" />
+<path class:http={kind === "http"} class:rpc={kind === "rpc"} d={edgePath(from, to)} style:stroke={st.stroke} style:opacity={st.opacity} stroke-width={st.width} marker-end="url(#{st.marker})" />
 
 <style>
   path {
@@ -38,5 +39,8 @@
   }
   path.http {
     stroke-dasharray: 6 4;
+  }
+  path.rpc {
+    stroke-dasharray: 2 3;
   }
 </style>
