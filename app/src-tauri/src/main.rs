@@ -12,7 +12,8 @@ fn main() {
             commands::analyze,
             commands::impact,
             commands::history,
-            commands::cell_symbols
+            commands::cell_symbols,
+            commands::diff
         ])
         .run(tauri::generate_context!());
     if let Err(e) = result {

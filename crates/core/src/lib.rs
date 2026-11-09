@@ -5,7 +5,7 @@ pub mod lang;
 pub mod pipeline;
 
 pub use structure_classify::{classify, matrix};
-pub use structure_git::impact;
+pub use structure_git::{diff, impact};
 pub use structure_ir::{ir, model};
 pub use structure_lang_java as java;
 pub use structure_lang_ts as ts;

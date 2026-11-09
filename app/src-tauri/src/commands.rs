@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use structure_core::matrix;
-use structure_core::model::{CellSymbols, History, Impact, Matrix, Progress};
+use structure_core::model::{CellSymbols, Diff, History, Impact, Matrix, Progress};
 use structure_core::pipeline::{self, Analysis, Options};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -312,8 +312,8 @@ pub async fn impact(
             }
         };
         emit_progress(&app, "computing impact", 50);
-        let result = pipeline::impact(&p, &analysis, base.as_deref(), None)
-            .map_err(|e| format!("{e:#}"))?;
+        let result =
+            pipeline::impact(&p, &analysis, base.as_deref(), None).map_err(|e| format!("{e:#}"))?;
         emit_progress(&app, "done", 100);
         Ok(result)
     })
@@ -362,6 +362,22 @@ pub async fn history(path: String, limit: Option<u32>) -> Result<History, String
     tauri::async_runtime::spawn_blocking(move || {
         let (p, _) = canonical(&path)?;
         pipeline::history(&p, limit.unwrap_or(200)).map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Textual diff of `base..head` (same meaning as `impact`), bounded in size.
+#[tauri::command]
+pub async fn diff(
+    path: String,
+    base: Option<String>,
+    head: Option<String>,
+) -> Result<Diff, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (p, _) = canonical(&path)?;
+        structure_core::diff::diff(&p, base.as_deref(), head.as_deref())
+            .map_err(|e| format!("{e:#}"))
     })
     .await
     .map_err(|e| e.to_string())?

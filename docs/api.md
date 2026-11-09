@@ -1,6 +1,6 @@
 # Tauri API (UI contract)
 
-The UI talks to the Rust side through four commands and one event. JSON field
+The UI talks to the Rust side through five commands and one event. JSON field
 names are snake_case; enums are snake_case strings. Rust definitions live in
 `crates/core/src/model.rs` and `ir.rs`. Samples: `docs/samples/matrix.json`,
 `docs/samples/impact.json`.
@@ -11,6 +11,7 @@ names are snake_case; enums are snake_case strings. Rust definitions live in
 invoke<Matrix>("analyze", { path: string });
 invoke<Impact>("impact", { path: string, base: string | null, head: string | null });
 invoke<History>("history", { path: string, limit: number | null });
+invoke<Diff>("diff", { path: string, base: string | null, head: string | null });
 invoke<CellSymbols>("cell_symbols", {
   path: string, head: string | null, generation: number, cells: string[],
   offset: number | null, limit: number | null,
@@ -54,6 +55,16 @@ invoke<CellSymbols>("cell_symbols", {
   non-ignored untracked files; `index.scip` ignored). Pass `commit.base` / `commit.id` as `impact(path, base, head)` to
   show one commit's diff (`base` is the first parent, or the empty tree for a
   root commit). Errors when the path is not a repository or has no commits.
+
+- `diff(path, base, head)`: the textual diff shown by the Diff panel, with the
+  same `base` / `head` meaning as `impact` (`git diff -M --relative`, so only
+  files under the project root). With `base = null` (working tree vs HEAD),
+  untracked non-ignored files are listed as added (regular files only, at most 1 MiB read
+  of each; symlinks and directories show as binary). A `base` / `head` starting with `-` is rejected. Bounded: at most 1000 files,
+  2000 lines per file, 20 000 lines in all and 1000 characters per line;
+  `FileDiff.truncated` / `Diff.truncated` flag what was cut (`additions` /
+  `deletions` stay exact). Fast (no analysis); `docs/samples/diff.json` is the
+  browser-only dev mode's answer.
 
 ## Event
 
@@ -132,6 +143,28 @@ interface Commit {
   subject: string; author: string;
   date: string;       // ISO 8601
   refs: string[];     // branches/tags pointing at it
+}
+
+interface Diff {
+  base: string;          // as requested ("HEAD" when base was null)
+  head: string | null;
+  files: FileDiff[];
+  truncated: boolean;    // some files or lines were left out
+}
+interface FileDiff {
+  path: string;          // new side (old path for a deleted file), relative to the project
+  old_path?: string;     // renames only
+  status: "added" | "deleted" | "modified" | "renamed";
+  binary: boolean;       // no hunks then
+  additions: number; deletions: number;
+  hunks: Hunk[];
+  truncated: boolean;    // some of this file's lines were left out
+}
+interface Hunk { header: string; lines: DiffLine[] } // header = "@@ -a,b +c,d @@ ..."
+interface DiffLine {
+  kind: "context" | "add" | "del";
+  old?: number; new?: number; // 1-based line numbers; absent on the side the line is not on
+  text: string;               // without the +/-/space marker
 }
 
 interface Progress { step: string; pct: number; detail?: string } // pct 0..100

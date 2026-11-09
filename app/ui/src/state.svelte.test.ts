@@ -7,6 +7,7 @@ vi.mock("./api", () => ({
   impact: vi.fn(),
   cellSymbols: vi.fn(),
   history: vi.fn(),
+  diff: vi.fn(),
 }));
 
 import * as api from "./api";
@@ -240,6 +241,57 @@ describe("AppState", () => {
     expect(s.impactError).toContain("bad ref");
     s.clearImpact();
     expect(s.impactError).toBe("");
+  });
+
+  it("loads the diff of the history selection, ignores superseded answers and clears it", async () => {
+    const c = (id: string, base: string) => ({ id, short: id, parents: [], base, subject: "s", author: "a", date: "", refs: [] });
+    mocked.analyze.mockResolvedValue(mx("work"));
+    mocked.history.mockResolvedValue({ dirty: false, commits: [c("c2", "c1"), c("c1", "e")] });
+    mocked.impact.mockResolvedValue(imp());
+    const late = { base: "c1", head: "c2", files: [], truncated: false };
+    const fresh = { base: "e", head: "c1", files: [], truncated: false };
+    let release: (v: typeof late) => void = () => {};
+    mocked.diff.mockReturnValueOnce(new Promise((r) => (release = r))).mockResolvedValueOnce(fresh);
+    const s = new AppState();
+    await s.load("/p");
+    expect(s.diff).toBeNull();
+    s.pickHistory({ kind: "range", newer: 0, older: 0, anchor: 0 });
+    expect(mocked.diff).toHaveBeenLastCalledWith("/p", "c1", "c2");
+    expect(s.diff).toEqual({ base: "c1", head: "c2", loading: true });
+    await flush();
+    s.runTypedImpact("e", "c1");
+    await flush();
+    release(late);
+    await flush();
+    expect(s.diff).toEqual({ base: "e", head: "c1", loading: false, data: fresh });
+    s.clearImpact();
+    expect(s.diff).toBeNull();
+  });
+
+  it("ignores a diff answer arriving after Clear, and loads the working tree diff", async () => {
+    const c = (id: string, base: string) => ({ id, short: id, parents: [], base, subject: "s", author: "a", date: "", refs: [] });
+    mocked.analyze.mockResolvedValue(mx("work"));
+    mocked.history.mockResolvedValue({ dirty: true, commits: [c("c2", "c1")] });
+    mocked.impact.mockResolvedValue(imp());
+    let release: (v: { base: string; head: string; files: []; truncated: boolean }) => void = () => {};
+    mocked.diff.mockReturnValueOnce(new Promise((r) => (release = r)));
+    const s = new AppState();
+    await s.load("/p");
+    s.pickHistory({ kind: "range", newer: 0, older: 0, anchor: 0 });
+    s.clearImpact();
+    release({ base: "c1", head: "c2", files: [], truncated: false });
+    await flush();
+    expect(s.diff).toBeNull();
+    mocked.diff.mockResolvedValue({ base: "HEAD", head: null, files: [], truncated: false });
+    s.pickHistory({ kind: "worktree" });
+    expect(mocked.diff).toHaveBeenLastCalledWith("/p", null, null);
+  });
+
+  it("reports a diff failure", async () => {
+    const s = await loaded();
+    mocked.diff.mockRejectedValue(new Error("boom"));
+    await s.loadDiff(null, null);
+    expect(s.diff).toEqual({ base: null, head: null, loading: false, error: "Error: boom" });
   });
 
   it("selects the working tree and single commits", async () => {
