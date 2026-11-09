@@ -63,10 +63,24 @@ pub struct DomainNode {
     pub children: Vec<DomainNode>,
 }
 
+/// One analysed root of a multi-root matrix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Project {
+    pub name: String,
+    pub root: String,
+    pub language: Language,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Matrix {
+    /// With several roots: the first root's name (see `projects`).
     pub project: String,
+    /// With several roots: the first root's language (see `projects`).
     pub language: Language,
+    /// Analysed roots when there are at least two (ids and domains are then
+    /// prefixed by the project name); omitted for a single root.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub projects: Vec<Project>,
     pub layers: Vec<Layer>,
     pub domains: Vec<String>,
     pub cells: Vec<Cell>,
