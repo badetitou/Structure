@@ -1,0 +1,88 @@
+{
+  "base": "5d2c9e4a1b2c3d4e5f60718293a4b5c6d7e8f902",
+  "head": "71be231a1b2c3d4e5f60718293a4b5c6d7e8f901",
+  "truncated": false,
+  "files": [
+    {
+      "path": "src/main/java/com/acme/order/OrderService.java",
+      "status": "modified",
+      "binary": false,
+      "additions": 9,
+      "deletions": 1,
+      "truncated": false,
+      "hunks": [
+        {
+          "header": "@@ -40,7 +40,15 @@ public class OrderService {",
+          "lines": [
+            { "kind": "context", "old": 40, "new": 40, "text": "        return repository.save(order);" },
+            { "kind": "context", "old": 41, "new": 41, "text": "    }" },
+            { "kind": "context", "old": 42, "new": 42, "text": "" },
+            { "kind": "del", "old": 43, "text": "    // TODO: cancellation" },
+            { "kind": "add", "new": 43, "text": "    public Order cancel(OrderId id) {" },
+            { "kind": "add", "new": 44, "text": "        Order order = repository.find(id).orElseThrow();" },
+            { "kind": "add", "new": 45, "text": "        if (order.isShipped()) {" },
+            { "kind": "add", "new": 46, "text": "            throw new IllegalStateException(\"already shipped\");" },
+            { "kind": "add", "new": 47, "text": "        }" },
+            { "kind": "add", "new": 48, "text": "        order.cancel();" },
+            { "kind": "add", "new": 49, "text": "        billing.refund(order);" },
+            { "kind": "add", "new": 50, "text": "        return repository.save(order);" },
+            { "kind": "add", "new": 51, "text": "    }" },
+            { "kind": "context", "old": 44, "new": 52, "text": "" },
+            { "kind": "context", "old": 45, "new": 53, "text": "    public List<Order> list() {" },
+            { "kind": "context", "old": 46, "new": 54, "text": "        return repository.findAll();" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/main/java/com/acme/order/CancelOrderController.java",
+      "status": "added",
+      "binary": false,
+      "additions": 6,
+      "deletions": 0,
+      "truncated": false,
+      "hunks": [
+        {
+          "header": "@@ -0,0 +1,6 @@",
+          "lines": [
+            { "kind": "add", "new": 1, "text": "package com.acme.order;" },
+            { "kind": "add", "new": 2, "text": "" },
+            { "kind": "add", "new": 3, "text": "@RestController" },
+            { "kind": "add", "new": 4, "text": "public class CancelOrderController {" },
+            { "kind": "add", "new": 5, "text": "    @PostMapping(\"/orders/{id}/cancel\") Order cancel(@PathVariable String id) { return service.cancel(new OrderId(id)); }" },
+            { "kind": "add", "new": 6, "text": "}" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/main/java/com/acme/billing/RefundPolicy.java",
+      "old_path": "src/main/java/com/acme/billing/Refunds.java",
+      "status": "renamed",
+      "binary": false,
+      "additions": 1,
+      "deletions": 1,
+      "truncated": false,
+      "hunks": [
+        {
+          "header": "@@ -3,3 +3,3 @@ package com.acme.billing;",
+          "lines": [
+            { "kind": "context", "old": 3, "new": 3, "text": "" },
+            { "kind": "del", "old": 4, "text": "public class Refunds {" },
+            { "kind": "add", "new": 4, "text": "public class RefundPolicy {" },
+            { "kind": "context", "old": 5, "new": 5, "text": "}" }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "docs/cancel-flow.png",
+      "status": "added",
+      "binary": true,
+      "additions": 0,
+      "deletions": 0,
+      "truncated": false,
+      "hunks": []
+    }
+  ]
+}
