@@ -1,7 +1,7 @@
 ---
 id: 65
 title: Endpoints declared on generated OpenAPI server interfaces are linked
-status: in-progress
+status: done
 parent: 54
 branch: 65-generated-api-endpoints
 remote: null
@@ -18,17 +18,17 @@ which carries the `@RequestMapping(value = "/habilitations/...", method = ...)`.
 interface-declared mapping on the implementing class method.
 
 ## Acceptance criteria
-- [ ] Endpoints declared on an interface (or abstract superclass) method are inherited by the
+- [x] Endpoints declared on an interface (or abstract superclass) method are inherited by the
   implementing method in the analysed code (same name and arity), so the Http edge targets the
   real controller method, not the interface.
-- [ ] Generated sources are read for endpoint extraction only: `target/generated-sources/**`
+- [x] Generated sources are read for endpoint extraction only: `target/generated-sources/**`
   (Maven) and `build/generated/**` (Gradle) are parsed when present, without adding their
   symbols to the matrix (or decide in the brief: added but placed in a `generated` domain).
-- [ ] When generated sources are absent (project never built), behaviour is unchanged and the
+- [x] When generated sources are absent (project never built), behaviour is unchanged and the
   CLI warns once that N controllers implement unknown `*Api` interfaces.
-- [ ] wegf backend + frontend `--no-scip`: linked ratio before (1419/2043) and after; target >= 80%
+- [x] wegf backend + frontend `--no-scip`: linked ratio before (1419/2043) and after; target >= 80%
   of calls excluding the casino `{apiComptaUrl}` calls (endpoints not in that backend).
-- [ ] Unit tests (interface mapping inherited; class-level prefix on the interface); goldens unchanged.
+- [x] Unit tests (interface mapping inherited; class-level prefix on the interface); goldens unchanged.
 
 ## Out of scope
 - Reading the OpenAPI yaml directly (alternative if generated sources are often missing — note it).
@@ -70,3 +70,13 @@ has target/ and build/: confirm they stay identical; realworld 17/18 and the 19-
 Unit tests: interface mapping inherited (with interface class prefix), generated-dir interface used but its symbols absent
 from the graph, implementation preferred over interface in link_http, no generated dir → unchanged.
 Rules: no unwrap/expect outside tests; no new deps.
+
+## Result
+- wegf backend+frontend (`--no-scip`): 1419 -> 1783/2043 linked (87%; ~90% excluding the 68 casino
+  `{apiComptaUrl}` calls). Parse 102 -> 226 ms (1253 generated files).
+- Remaining: `/habilitations` (86) — generated `HabilitationsApi` in api-compta/target is stale vs the yaml
+  (needs a wegf rebuild); api-organisation has no generated sources (14 controllers, CLI warning).
+- 15 ambiguous: 9 casino calls with a dynamic service name; 6 cross-service path collisions
+  (`GET /etiquettes` in organisation and compta, `POST /save`, `DELETE /deleteCreditsTresorerie`):
+  the frontend `{basePath}` does not say which backend service. Follow-up idea: map each generated
+  client package (`wegf-open-api-compta`, `-organisation`) or base-URL token to a backend module.
