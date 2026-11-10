@@ -64,7 +64,7 @@
       y={l.y}
       font-weight="bold"
       class:dense
-      transform={lay.rotateDomains ? `rotate(-90 ${l.x} ${l.y})` : undefined}
+      transform={lay.rotateDomains ? `rotate(-${lay.angle} ${l.x} ${l.y})` : undefined}
       dominant-baseline={lay.rotateDomains ? "middle" : undefined}
       text-anchor={lay.rotateDomains || lay.transposed ? undefined : "middle"}
       >{#if lay.flame && !lay.transposed}{@const only = head.members.length === 1 ? head.members[0] : undefined}<tspan class:group={only?.group} onclick={only?.group ? () => onexpand(only.key) : undefined}>{fitText(l.text, (lay.columns[i]?.w ?? 0) - 2, charW)}</tspan>{:else}{#each head.members as col, j (col.key)}{#if j > 0}{" ⇄ "}{/if}<tspan class:group={col.group} onclick={col.group ? () => onexpand(col.key) : undefined}>{col.group ? "▸ " : ""}{col.label}</tspan>{/each}{/if}<title>{l.text}</title></text
@@ -78,7 +78,7 @@
     y={l.y}
     font-weight="bold"
     class:dense
-    transform={lay.rotateLayers ? `rotate(-90 ${l.x} ${l.y})` : undefined}
+    transform={lay.rotateLayers ? `rotate(-${lay.angle} ${l.x} ${l.y})` : undefined}
     dominant-baseline={lay.rotateLayers ? "middle" : undefined}
     text-anchor={lay.transposed && !lay.rotateLayers ? "middle" : undefined}
     >{lay.flame && lay.transposed ? fitText(l.text, (lay.rows[i]?.w ?? 0) - 4, charW) : l.text}<title>{l.text}</title></text

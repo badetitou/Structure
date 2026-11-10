@@ -109,3 +109,22 @@ export function saveAligned(on: boolean) {
     // storage unavailable: the choice just is not persisted
   }
 }
+
+export const ANGLED_KEY = "structure.options.angledLabels";
+
+/** Whether rotated top labels are drawn at 45 degrees; off when unset or storage is unavailable. */
+export function loadAngled(): boolean {
+  try {
+    return localStorage.getItem(ANGLED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveAngled(on: boolean) {
+  try {
+    localStorage.setItem(ANGLED_KEY, on ? "1" : "0");
+  } catch {
+    // storage unavailable: the choice just is not persisted
+  }
+}

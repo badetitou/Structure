@@ -9,11 +9,13 @@ import type { Mode } from "./layout";
 import { RequestGuard, shownMatrix } from "./matrixsel";
 import {
   loadAligned,
+  loadAngled,
   loadMode,
   loadShowHttp,
   loadShowRpc,
   loadTransposed,
   saveAligned,
+  saveAngled,
   saveMode,
   saveShowHttp,
   saveShowRpc,
@@ -56,6 +58,8 @@ export class AppState {
   transposed = $state(loadTransposed());
   /** Multi-project matrix: front and back domains share rows, projects get their own layer segment (persisted). */
   aligned = $state(loadAligned());
+  /** Option: rotated top labels drawn at 45 degrees instead of upright (persisted). */
+  angledLabels = $state(loadAngled());
   /** Null when unavailable (not a git repo, error): the sidebar is hidden. */
   history = $state.raw<History | null>(null);
   historySel = $state.raw<Selection | null>(null);
@@ -160,6 +164,11 @@ export class AppState {
   setAligned(on: boolean) {
     this.aligned = on;
     saveAligned(on);
+  }
+
+  setAngledLabels(on: boolean) {
+    this.angledLabels = on;
+    saveAngled(on);
   }
 
   setTransposed(on: boolean) {

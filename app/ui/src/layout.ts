@@ -47,6 +47,8 @@ export interface Layout {
   rotateDomains: boolean;
   /** Rotate layer labels by -90 degrees around their anchor (dense, transposed). */
   rotateLayers: boolean;
+  /** Rotation of rotated labels, in degrees (`rotate(-angle)`): 90, or 45 for angled top labels. */
+  angle: number;
   /** Domains are rows and layers columns; domain labels and bands sit on the left. */
   transposed: boolean;
   /** Labels under cells and edges are only drawn in normal mode. */
@@ -75,6 +77,8 @@ const longest = (names: readonly string[]) => Math.max(0, ...names.map((n) => n.
 const denseMargin = (names: readonly string[]) => 12 + DENSE_CHAR_W * longest(names);
 /** Left room for horizontal domain labels when transposed. */
 const labelMargin = (names: readonly string[]) => 12 + LABEL_CHAR_W * longest(names);
+/** Extent of the longest dense label drawn at 45 degrees, along each axis. */
+const angledReach = (names: readonly string[]) => Math.ceil(DENSE_CHAR_W * longest(names) * Math.SQRT1_2);
 
 /** Flame mode: row height, minimum column width, target width before minimums. */
 export const FLAME_ROW = 56;
@@ -218,17 +222,24 @@ export function layout(
   layerTexts: readonly string[] = layers,
   /** Layer indices that start a new segment: each gets an extra gap before it. */
   gapsBefore: readonly number[] = [],
+  /** Draw the rotated top labels (dense mode) at 45 degrees instead of upright. */
+  angled = false,
 ): Layout {
   const dense = mode === "dense";
   const flame = mode === "flame";
+  const tilt = dense && angled;
+  // Angled top labels need less height but run past the last column: `reach` is added after it.
+  const reach = tilt ? angledReach(transposed ? layerTexts : domainTexts) : 0;
   // Room before the domain axis holds the layer labels, room before the layer axis the domain labels.
-  const layerRoom = dense ? denseMargin(layerTexts) : transposed ? MARGIN_T : MARGIN_L;
+  const layerRoom = dense ? (tilt && transposed ? 12 + reach : denseMargin(layerTexts)) : transposed ? MARGIN_T : MARGIN_L;
   const domainRoom = transposed
     ? dense
       ? denseMargin(domainTexts)
       : labelMargin(domainTexts)
     : dense
-      ? denseMargin(domainTexts)
+      ? tilt
+        ? 12 + reach
+        : denseMargin(domainTexts)
       : MARGIN_T;
   const gap = dense ? GAP_DENSE : GAP_NORMAL;
   const offs = layers.map((_, i) => gap * gapsBefore.filter((g) => g > 0 && g <= i).length);
@@ -246,11 +257,12 @@ export function layout(
     flame,
     transposed,
     separators,
+    angle: tilt ? 45 : 90,
   };
   if (!transposed) {
     return {
       ...common,
-      width: core.uEnd,
+      width: core.uEnd + reach,
       height: core.vEnd,
       tiles: core.tiles,
       domainLabels: domains.map((d, i) => ({
@@ -269,7 +281,7 @@ export function layout(
   }
   return {
     ...common,
-    width: core.vEnd,
+    width: core.vEnd + reach,
     height: core.uEnd,
     tiles: core.tiles.map((t) => ({ ...t, x: t.y, y: t.x, w: t.h, h: t.w })),
     domainLabels: domains.map((d, i) => ({
