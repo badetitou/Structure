@@ -56,6 +56,38 @@ export function initialExpanded(tree: DomainNode[], max = MAX_COLUMNS): Set<stri
   return expanded;
 }
 
+/** Group keys (`g:<index path>`) by label path; same-label siblings are told apart by rank. */
+function groupKeysByLabel(tree: DomainNode[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (nodes: DomainNode[], path: string | null, labels: string) => {
+    const seen = new Map<string, number>();
+    nodes.forEach((n, i) => {
+      if (!isGroup(n)) return;
+      const rank = seen.get(n.label) ?? 0;
+      seen.set(n.label, rank + 1);
+      const p = path === null ? String(i) : childPath(path, i);
+      const l = `${labels}/${n.label}#${rank}`;
+      out.set(l, `g:${p}`);
+      walk(n.children, p, l);
+    });
+  };
+  walk(tree, null, "");
+  return out;
+}
+
+/** The expanded groups of `from` carried over to `to` (e.g. another commit's tree) by label path:
+ * groups that still exist stay open, wherever their index moved. */
+export function remapExpanded(from: DomainNode[], to: DomainNode[], expanded: ReadonlySet<string>): Set<string> {
+  if (from === to) return new Set(expanded);
+  const target = groupKeysByLabel(to);
+  const out = new Set<string>();
+  for (const [labels, key] of groupKeysByLabel(from)) {
+    const k = target.get(labels);
+    if (k && expanded.has(key)) out.add(k);
+  }
+  return out;
+}
+
 /** Visible columns, left to right, for the given expanded group keys. */
 export function columns(tree: DomainNode[], expanded: ReadonlySet<string>): Column[] {
   const out: Column[] = [];
