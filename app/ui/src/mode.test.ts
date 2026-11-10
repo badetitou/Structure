@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ALIGNED_KEY,
+  ANGLED_KEY,
   HTTP_KEY,
   MODE_KEY,
   RPC_KEY,
   TRANSPOSED_KEY,
   loadAligned,
+  loadAngled,
   loadMode,
   loadShowHttp,
   loadShowRpc,
@@ -15,6 +17,7 @@ import {
   parseShowHttp,
   parseShowRpc,
   saveAligned,
+  saveAngled,
   saveMode,
   saveShowHttp,
   saveShowRpc,
@@ -138,5 +141,26 @@ describe("aligned view persistence", () => {
     vi.stubGlobal("localStorage", { getItem: boom, setItem: boom });
     expect(loadAligned()).toBe(true);
     expect(() => saveAligned(false)).not.toThrow();
+  });
+});
+
+describe("angled labels persistence", () => {
+  it("round-trips through storage, off by default", () => {
+    const st = memoryStorage();
+    vi.stubGlobal("localStorage", st);
+    expect(loadAngled()).toBe(false);
+    saveAngled(true);
+    expect(st.getItem(ANGLED_KEY)).toBe("1");
+    expect(loadAngled()).toBe(true);
+    saveAngled(false);
+    expect(loadAngled()).toBe(false);
+  });
+  it("does not throw when storage is unavailable", () => {
+    const boom = () => {
+      throw new Error("blocked");
+    };
+    vi.stubGlobal("localStorage", { getItem: boom, setItem: boom });
+    expect(loadAngled()).toBe(false);
+    expect(() => saveAngled(true)).not.toThrow();
   });
 });
