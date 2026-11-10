@@ -12,7 +12,7 @@
   import type { CellEdge, DomainNode, Matrix } from "../../api";
   import { align, canAlign, projectOf } from "../../aligned";
   import { defaultEdgeOpacity } from "../../cellstate";
-  import { FLAME_MAX_COLUMNS, MAX_COLUMNS, aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded } from "../../domaintree";
+  import { FLAME_MAX_COLUMNS, MAX_COLUMNS, aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded, remapExpanded } from "../../domaintree";
   import { adjacency, reach, visibleEdges, type RemoteKind } from "../../graph";
   import { BAND_DENSE, BAND_NORMAL, STROKE_DENSE, STROKE_NORMAL, layout } from "../../layout";
   import { app } from "../../state.svelte";
@@ -32,9 +32,11 @@
 
   // Collapsible columns along the domain tree (module domains), else one per domain.
   const tree = $derived(matrix.domain_tree && matrix.domain_tree.length > 0 ? matrix.domain_tree : undefined);
-  // A new matrix (the tree can differ between commits) or mode starts from its default
-  // expansion; the flame view opens the tree much deeper so the matrix grows sideways.
-  let override = $state.raw<{ matrix: Matrix; flame: boolean; set: Set<string> } | null>(null);
+  // A new analysis or mode starts from its default expansion; the flame view opens the tree
+  // much deeper so the matrix grows sideways. A commit snapshot of the same analysis keeps
+  // the open groups (remapped by label, as its tree can differ) and the zoom.
+  const base = $derived(app.work ?? matrix);
+  let override = $state.raw<{ base: Matrix; tree: DomainNode[]; flame: boolean; set: Set<string> } | null>(null);
   const flame = $derived(mode === "flame");
   // Aligned view: several projects with remote links, front and back domains share rows.
   const alignedOn = $derived(app.aligned && canAlign(matrix.projects, matrix.httpEdges, matrix.rpcEdges));
@@ -48,13 +50,17 @@
     });
     return set;
   };
-  const expanded = $derived(
-    override && override.matrix === matrix && override.flame === flame
-      ? override.set
-      : tree
-        ? defaultExpanded(tree)
-        : new Set<string>(),
-  );
+  const baseTree = $derived(base.domain_tree && base.domain_tree.length > 0 ? base.domain_tree : undefined);
+  const expanded = $derived.by(() => {
+    if (!tree) return new Set<string>();
+    const src =
+      override && override.base === base && override.flame === flame
+        ? override
+        : baseTree
+          ? { tree: baseTree, set: defaultExpanded(baseTree) }
+          : { tree, set: defaultExpanded(tree) };
+    return remapExpanded(src.tree, tree, src.set);
+  });
   const cols = $derived(tree ? columns(tree, expanded) : flatColumns(matrix.domains));
   const vm0 = $derived(aggregate(matrix, cols));
   const projectNames = $derived((matrix.projects ?? []).map((p) => p.name));
@@ -150,7 +156,7 @@
     const set = new Set(expanded);
     if (on) set.add(key);
     else set.delete(key);
-    override = { matrix, flame, set };
+    if (tree) override = { base, tree, flame, set };
     // Expand / collapse changes the cell ids: drop the selection and hover.
     app.selectCell(null);
   }
@@ -162,18 +168,19 @@
   let svg: SVGSVGElement | undefined = $state();
   let pane = $state.raw({ w: 1, h: 1 });
   const fitOf = (p: { w: number; h: number }) => fit(content.w, content.h, p.w, p.h);
-  // The user's view, valid only for the matrix, mode and orientation it was set under; a new
-  // matrix, mode or orientation falls back to the default view in the same render (expand / collapse keeps it).
+  // The user's view, valid only for the analysis, mode and orientation it was set under; a new
+  // analysis, mode or orientation falls back to the default view in the same render (expand / collapse
+  // and switching to a commit snapshot keep it).
   // Dense and flame modes start at 1:1 pixels anchored top-left; Fit shows everything.
-  let userVb = $state.raw<{ vb: ViewBox; matrix: Matrix; mode: string; transposed: boolean } | null>(null);
+  let userVb = $state.raw<{ vb: ViewBox; base: Matrix; mode: string; transposed: boolean } | null>(null);
   const vb = $derived(
-    userVb && userVb.matrix === matrix && userVb.mode === mode && userVb.transposed === transposed
+    userVb && userVb.base === base && userVb.mode === mode && userVb.transposed === transposed
       ? userVb.vb
       : mode !== "normal"
         ? oneToOne(pane.w, pane.h)
         : fitOf(pane),
   );
-  const setVb = (v: ViewBox) => (userVb = { vb: v, matrix, mode, transposed });
+  const setVb = (v: ViewBox) => (userVb = { vb: v, base, mode, transposed });
   let panning = $state(false);
   const transform = $derived(`scale(${pane.w / vb.w}) translate(${-vb.x} ${-vb.y})`);
   const measure = (h: HTMLElement) => ({ w: Math.max(h.clientWidth, 1), h: Math.max(h.clientHeight, 1) });
