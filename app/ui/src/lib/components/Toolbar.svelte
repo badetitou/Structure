@@ -15,6 +15,7 @@
   import { app } from "../../state.svelte";
   import { folderName } from "../../recent";
   import ImpactRange from "./ImpactRange.svelte";
+  import OptionsButton from "./OptionsButton.svelte";
   import ViewsMenu from "./workspace/ViewsMenu.svelte";
 
   // The analysis screen's single top bar: project, matrix controls, views, theme, close.
@@ -125,6 +126,7 @@
   <span class="ml-auto flex flex-none items-center gap-1.5">
     {#if ready}<ViewsMenu />{/if}
     <ThemeSwitch />
+    <OptionsButton />
     {@render iconBtn(XIcon, "Close project", onClose)}
   </span>
 </header>

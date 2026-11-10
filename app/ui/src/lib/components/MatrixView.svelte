@@ -73,6 +73,7 @@
       transposed,
       al ? al.layers.map((l) => l.layer) : undefined,
       al?.segments,
+      app.angledLabels,
     ),
   );
   // Aligned: only the primary project's bands, shifted to its first row.
