@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Cell, DomainNode, Impact, Matrix } from "./api";
-import { aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded } from "./domaintree";
+import { aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded, remapExpanded } from "./domaintree";
 
 const leaf = (d: string, size = 1): DomainNode => ({ label: d, domain: d, size, children: [] });
 const group = (label: string, children: DomainNode[]): DomainNode => ({
@@ -176,5 +176,22 @@ describe("review cases", () => {
     expect(r.impacted.get("ui:g:0/2")).toBe(1);
     expect(r.impacted.get("ui:a1")).toBe(2);
     expect(aggregateImpact(null, v.cellMap).changed.size).toBe(0);
+  });
+});
+
+describe("remapExpanded", () => {
+  it("keeps open groups open when their index moves in another tree", () => {
+    const other = [leaf("z"), group("A", [leaf("a0"), leaf("a1"), leaf("a2"), group("AG", [leaf("a3")])]), group("N", [leaf("n")])];
+    expect(remapExpanded(tree, other, new Set(["g:0", "g:0/2"]))).toEqual(new Set(["g:1", "g:1/3"]));
+  });
+  it("drops groups missing from the target and keeps closed ones closed", () => {
+    const other = [group("A", [leaf("a1")]), leaf("b")];
+    expect(remapExpanded(tree, other, new Set(["g:0/2"]))).toEqual(new Set());
+    expect(remapExpanded(tree, other, new Set(["g:0"]))).toEqual(new Set(["g:0"]));
+  });
+  it("tells same-label siblings apart by rank", () => {
+    const from = [group("X", [leaf("p")]), group("X", [leaf("q")])];
+    const to = [leaf("new"), group("X", [leaf("p")]), group("X", [leaf("q")])];
+    expect(remapExpanded(from, to, new Set(["g:1"]))).toEqual(new Set(["g:2"]));
   });
 });
