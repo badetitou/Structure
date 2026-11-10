@@ -219,3 +219,31 @@ describe("layout segments", () => {
     expect(l.layerLabels.map((x) => x.text)).toEqual(["A", "B", "C"]);
   });
 });
+
+describe("layout angled top labels", () => {
+  const long = "a".repeat(20);
+  it("tilts dense top labels to 45 degrees, lowering the header and widening the matrix", () => {
+    const up = layout("dense", layers, ["a", long], cells);
+    const tilt = layout("dense", layers, ["a", long], cells, undefined, false, undefined, [], true);
+    expect([up.angle, tilt.angle]).toEqual([90, 45]);
+    expect(tilt.rotateDomains).toBe(true);
+    const reach = Math.ceil(DENSE_CHAR_W * 20 * Math.SQRT1_2);
+    expect(tilt.width).toBe(up.width + reach);
+    expect(tilt.height).toBeLessThan(up.height);
+    expect(tilt.domainLabels[0]!.y).toBe(12 + reach - 4);
+  });
+  it("tilts the layer labels when transposed", () => {
+    const up = layout("dense", [long], domains, cells, domains, true);
+    const tilt = layout("dense", [long], domains, cells, domains, true, undefined, [], true);
+    expect(tilt.rotateLayers).toBe(true);
+    expect(tilt.angle).toBe(45);
+    expect(tilt.height).toBeLessThan(up.height);
+    expect(tilt.width).toBeGreaterThan(up.width);
+  });
+  it("leaves normal and flame modes upright", () => {
+    for (const mode of ["normal", "flame"] as const) {
+      const a = layout(mode, layers, domains, cells, undefined, false, undefined, [], true);
+      expect(a).toEqual(layout(mode, layers, domains, cells));
+    }
+  });
+});
