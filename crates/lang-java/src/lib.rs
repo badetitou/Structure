@@ -826,10 +826,21 @@ pub fn parse_project_with_warnings(root: &Path, warnings: &mut Vec<String>) -> R
     assemble(&root.to_string_lossy(), parsed, generated, warnings)
 }
 
+/// Whether the directory walk would reach `rel`: no hidden component, and no
+/// `target` / `build` / `node_modules` directory unless under a `src/` one.
+fn walk_reaches(rel: &str) -> bool {
+    let comps: Vec<&str> = rel.split('/').collect();
+    let dirs = &comps[..comps.len().saturating_sub(1)];
+    !comps.iter().any(|c| c.starts_with('.'))
+        && !dirs.iter().enumerate().any(|(i, d)| {
+            matches!(*d, "target" | "build" | "node_modules") && !dirs[..i].contains(&"src")
+        })
+}
+
 /// Build the graph from in-memory `(relative path, source text)` pairs, with no
-/// file system access. Applies the walk's name filter (`.java`, not under
-/// `src/test/`). No generated sources are taken: endpoints are not inherited
-/// from them.
+/// file system access. Applies the walk's filters (`.java`, not under
+/// `src/test/`, no hidden or build directory), `.gitignore` aside. No generated
+/// sources are taken: endpoints are not inherited from them.
 pub fn parse_sources(
     root_label: &str,
     sources: &[(String, String)],
@@ -837,7 +848,9 @@ pub fn parse_sources(
 ) -> Result<Graph> {
     let mut kept: Vec<&(String, String)> = sources
         .iter()
-        .filter(|(rel, _)| rel.ends_with(".java") && !rel.contains("src/test/"))
+        .filter(|(rel, _)| {
+            rel.ends_with(".java") && !rel.contains("src/test/") && walk_reaches(rel)
+        })
         .collect();
     // Same order as the walk's sorted `PathBuf`s: component by component.
     kept.sort_by(|a, b| a.0.split('/').cmp(b.0.split('/')));
@@ -1388,6 +1401,13 @@ record Point(int x, int y) implements Shape { double len() { return 0; } }
             // String order and path order differ for these two.
             ("src/main/java/a/X.java", "package a; class X {}"),
             ("src/main/java/a-b/Y.java", "package ab; class Y {}"),
+            // Skipped by the walk: hidden and build directories; kept under `src/`.
+            (".mvn/wrapper/W.java", "class W {}"),
+            ("target/gen/G.java", "package g; class G {}"),
+            (
+                "src/main/java/p/build/K.java",
+                "package p.build; class K {}",
+            ),
         ]
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .into();
