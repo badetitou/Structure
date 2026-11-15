@@ -9,6 +9,7 @@ members = [
     "crates/git",
     "crates/core",
     "crates/cli",
+    "crates/wasm",
 ]
 exclude = ["app"]
 
@@ -30,3 +31,4 @@ tree-sitter-typescript = "0.23"
 rayon = "1"
 libc = "0.2"
 ignore = "0.4"
+wasm-bindgen = "0.2"
