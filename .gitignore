@@ -1,6 +1,7 @@
 /target
 /fixtures/
 /out/
+/crates/wasm/pkg/
 node_modules/
 /app/ui/dist/
 /app/src-tauri/target/
