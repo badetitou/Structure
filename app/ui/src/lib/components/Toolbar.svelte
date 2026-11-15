@@ -26,7 +26,15 @@
     onFit,
     onClose,
     ready,
-  }: { onZoomIn: () => void; onZoomOut: () => void; onFit: () => void; onClose: () => void; ready: boolean } = $props();
+    embedded = false,
+  }: {
+    onZoomIn: () => void;
+    onZoomOut: () => void;
+    onFit: () => void;
+    onClose: () => void;
+    ready: boolean;
+    embedded?: boolean;
+  } = $props();
 
   // Several projects: their names joined; else the project name or folder.
   const title = $derived(
@@ -115,7 +123,7 @@
       onPressedChange={(v) => app.setShowRpc(v)}>RPC links</Toggle
     >
   {/if}
-  {#if !app.multi}
+  {#if !app.multi && !embedded}
   {@render divider()}
   <ImpactRange />
   <Button variant="outline" size="sm" disabled={!app.impact || app.impactBusy} onclick={() => app.clearImpact()}
@@ -127,6 +135,6 @@
     {#if ready}<ViewsMenu />{/if}
     <ThemeSwitch />
     <OptionsButton />
-    {@render iconBtn(XIcon, "Close project", onClose)}
+    {#if !embedded}{@render iconBtn(XIcon, "Close project", onClose)}{/if}
   </span>
 </header>
