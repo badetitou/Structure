@@ -1,0 +1,4 @@
+/* Entry stylesheet of the extension pages: the Vite root is `extension/`, so tell Tailwind
+   to scan the app sources explicitly. */
+@import "../app.css";
+@source "..";
