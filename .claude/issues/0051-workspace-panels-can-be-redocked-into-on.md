@@ -4,7 +4,7 @@ title: Workspace panels can be redocked into one another reliably
 status: done
 parent: 46
 branch: claude/dock-views-redocking-826f08
-remote: null
+remote: 39
 created: 2026-11-09
 ---
 ## Context

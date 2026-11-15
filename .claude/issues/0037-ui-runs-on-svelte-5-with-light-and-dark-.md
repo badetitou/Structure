@@ -4,7 +4,7 @@ title: UI runs on Svelte 5 and shadcn-svelte with light and dark themes
 status: done
 parent: 36
 branch: 37-svelte-shadcn
-remote: null
+remote: 26
 created: 2026-11-06
 ---
 ## Context

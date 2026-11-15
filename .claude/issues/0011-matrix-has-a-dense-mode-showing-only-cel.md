@@ -4,7 +4,7 @@ title: Matrix has a dense mode showing only cell colours in a packed grid
 status: done
 parent: null
 branch: 11-dense-matrix
-remote: null
+remote: 11
 created: 2026-11-06
 ---
 ## Context

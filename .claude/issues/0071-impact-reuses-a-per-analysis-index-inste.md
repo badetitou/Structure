@@ -4,7 +4,7 @@ title: Impact reuses a per-analysis index instead of rebuilding it
 status: done
 parent: null
 branch: 71-impact-index
-remote: null
+remote: 59
 created: 2026-11-09
 ---
 ## Context

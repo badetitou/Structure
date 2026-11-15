@@ -4,7 +4,7 @@ title: Several project roots are analysed into one matrix
 status: done
 parent: 57
 branch: 55-multi-root-analysis
-remote: null
+remote: 46
 created: 2026-11-09
 ---
 ## Context

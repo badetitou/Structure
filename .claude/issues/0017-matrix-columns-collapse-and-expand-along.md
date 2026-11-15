@@ -4,7 +4,7 @@ title: Matrix columns collapse and expand along the domain tree
 status: done
 parent: 15
 branch: 17-collapsible-domains
-remote: null
+remote: 14
 created: 2026-11-06
 ---
 ## Context

@@ -4,7 +4,7 @@ title: CLI reports time and peak memory per analysis phase
 status: done
 parent: 20
 branch: 21-phase-metrics
-remote: null
+remote: 18
 created: 2026-11-06
 ---
 ## Context

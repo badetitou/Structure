@@ -4,7 +4,7 @@ title: Java HTTP endpoints are extracted from Spring and JAX-RS annotations
 status: done
 parent: 57
 branch: 56-java-http-endpoints
-remote: null
+remote: 47
 created: 2026-11-09
 ---
 ## Context

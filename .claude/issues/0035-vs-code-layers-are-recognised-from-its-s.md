@@ -4,7 +4,7 @@ title: VS Code layers are recognised from its source layout
 status: todo
 parent: 20
 branch: null
-remote: null
+remote: 24
 created: 2026-11-06
 ---
 ## Context

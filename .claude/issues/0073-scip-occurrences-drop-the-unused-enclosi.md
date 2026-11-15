@@ -4,7 +4,7 @@ title: SCIP occurrences drop the unused enclosing range
 status: done
 parent: null
 branch: 73-drop-enclosing-range
-remote: null
+remote: 61
 created: 2026-11-09
 ---
 ## Context

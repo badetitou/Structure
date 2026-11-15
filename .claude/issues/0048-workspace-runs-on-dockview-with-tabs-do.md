@@ -4,7 +4,7 @@ title: Workspace runs on dockview with tabs, docking and a Views menu
 status: done
 parent: 46
 branch: 46-tile-tabs
-remote: null
+remote: 36
 created: 2026-11-09
 ---
 ## Context

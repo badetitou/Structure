@@ -4,7 +4,7 @@ title: Structure analyses Gradle Java projects end to end
 status: done
 parent: null
 branch: null
-remote: null
+remote: 1
 created: 2026-11-06
 ---
 ## Context

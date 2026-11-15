@@ -4,7 +4,7 @@ title: Rules classify Spring/DGS domain and core packages in realworld-java
 status: done
 parent: 1
 branch: 8-realworld-rules
-remote: null
+remote: 8
 created: 2026-11-06
 ---
 ## Context

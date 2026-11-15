@@ -4,7 +4,7 @@ title: Analysis screen has one compact top bar and a context status bar
 status: done
 parent: null
 branch: claude/compact-menu-status-bar-bc3520
-remote: null
+remote: 44
 created: 2026-11-09
 ---
 ## Context

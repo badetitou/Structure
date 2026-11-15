@@ -4,7 +4,7 @@ title: Home screen lists recent projects to reopen an analysis quickly
 status: done
 parent: null
 branch: 7-recent-projects
-remote: null
+remote: 7
 created: 2026-11-06
 ---
 ## Context

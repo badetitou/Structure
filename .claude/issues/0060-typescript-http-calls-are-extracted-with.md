@@ -4,7 +4,7 @@ title: TypeScript HTTP calls are extracted with their URL
 status: done
 parent: 57
 branch: 57-ts-http-calls
-remote: null
+remote: 48
 created: 2026-11-09
 ---
 ## Context

@@ -4,7 +4,7 @@ title: Mouse wheel zooms the matrix around the cursor
 status: done
 parent: null
 branch: claude/scroll-zoom-matrice-120db4
-remote: null
+remote: 43
 created: 2026-11-09
 ---
 ## Context

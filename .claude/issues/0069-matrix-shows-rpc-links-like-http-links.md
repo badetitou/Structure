@@ -4,7 +4,7 @@ title: Matrix shows RPC links like HTTP links
 status: done
 parent: 57
 branch: 66-matrix-rpc-links
-remote: null
+remote: 57
 created: 2026-11-09
 ---
 ## Context

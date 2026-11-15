@@ -4,7 +4,7 @@ title: Side panels can be collapsed and resized
 status: done
 parent: null
 branch: 26-side-panels
-remote: null
+remote: 23
 created: 2026-11-06
 ---
 ## Context

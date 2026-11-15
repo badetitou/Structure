@@ -4,7 +4,7 @@ title: pipeline.rs is split into indexer, git and analysis modules
 status: done
 parent: 36
 branch: 40-pipeline-split
-remote: null
+remote: 29
 created: 2026-11-06
 ---
 ## Context

@@ -4,7 +4,7 @@ title: Working-tree impact no longer reads untracked files whole
 status: done
 parent: null
 branch: 70-untracked-line-count
-remote: null
+remote: 58
 created: 2026-11-09
 ---
 ## Context

@@ -4,7 +4,7 @@ title: Matrix payload sends cell summaries and impact reuses the cached graph
 status: done
 parent: 20
 branch: 24-cell-summaries
-remote: null
+remote: 21
 created: 2026-11-06
 ---
 ## Context

@@ -4,7 +4,7 @@ title: History sidebar selects the diff to analyse
 status: done
 parent: 4
 branch: 6-history-sidebar
-remote: null
+remote: 6
 created: 2026-11-06
 ---
 ## Context

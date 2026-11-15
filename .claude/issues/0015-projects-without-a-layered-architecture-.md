@@ -4,7 +4,7 @@ title: Projects without a layered architecture still get a readable structure
 status: done
 parent: null
 branch: null
-remote: null
+remote: 12
 created: 2026-11-06
 ---
 ## Context

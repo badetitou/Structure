@@ -4,7 +4,7 @@ title: Endpoints declared on generated OpenAPI server interfaces are linked
 status: done
 parent: 57
 branch: 65-generated-api-endpoints
-remote: null
+remote: 56
 created: 2026-11-09
 ---
 ## Context

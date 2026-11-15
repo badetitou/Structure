@@ -4,7 +4,7 @@ title: Matrix can be transposed (domains as rows, layers as columns)
 status: done
 parent: null
 branch: claude/matrix-inversion-d4b021
-remote: null
+remote: 42
 created: 2026-11-09
 ---
 ## Context

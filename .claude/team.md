@@ -14,7 +14,7 @@ No Rust specialist yet — add one if a retro shows recurring unsafe/async/FFI w
 
 ## Skills
 
-- badetitou-team: `task-prep`, `team-retro` (`github-flow` once a remote exists)
+- badetitou-team: `task-prep`, `team-retro` `github-flow`
 - other: none
 
 ## MCP servers
@@ -23,8 +23,10 @@ None. (The user-level `pharo` server is not relevant here.)
 
 ## GitHub
 
-- Repo: none — local only. When one is created, add the project board here
-  and re-enable the issue flow in CLAUDE.md.
+- Repo: `badetitou/Structure` (public). Issues migrated from `.claude/issues/`
+  on 2026-11-13 (local id → GitHub number in each file's `remote:` field;
+  done → closed). No project board yet (the user-level "badetitou-team"
+  project belongs to another repo).
 
 ## Notes from retros
 
