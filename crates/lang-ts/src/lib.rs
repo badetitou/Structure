@@ -702,7 +702,8 @@ pub fn parse_project(root: &Path) -> anyhow::Result<Graph> {
 
 /// Build the graph from in-memory `(relative path, source text)` pairs, with no
 /// file system access. Applies the walk's filters: `.ts`/`.tsx` only, no
-/// `.d.ts`/`.spec.ts`/`.test.ts(x)`, no directory component in [`IGNORED_DIRS`].
+/// `.d.ts`/`.spec.ts`/`.test.ts(x)`, no hidden component, no directory component
+/// in [`IGNORED_DIRS`] (`.gitignore` aside).
 pub fn parse_sources(root_label: &str, sources: &[(String, String)]) -> anyhow::Result<Graph> {
     let mut kept: Vec<&(String, String)> = sources
         .iter()
@@ -713,7 +714,11 @@ pub fn parse_sources(root_label: &str, sources: &[(String, String)]) -> anyhow::
                 || name.ends_with(".spec.ts")
                 || name.ends_with(".test.ts")
                 || name.ends_with(".test.tsx");
-            is_ts && !skipped && !dirs.split('/').any(|c| IGNORED_DIRS.contains(&c))
+            // Hidden files and directories are not walked either.
+            is_ts
+                && !skipped
+                && !rel.split('/').any(|c| c.starts_with('.'))
+                && !dirs.split('/').any(|c| IGNORED_DIRS.contains(&c))
         })
         .collect();
     // Same order as the walk's sorted `PathBuf`s: component by component.
@@ -944,6 +949,7 @@ mod tests {
             ("src/a-b/y.ts", "export class Y {}\n"),
             ("src/b.ts", "export class B {}\n"),
             ("node_modules/x/i.ts", "export class N {}\n"),
+            (".storybook/h.ts", "export class H {}\n"),
         ]
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .into();
