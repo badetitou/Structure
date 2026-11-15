@@ -1,4 +1,6 @@
 // Content script (bundled as one IIFE): adds a "Structure" tab to GitHub pull request pages.
+import { ext } from "./browser";
+import { watchFrame } from "./frame";
 import { parsePrPath, prParam } from "./github";
 
 const TAB_ID = "structure-pr-tab";
@@ -17,7 +19,7 @@ interface PanelState {
 let state: PanelState | null = null;
 
 function viewerUrl(key: string): string {
-  return `${chrome.runtime.getURL("viewer.html")}?pr=${key}`;
+  return `${ext().runtime.getURL("viewer.html")}?pr=${key}`;
 }
 
 function makePanel(key: string): HTMLElement {
@@ -43,6 +45,25 @@ function ensureIframe(s: PanelState) {
   iframe.style.cssText = "flex:1;width:100%;border:0;min-height:0;";
   s.panel.append(iframe);
   s.iframe = iframe;
+  // A page CSP (frame-src) may block the extension frame: say so instead of a blank panel.
+  watchFrame(window, new URL(iframe.src).origin, () => showFrameBlocked(s, iframe), FRAME_TIMEOUT_MS);
+}
+
+const FRAME_TIMEOUT_MS = 8000;
+
+function showFrameBlocked(s: PanelState, iframe: HTMLIFrameElement) {
+  if (!iframe.isConnected) return;
+  iframe.style.display = "none";
+  const msg = document.createElement("div");
+  msg.style.cssText = "padding:1rem;font:14px system-ui;";
+  msg.append("The Structure viewer could not be shown inside this page (the page may block extension frames). ");
+  const link = document.createElement("a");
+  link.href = viewerUrl(s.key);
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.textContent = "Open in a new tab";
+  msg.append(link);
+  s.panel.append(msg);
 }
 
 /** Where GitHub renders the page of a repository; the panel goes at its end, outside React's tree. */
