@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Structure options</title>
+    <style>
+      body { font: 14px system-ui; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; }
+      input { width: 100%; box-sizing: border-box; padding: 0.4rem; margin: 0.5rem 0; }
+      small { color: #666; display: block; }
+      #status { margin-left: 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Structure</h1>
+    <label for="token">GitHub token (optional)</label>
+    <input id="token" type="password" autocomplete="off" spellcheck="false" />
+    <small>Raises the API rate limit and allows private repositories. It is stored locally and only sent to api.github.com.</small>
+    <p><button id="save">Save</button><span id="status"></span></p>
+    <script type="module" src="../src/extension/options.ts"></script>
+  </body>
+</html>

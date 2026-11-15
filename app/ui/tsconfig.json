@@ -10,7 +10,8 @@
     "noEmit": true,
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
-    "types": ["vite/client"],
+    "types": ["vite/client", "chrome"],
+    "allowImportingTsExtensions": true,
     "paths": { "$lib": ["./src/lib"], "$lib/*": ["./src/lib/*"] }
   },
   "include": ["src"]

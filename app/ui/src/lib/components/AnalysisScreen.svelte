@@ -10,13 +10,24 @@
 
   // Analyses `paths`, shows the progress, then the workspace of panels (matrix, details, history, …)
   // between one compact top bar and a status bar.
-  let { paths, onExit }: { paths: string[]; onExit: (error?: string) => void } = $props();
+  // `embedded` (viewer page): the impact is shown right after the analysis, and the git / project
+  // controls (range, clear impact, close) are left out.
+  let {
+    paths,
+    onExit,
+    embedded = false,
+  }: { paths: string[]; onExit: (error?: string) => void; embedded?: boolean } = $props();
 
   const matrix = $derived(matrixControl.current);
 
   onMount(() => {
     let live = true;
-    app.load(paths).catch((e) => live && onExit(`Analysis failed: ${String(e)}`));
+    app
+      .load(paths)
+      .then(() => {
+        if (embedded && live) return app.runImpact(null, null);
+      })
+      .catch((e) => live && onExit(`Analysis failed: ${String(e)}`));
     return () => {
       live = false;
       app.reset();
@@ -32,6 +43,7 @@
       onZoomOut={() => matrix?.zoomOut()}
       onFit={() => matrix?.fitView()}
       onClose={() => onExit()}
+      {embedded}
     />
     {#if app.phase === "ready" && app.work}
       {#if app.warnings.length > 0}
