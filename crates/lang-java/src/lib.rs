@@ -817,15 +817,60 @@ pub fn parse_project_with_warnings(root: &Path, warnings: &mut Vec<String>) -> R
         .map(|p| read_and_parse(root, p))
         .collect::<Result<_>>()?;
 
-    let all: Vec<Symbol> = parsed.iter().flat_map(|f| f.symbols.clone()).collect();
-    let index = TypeIndex::new(&all);
-
     // Generated sources (OpenAPI server interfaces...) feed endpoint
     // inheritance only: their symbols never reach the graph.
     let generated: Vec<FileSymbols> = generated_files(root)
         .par_iter()
         .filter_map(|p| read_and_parse(root, p).ok())
         .collect();
+    assemble(&root.to_string_lossy(), parsed, generated, warnings)
+}
+
+/// Whether the directory walk would reach `rel`: no hidden component, and no
+/// `target` / `build` / `node_modules` directory unless under a `src/` one.
+fn walk_reaches(rel: &str) -> bool {
+    let comps: Vec<&str> = rel.split('/').collect();
+    let dirs = &comps[..comps.len().saturating_sub(1)];
+    !comps.iter().any(|c| c.starts_with('.'))
+        && !dirs.iter().enumerate().any(|(i, d)| {
+            matches!(*d, "target" | "build" | "node_modules") && !dirs[..i].contains(&"src")
+        })
+}
+
+/// Build the graph from in-memory `(relative path, source text)` pairs, with no
+/// file system access. Applies the walk's filters (`.java`, not under
+/// `src/test/`, no hidden or build directory), `.gitignore` aside. No generated
+/// sources are taken: endpoints are not inherited from them.
+pub fn parse_sources(
+    root_label: &str,
+    sources: &[(String, String)],
+    warnings: &mut Vec<String>,
+) -> Result<Graph> {
+    let mut kept: Vec<&(String, String)> = sources
+        .iter()
+        .filter(|(rel, _)| {
+            rel.ends_with(".java") && !rel.contains("src/test/") && walk_reaches(rel)
+        })
+        .collect();
+    // Same order as the walk's sorted `PathBuf`s: component by component.
+    kept.sort_by(|a, b| a.0.split('/').cmp(b.0.split('/')));
+    let parsed: Vec<FileSymbols> = kept
+        .par_iter()
+        .map(|(rel, src)| parse_source(rel, src))
+        .collect::<Result<_>>()?;
+    assemble(root_label, parsed, Vec::new(), warnings)
+}
+
+/// Shared assembly: type index, edges, RPC and endpoint inheritance, sorting.
+fn assemble(
+    root_label: &str,
+    parsed: Vec<FileSymbols>,
+    generated: Vec<FileSymbols>,
+    warnings: &mut Vec<String>,
+) -> Result<Graph> {
+    let all: Vec<Symbol> = parsed.iter().flat_map(|f| f.symbols.clone()).collect();
+    let index = TypeIndex::new(&all);
+
     let gen_syms: Vec<Symbol> = generated.iter().flat_map(|f| f.symbols.clone()).collect();
     let gen_index = TypeIndex::new(&gen_syms);
 
@@ -876,7 +921,7 @@ pub fn parse_project_with_warnings(root: &Path, warnings: &mut Vec<String>) -> R
     edges.sort_by(|a, b| (&a.from, &a.to, a.kind as u8).cmp(&(&b.from, &b.to, b.kind as u8)));
 
     Ok(Graph {
-        root: root.to_string_lossy().into_owned(),
+        root: root_label.to_string(),
         language: Language::Java,
         symbols: all,
         edges,
@@ -1334,5 +1379,63 @@ record Point(int x, int y) implements Shape { double len() { return 0; } }
         assert!(ids.contains(&"org.x.build.B"));
         assert!(!ids.contains(&"gen.Gen") && !ids.contains(&"gen.Tgt"));
         assert!(ids.windows(2).all(|w| w[0] <= w[1]));
+    }
+
+    #[test]
+    fn sources_match_project() {
+        let files: Vec<(String, String)> = [
+            (
+                "src/main/java/p/Base.java",
+                "package p; public class Base {}",
+            ),
+            (
+                "src/main/java/p/Api.java",
+                "package p; public interface Api {}",
+            ),
+            (
+                "src/main/java/p/Impl.java",
+                "package p; class Impl extends Base implements Api { Base b; Ext e; }",
+            ),
+            ("src/test/java/p/T.java", "package p; class T {}"),
+            ("README.md", "not java"),
+            // String order and path order differ for these two.
+            ("src/main/java/a/X.java", "package a; class X {}"),
+            ("src/main/java/a-b/Y.java", "package ab; class Y {}"),
+            // Skipped by the walk: hidden and build directories; kept under `src/`.
+            (".mvn/wrapper/W.java", "class W {}"),
+            ("target/gen/G.java", "package g; class G {}"),
+            (
+                "src/main/java/p/build/K.java",
+                "package p.build; class K {}",
+            ),
+        ]
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .into();
+        let dir = std::env::temp_dir().join(format!("structure_java_mem_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for (rel, src) in &files {
+            let p = dir.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, src).unwrap();
+        }
+        let (mut w1, mut w2) = (Vec::new(), Vec::new());
+        let disk = parse_project_with_warnings(&dir, &mut w1).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let mem = parse_sources("mem", &files, &mut w2).unwrap();
+        assert_eq!(mem.root, "mem");
+        assert!(mem.edges.iter().any(|e| e.kind == EdgeKind::Implements));
+        assert!(mem.edges.iter().any(|e| e.kind == EdgeKind::Uses));
+        assert!(!mem.symbols.iter().any(|s| s.id == "p.T"));
+        assert_eq!(w1, w2);
+        assert_eq!(
+            Graph {
+                root: String::new(),
+                ..disk
+            },
+            Graph {
+                root: String::new(),
+                ..mem
+            }
+        );
     }
 }
