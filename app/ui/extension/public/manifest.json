@@ -3,6 +3,13 @@
   "name": "Structure",
   "version": "0.1.0",
   "description": "Adds a Structure tab to GitHub pull requests: the layer x domain matrix of the PR with its changed and impacted cells.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "structure@structure.local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": { "required": ["none"] }
+    }
+  },
   "permissions": ["storage"],
   "host_permissions": ["https://api.github.com/*", "https://codeload.github.com/*"],
   "content_scripts": [
