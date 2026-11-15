@@ -697,7 +697,41 @@ pub fn parse_project(root: &Path) -> anyhow::Result<Graph> {
             Ok((rel, fs))
         })
         .collect::<anyhow::Result<_>>()?;
+    assemble(&root.to_string_lossy(), parsed)
+}
 
+/// Build the graph from in-memory `(relative path, source text)` pairs, with no
+/// file system access. Applies the walk's filters: `.ts`/`.tsx` only, no
+/// `.d.ts`/`.spec.ts`/`.test.ts(x)`, no directory component in [`IGNORED_DIRS`].
+pub fn parse_sources(root_label: &str, sources: &[(String, String)]) -> anyhow::Result<Graph> {
+    let mut kept: Vec<&(String, String)> = sources
+        .iter()
+        .filter(|(rel, _)| {
+            let (dirs, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+            let is_ts = name.ends_with(".ts") || name.ends_with(".tsx");
+            let skipped = name.ends_with(".d.ts")
+                || name.ends_with(".spec.ts")
+                || name.ends_with(".test.ts")
+                || name.ends_with(".test.tsx");
+            is_ts && !skipped && !dirs.split('/').any(|c| IGNORED_DIRS.contains(&c))
+        })
+        .collect();
+    // Same order as the walk's sorted `PathBuf`s: component by component.
+    kept.sort_by(|a, b| a.0.split('/').cmp(b.0.split('/')));
+
+    let parsed: Vec<(String, FileSymbols)> = kept
+        .par_iter()
+        .map(|(rel, src)| -> anyhow::Result<(String, FileSymbols)> {
+            let tsx = rel.ends_with(".tsx");
+            let fs = parse_source(rel, src, tsx).with_context(|| rel.clone())?;
+            Ok((rel.clone(), fs))
+        })
+        .collect::<anyhow::Result<_>>()?;
+    assemble(root_label, parsed)
+}
+
+/// Shared assembly: resolver, edges, sorting. `parsed` is in walk order.
+fn assemble(root_label: &str, parsed: Vec<(String, FileSymbols)>) -> anyhow::Result<Graph> {
     let ids: HashSet<&str> = parsed
         .iter()
         .flat_map(|(_, f)| f.symbols.iter().map(|s| s.id.as_str()))
@@ -748,7 +782,7 @@ pub fn parse_project(root: &Path) -> anyhow::Result<Graph> {
     symbols.sort_by(|a, b| a.id.cmp(&b.id));
     edges.sort_by(|a, b| (&a.from, &a.to, a.kind as u8).cmp(&(&b.from, &b.to, b.kind as u8)));
     Ok(Graph {
-        root: root.to_string_lossy().into_owned(),
+        root: root_label.to_string(),
         language: Language::TypeScript,
         symbols,
         edges,
@@ -895,5 +929,46 @@ mod tests {
         .unwrap();
         assert_eq!(find(&t, "ui/B.tsx#Button").kind, SymbolKind::Function);
         assert_eq!(find(&t, "ui/B.tsx#Card").kind, SymbolKind::Function);
+    }
+
+    #[test]
+    fn sources_match_project() {
+        let files: Vec<(String, String)> = [
+            (
+                "src/a.ts",
+                "import { B } from './b';\nexport class A extends B {}\n",
+            ),
+            ("src/b.spec.ts", "export class S {}\n"),
+            // String order and path order differ for these two.
+            ("src/a/x.ts", "export class X {}\n"),
+            ("src/a-b/y.ts", "export class Y {}\n"),
+            ("src/b.ts", "export class B {}\n"),
+            ("node_modules/x/i.ts", "export class N {}\n"),
+        ]
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .into();
+        let dir = std::env::temp_dir().join(format!("structure_ts_mem_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for (rel, src) in &files {
+            let p = dir.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, src).unwrap();
+        }
+        let disk = parse_project(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let mem = parse_sources("mem", &files).unwrap();
+        assert_eq!(mem.root, "mem");
+        assert_eq!(mem.symbols.len(), 4);
+        assert!(mem.edges.iter().any(|e| e.to == "src/b.ts#B"));
+        assert_eq!(
+            Graph {
+                root: String::new(),
+                ..disk
+            },
+            Graph {
+                root: String::new(),
+                ..mem
+            }
+        );
     }
 }
