@@ -49,6 +49,7 @@ on one screen, reads top to bottom, and answers two questions quickly:
 | **Compiler-accurate edges** | Tree-sitter for symbols, [SCIP](https://github.com/sourcegraph/scip) indexes for exact references. |
 | **Custom rules** | Classification is plain TOML; override it per project. |
 | **CLI and desktop app** | The `structure` binary emits JSON; the Tauri app is the interactive view. |
+| **Browser extension** | A *Structure* tab on GitHub pull requests, in Chrome and Firefox: the PR's matrix and impact, computed in the browser (WebAssembly). |
 
 ## Tour
 
@@ -165,6 +166,50 @@ their distance from the change:
 
 Full samples are in [docs/samples/](docs/samples/).
 
+### Build the browser extension
+
+The extension adds a **Structure** tab to GitHub pull requests. Opening it shows
+the matrix at the PR head with its changed and impacted cells. Nothing runs on
+your machine besides the browser: the core is compiled to WebAssembly, and the
+PR diff and head sources are fetched from the GitHub API.
+
+Extra prerequisites:
+
+- `rustup target add wasm32-unknown-unknown`
+- `cargo install wasm-pack`
+- LLVM (`brew install llvm`): Apple's `clang`/`ar` cannot build tree-sitter for
+  wasm. Elsewhere, set `LLVM_PREFIX`, or `CC_wasm32_unknown_unknown` and
+  `AR_wasm32_unknown_unknown`.
+
+Build the wasm module, then the extension:
+
+```sh
+scripts/build-wasm.sh                    # → crates/wasm/pkg/
+cd app/ui && npm install && npm run build:extension   # → app/ui/dist-extension/
+```
+
+Rerun `scripts/build-wasm.sh` after any change to the Rust crates;
+`build:extension` stops with an error if `crates/wasm/pkg` is missing.
+`dist-extension/` holds one Manifest V3 build for both browsers.
+
+Load it unpacked:
+
+- **Chrome / Edge**: `chrome://extensions` → enable *Developer mode* →
+  *Load unpacked* → pick `app/ui/dist-extension`.
+- **Firefox** (140+): `about:debugging#/runtime/this-firefox` → *Load Temporary
+  Add-on…* → pick `app/ui/dist-extension/manifest.json`. Temporary add-ons are
+  removed when Firefox restarts. If Firefox has not granted access to
+  `api.github.com` and `codeload.github.com`, the viewer shows a button that
+  asks for it.
+
+After a rebuild, click *Reload* on the extension and refresh the GitHub tab.
+
+Open a pull request of a Java or TypeScript repository and click the
+**Structure** tab. Without a token, GitHub limits anonymous API calls to 60 per
+hour and only public repositories work. To raise the limit or read private
+repositories, add a GitHub token in the extension's options page; it is stored
+locally and only sent to `api.github.com`.
+
 ## How it works
 
 ```mermaid
@@ -223,14 +268,15 @@ crates/
   scip/        reads index.scip, links occurrences to symbols
   classify/    rules and the quotient matrix
   git/         diff → changed and impacted cells
+  wasm/        WebAssembly build of the analysis, for the browser extension
   core/        facade and pipeline (analyze, indexers, snapshots, history)
   cli/         the `structure` binary
 app/
   src-tauri/   Tauri 2 commands over the pipeline
-  ui/          Vite + Svelte 5 + TypeScript
+  ui/          Vite + Svelte 5 + TypeScript; extension/ and src/extension/ hold the browser extension
 rules/         built-in classification rules
 docs/          plan, Tauri API contract, sample JSON
-scripts/       fetch and index the demo fixtures
+scripts/       fetch and index the demo fixtures, build the wasm module
 tests/golden/  expected classifications
 ```
 
@@ -268,3 +314,6 @@ indexer. See [scripts/README.md](scripts/README.md).
 - **scip-java runs the project's Maven build.** A `~/.m2/settings.xml` that points to an unreachable private repository makes it hang; the app gives up after 10 minutes and falls back to tree-sitter.
 - **Gradle projects** are indexed through their own wrapper, which must support the JDK in use.
 - **Kotlin sources are ignored**; generated sources under `build/` are not modelled.
+- **The browser extension uses tree-sitter only** (no SCIP), so it has no call
+  edges: impact follows `Uses` and supertype edges. One root per PR, no HTTP or
+  RPC links. It is not published on the Chrome Web Store or addons.mozilla.org.
