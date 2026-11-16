@@ -1,14 +1,19 @@
 //! Pharo frontend: a hand-written Tonel reader (no maintained tree-sitter
 //! grammar exists). Produces class and method symbols, superclass edges and
-//! `Uses` edges for capitalised identifiers in method bodies. Message sends
-//! (`Call` edges) are not resolved here.
+//! `Uses` edges for capitalised identifiers in method bodies, and `Call` edges
+//! for message sends resolved with a precision-first heuristic (see
+//! [`parse_project_full`]).
 
-use std::collections::{BTreeSet, HashSet};
+mod sends;
+
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::Context;
 
 use structure_ir::ir::{Edge, EdgeKind, Graph, Language, Range, Symbol, SymbolKind};
+
+pub use sends::{Recv, Send};
 
 /// Result of parsing a single Tonel file.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -20,6 +25,8 @@ pub struct FileSymbols {
     pub uses: Vec<(String, String)>,
     /// (class, name) of class variables and pools: not global references.
     pub scoped: Vec<(String, String)>,
+    /// Message sends found in method bodies, per method in source order.
+    pub sends: Vec<Send>,
     /// The file ended early or had an unknown shape; what was read is kept.
     pub warning: Option<String>,
 }
@@ -55,12 +62,20 @@ const IGNORED_GLOBALS: &[&str] = &[
 /// End of the string, comment or character literal starting at `i`, if any.
 fn skip_literal(b: &[u8], i: usize) -> Option<usize> {
     match b.get(i)? {
-        b'\'' => Some(
-            b[i + 1..]
-                .iter()
-                .position(|&c| c == b'\'')
-                .map_or(b.len(), |p| i + 1 + p + 1),
-        ),
+        b'\'' => {
+            let mut j = i + 1;
+            while j < b.len() {
+                if b[j] == b'\'' {
+                    if b.get(j + 1) == Some(&b'\'') {
+                        j += 2;
+                        continue;
+                    }
+                    return Some(j + 1);
+                }
+                j += 1;
+            }
+            Some(b.len())
+        }
         b'"' => Some(
             b[i + 1..]
                 .iter()
@@ -440,6 +455,8 @@ pub fn parse_source(file: &str, src: &str, dir_package: &str) -> FileSymbols {
                 for name in capitalised_identifiers(&src[open..stop]) {
                     out.uses.push((id.clone(), name));
                 }
+                out.sends
+                    .extend(sends::extract(&id, &src[open..stop], open, &lines));
             }
         } else {
             out.warning = Some(format!("{file}: unreadable method header at byte {hstart}"));
@@ -466,6 +483,156 @@ pub fn parse_project_with_warnings(
     root: &Path,
     warnings: &mut Vec<String>,
 ) -> anyhow::Result<Graph> {
+    Ok(parse_project_full(root, warnings)?.graph)
+}
+
+/// Selectors of the common Object/kernel protocol. Never resolved by the
+/// unique-implementor rule: a project class defining one of them says nothing
+/// about the receiver of an arbitrary send.
+pub const COMMON_SELECTORS: &[&str] = &[
+    "=",
+    "==",
+    "~=",
+    "~~",
+    "hash",
+    "printOn:",
+    "printString",
+    "displayString",
+    "displayNl",
+    "value",
+    "value:",
+    "value:value:",
+    "valueWithArguments:",
+    "ifTrue:",
+    "ifFalse:",
+    "ifTrue:ifFalse:",
+    "ifFalse:ifTrue:",
+    "ifNil:",
+    "ifNotNil:",
+    "ifNil:ifNotNil:",
+    "ifNotNil:ifNil:",
+    "isNil",
+    "notNil",
+    "isEmpty",
+    "notEmpty",
+    "isEmptyOrNil",
+    "do:",
+    "do:separatedBy:",
+    "collect:",
+    "select:",
+    "reject:",
+    "detect:",
+    "detect:ifNone:",
+    "inject:into:",
+    "anySatisfy:",
+    "allSatisfy:",
+    "at:",
+    "at:put:",
+    "at:ifAbsent:",
+    "at:ifAbsentPut:",
+    "add:",
+    "addAll:",
+    "remove:",
+    "includes:",
+    "size",
+    "first",
+    "last",
+    "new",
+    "new:",
+    "yourself",
+    "name",
+    "initialize",
+    "class",
+    "copy",
+    "deepCopy",
+    "isString",
+    "isSymbol",
+    "isNumber",
+    "asString",
+    "asSymbol",
+    "asInteger",
+    "asOrderedCollection",
+    "error:",
+    "signal",
+    "signal:",
+    "and:",
+    "or:",
+    "not",
+    "&",
+    "|",
+    "+",
+    "-",
+    "*",
+    "/",
+    "<",
+    ">",
+    "<=",
+    ">=",
+    ",",
+    "->",
+    "key",
+    "value:value:",
+    "isKindOf:",
+    "isMemberOf:",
+    "respondsTo:",
+    "perform:",
+    "perform:with:",
+    "assert:",
+    "halt",
+    "inspect",
+    "to:do:",
+    "timesRepeat:",
+    "whileTrue:",
+    "whileFalse:",
+    "whileTrue",
+    "whileFalse",
+    "on:do:",
+    "ensure:",
+    "ifCurtailed:",
+    "new:withAll:",
+    "basicNew",
+    "become:",
+    "instVarNamed:",
+    "postCopy",
+    "release",
+    "finalize",
+    "update:",
+];
+
+/// Resolved / unresolved message sends of a project.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SendStats {
+    pub resolved: usize,
+    pub unresolved: usize,
+}
+
+/// A resolved send: the `Call` edge `from -> to` and where in `from` it occurs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CallSite {
+    pub from: String,
+    pub to: String,
+    pub range: Range,
+}
+
+/// Result of [`parse_project_full`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parsed {
+    pub graph: Graph,
+    /// One per `Call` edge of `graph`, with the first send's range.
+    pub calls: Vec<CallSite>,
+    pub stats: SendStats,
+}
+
+/// [`parse_project_with_warnings`] plus the send ranges and statistics.
+///
+/// Sends resolve, in order: `self foo` from the owning class up its project
+/// superclasses (same side, instance or class); `super foo` from the
+/// superclass; `Foo bar` on the class side of `Foo` and its supers (a class or
+/// pool variable of the owner is not a class); any other receiver to the
+/// selector's implementor when exactly one method in the project has it
+/// (instance and class side counted together, extension methods included) and
+/// the selector is not in [`COMMON_SELECTORS`]. Otherwise: no edge.
+pub fn parse_project_full(root: &Path, warnings: &mut Vec<String>) -> anyhow::Result<Parsed> {
     let base = if root.join("src").is_dir() {
         root.join("src")
     } else {
@@ -534,13 +701,16 @@ pub fn parse_project_with_warnings(
         .collect();
     let mut edges = Vec::new();
     let mut seen: BTreeSet<(String, String, u8)> = BTreeSet::new();
-    let mut add = |from: &str, to: String, kind: EdgeKind| {
+    let mut add = |from: &str, to: String, kind: EdgeKind| -> bool {
         if from != to && seen.insert((from.to_string(), to.clone(), kind.rank())) {
             edges.push(Edge {
                 from: from.to_string(),
                 to,
                 kind,
             });
+            true
+        } else {
+            false
         }
     };
     for f in &parsed {
@@ -565,6 +735,89 @@ pub fn parse_project_with_warnings(
         }
     }
 
+    // Message sends.
+    let supers: HashMap<&str, &str> = parsed
+        .iter()
+        .flat_map(|f| &f.heritage)
+        .map(|(c, s)| (c.as_str(), s.as_str()))
+        .collect();
+    let mut by_selector: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut method_ids: HashSet<&str> = HashSet::new();
+    for s in parsed
+        .iter()
+        .flat_map(|f| &f.symbols)
+        .filter(|s| s.kind == SymbolKind::Method)
+    {
+        method_ids.insert(&s.id);
+        by_selector.entry(&s.name).or_default().insert(&s.id);
+    }
+    let lookup = |start: &str, class_side: bool, sel: &str| -> Option<String> {
+        let mut cur = Some(start);
+        for _ in 0..64 {
+            let c = cur?;
+            let id = if class_side {
+                format!("{c} class#{sel}")
+            } else {
+                format!("{c}#{sel}")
+            };
+            if method_ids.contains(id.as_str()) {
+                return Some(id);
+            }
+            cur = supers.get(c).copied();
+        }
+        None
+    };
+    let is_scoped = |owner: &str, name: &str| -> bool {
+        let mut cur = Some(owner);
+        for _ in 0..64 {
+            let Some(c) = cur else { return false };
+            if scoped.contains(&(c, name)) {
+                return true;
+            }
+            cur = supers.get(c).copied();
+        }
+        false
+    };
+    let mut calls = Vec::new();
+    let mut stats = SendStats::default();
+    for send in parsed.iter().flat_map(|f| &f.sends) {
+        let owner = owner_of(&send.from);
+        let class_side = send
+            .from
+            .split_once('#')
+            .is_some_and(|(o, _)| o.ends_with(" class"));
+        let sel = send.selector.as_str();
+        let unique = || -> Option<String> {
+            if COMMON_SELECTORS.contains(&sel) {
+                return None;
+            }
+            let ids = by_selector.get(sel)?;
+            (ids.len() == 1).then(|| ids.iter().next().map(|s| s.to_string()))?
+        };
+        let to = match &send.recv {
+            Recv::SelfRecv => lookup(&owner, class_side, sel),
+            Recv::Super => supers
+                .get(owner.as_str())
+                .and_then(|sup| lookup(sup, class_side, sel)),
+            Recv::Class(n) if !is_scoped(&owner, n) => lookup(n, true, sel),
+            Recv::Class(_) | Recv::Other => unique(),
+        };
+        match to {
+            Some(to) => {
+                stats.resolved += 1;
+                if add(&send.from, to.clone(), EdgeKind::Call) {
+                    calls.push(CallSite {
+                        from: send.from.clone(),
+                        to,
+                        range: send.range,
+                    });
+                }
+            }
+            None => stats.unresolved += 1,
+        }
+    }
+    calls.sort_by(|a, b| (&a.from, &a.to).cmp(&(&b.from, &b.to)));
+
     // Methods of project classes hang under their class, wherever defined.
     let mut symbols: Vec<Symbol> = parsed.into_iter().flat_map(|f| f.symbols).collect();
     for s in symbols.iter_mut().filter(|s| s.kind == SymbolKind::Method) {
@@ -577,11 +830,15 @@ pub fn parse_project_with_warnings(
     symbols.retain(|s| ids.insert(s.id.clone()));
     symbols.sort_by(|a, b| a.id.cmp(&b.id));
     edges.sort_by(|a, b| (&a.from, &a.to, a.kind.rank()).cmp(&(&b.from, &b.to, b.kind.rank())));
-    Ok(Graph {
-        root: root.to_string_lossy().into_owned(),
-        language: Language::Pharo,
-        symbols,
-        edges,
+    Ok(Parsed {
+        graph: Graph {
+            root: root.to_string_lossy().into_owned(),
+            language: Language::Pharo,
+            symbols,
+            edges,
+        },
+        calls,
+        stats,
     })
 }
 
@@ -785,6 +1042,296 @@ OrderService >> + other [
                 e("Base#go", "Helper", EdgeKind::Uses),
                 e("Base#go", "ext:Morph", EdgeKind::Uses),
                 e("Helper", "Base", EdgeKind::Extends),
+            ]
+        );
+    }
+
+    // ---- message sends ----
+
+    /// Classes as `(name, superclass, classVars, methods source)`.
+    fn project(tag: &str, classes: &[(&str, &str, &str, &str)]) -> Parsed {
+        let dir =
+            std::env::temp_dir().join(format!("structure-pharo-{tag}-{}", std::process::id()));
+        let pkg = dir.join("src/App");
+        std::fs::create_dir_all(&pkg).unwrap();
+        for (n, sup, cv, methods) in classes {
+            let cv = if cv.is_empty() {
+                String::new()
+            } else {
+                format!(", #classVars : [ '{cv}' ]")
+            };
+            std::fs::write(
+                pkg.join(format!("{n}.class.st")),
+                format!(
+                    "Class {{ #name : #{n}, #superclass : #{sup}{cv}, #package : 'App' }}\n{methods}\n"
+                ),
+            )
+            .unwrap();
+        }
+        let p = parse_project_full(&dir, &mut Vec::new()).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        p
+    }
+
+    fn calls(p: &Parsed) -> Vec<(&str, &str)> {
+        p.graph
+            .edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Call)
+            .map(|e| (e.from.as_str(), e.to.as_str()))
+            .collect()
+    }
+
+    fn raw_sends(body: &str) -> Vec<(String, Recv)> {
+        let src = format!("Class {{ #name : #C }}\nC >> m [ {body} ]\n");
+        let f = parse_source("C.class.st", &src, "d");
+        f.sends.into_iter().map(|s| (s.selector, s.recv)).collect()
+    }
+
+    fn sel(v: &[(String, Recv)]) -> Vec<&str> {
+        v.iter().map(|(s, _)| s.as_str()).collect()
+    }
+
+    #[test]
+    fn unary_binary_keyword_and_nesting() {
+        let v = raw_sends("a foo bar. ^ a + b at: 1 put: x baz");
+        assert_eq!(sel(&v), vec!["foo", "bar", "+", "at:put:", "baz"]);
+        // `self foo bar`: foo on self, bar on other.
+        let v = raw_sends("self foo bar");
+        assert_eq!(
+            v,
+            vec![("foo".into(), Recv::SelfRecv), ("bar".into(), Recv::Other)]
+        );
+        // Keyword parts across arguments with nested sends.
+        let v = raw_sends("^ self a: (x b: 1) b: y c + 2");
+        assert_eq!(sel(&v), vec!["a:b:", "b:", "c", "+"]);
+        assert_eq!(v[0].1, Recv::SelfRecv);
+        assert_eq!(v[1].1, Recv::Other);
+    }
+
+    #[test]
+    fn cascade_reuses_receiver() {
+        let v = raw_sends("Foo new x: 1; y; z: 2");
+        assert_eq!(
+            v,
+            vec![
+                ("new".into(), Recv::Class("Foo".into())),
+                ("x:".into(), Recv::Other),
+                ("y".into(), Recv::Other),
+                ("z:".into(), Recv::Other),
+            ]
+        );
+        let v = raw_sends("self a; b: 3; + 4");
+        assert_eq!(sel(&v), vec!["a", "b:", "+"]);
+        assert!(v.iter().all(|(_, r)| *r == Recv::SelfRecv));
+        let v = raw_sends("Transcript show: 'x'; cr");
+        assert!(
+            v.iter()
+                .all(|(_, r)| *r == Recv::Class("Transcript".into()))
+        );
+    }
+
+    #[test]
+    fn blocks_assignments_and_braces() {
+        let v = raw_sends(
+            "| t | t := x ifTrue: [ self a ] ifFalse: [ :e | | u | e b. ^ self c ]. { self d. self e }",
+        );
+        assert_eq!(sel(&v), vec!["ifTrue:ifFalse:", "a", "b", "c", "d", "e"]);
+    }
+
+    #[test]
+    fn literals_comments_and_pragmas_are_not_sends() {
+        let v = raw_sends(
+            "<primitive: 1>\n\"self hidden\" ^ 'self str' size + #(self foo: bar) size + #sym + #at:put: + $a + #[1 2] size + 3.5 + -2 abs",
+        );
+        assert_eq!(
+            sel(&v),
+            vec![
+                "size", "+", "size", "+", "+", "+", "+", "size", "+", "+", "abs"
+            ]
+        );
+        assert!(!sel(&v).contains(&"hidden") && !sel(&v).contains(&"foo:"));
+        let v = raw_sends("<script> <pragma: 1 other: 'x'> self a");
+        assert_eq!(sel(&v), vec!["a"]);
+    }
+
+    #[test]
+    fn range_of_a_call_edge() {
+        let p = project(
+            "range",
+            &[(
+                "A",
+                "Object",
+                "",
+                "A >> go [\n\t^ self at: 1 put: 2\n]\nA >> at: a put: b [ ^ 1 ]",
+            )],
+        );
+        assert_eq!(calls(&p), vec![("A#go", "A#at:put:")]);
+        let r = p.calls[0].range;
+        assert_eq!(
+            (r.start_line, r.start_col, r.end_line, r.end_col),
+            (2, 8, 2, 11)
+        );
+        assert_eq!(
+            p.stats,
+            SendStats {
+                resolved: 1,
+                unresolved: 0
+            }
+        );
+    }
+
+    #[test]
+    fn self_and_super_resolution() {
+        let p = project(
+            "selfsuper",
+            &[
+                (
+                    "Base",
+                    "Object",
+                    "",
+                    "Base >> hello [ ^ 1 ]\nBase >> run [ ^ self hello ]\nBase class >> make [ ^ 1 ]",
+                ),
+                (
+                    "Sub",
+                    "Base",
+                    "",
+                    "Sub >> go [ ^ self hello + self nothing ]\nSub >> hello [ ^ super hello ]\nSub class >> make [ ^ super make + self make ]",
+                ),
+            ],
+        );
+        let c = calls(&p);
+        // self up the hierarchy, super from the superclass, same side only.
+        assert!(c.contains(&("Sub#go", "Sub#hello")), "{c:?}");
+        assert!(c.contains(&("Sub#hello", "Base#hello")), "{c:?}");
+        assert!(c.contains(&("Base#run", "Base#hello")), "{c:?}");
+        assert!(c.contains(&("Sub class#make", "Base class#make")), "{c:?}");
+        // `+` is denylisted, `nothing` is not implemented, `self make` is
+        // the method itself (recursion edges are dropped).
+        assert_eq!(c.len(), 4, "{c:?}");
+        assert_eq!(p.stats.unresolved, 3, "{:?}", p.stats);
+    }
+
+    #[test]
+    fn class_receiver_and_class_variables() {
+        let p = project(
+            "classrecv",
+            &[
+                (
+                    "Base",
+                    "Object",
+                    "",
+                    "Base class >> default [ ^ self new ]\nBase >> inst [ ^ 1 ]",
+                ),
+                ("Sub", "Base", "", ""),
+                (
+                    "User",
+                    "Object",
+                    "Cache",
+                    "User >> a [ ^ Sub default ]\nUser >> b [ ^ Sub inst ]\nUser >> c [ ^ Cache default ]\nUser >> d [ ^ Missing default ]",
+                ),
+            ],
+        );
+        let c = calls(&p);
+        // Class-side lookup through the superclass; no instance-side fallback.
+        assert!(c.contains(&("User#a", "Base class#default")), "{c:?}");
+        // `Cache` is a class variable: receiver is `other`, and `default` is
+        // implemented once, so the unique rule applies (not the class rule).
+        assert!(c.contains(&("User#c", "Base class#default")), "{c:?}");
+        assert!(!c.iter().any(|(f, _)| *f == "User#d"), "{c:?}");
+        // `Sub inst` is instance-side: the class rule fails, no edge.
+        assert!(!c.iter().any(|(f, _)| *f == "User#b"), "{c:?}");
+    }
+
+    #[test]
+    fn class_variable_is_not_a_class_receiver() {
+        let p = project(
+            "cvar",
+            &[
+                (
+                    "Other",
+                    "Object",
+                    "",
+                    "Other class >> shared [ ^ 1 ]\nOther class >> dup [ ^ 1 ]",
+                ),
+                ("Dup", "Object", "", "Dup class >> dup [ ^ 2 ]"),
+                (
+                    "User",
+                    "Object",
+                    "Other",
+                    "User >> a [ ^ Other shared ]\nUser >> b [ ^ Other dup ]",
+                ),
+            ],
+        );
+        let c = calls(&p);
+        // With `Other` a class variable, `Other dup` is ambiguous (two
+        // implementors); were `Other` read as the class it would resolve.
+        assert!(!c.iter().any(|(f, _)| *f == "User#b"), "{c:?}");
+        assert!(c.contains(&("User#a", "Other class#shared")), "{c:?}");
+    }
+
+    #[test]
+    fn unique_ambiguous_and_denylisted() {
+        let p = project(
+            "unique",
+            &[
+                (
+                    "A",
+                    "Object",
+                    "",
+                    "A >> only [ ^ 1 ]\nA >> dup [ ^ 1 ]\nA >> value [ ^ 1 ]",
+                ),
+                (
+                    "B",
+                    "Object",
+                    "",
+                    "B >> dup [ ^ 2 ]\nB >> go [ ^ x only + x dup + x value ]\nB >> ext [ ^ x shout ]",
+                ),
+            ],
+        );
+        let c = calls(&p);
+        assert!(c.contains(&("B#go", "A#only")), "{c:?}");
+        // ambiguous (`dup`) and denylisted (`value`, `+`): no edge.
+        assert_eq!(c.iter().filter(|(f, _)| *f == "B#go").count(), 1, "{c:?}");
+
+        // Extension methods count as implementors.
+        let dir = std::env::temp_dir().join(format!("structure-pharo-ext-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src/App")).unwrap();
+        std::fs::write(
+            dir.join("src/App/String.extension.st"),
+            "Extension { #name : #String }\nString >> shout [ ^ 1 ]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("src/App/B.class.st"),
+            "Class { #name : #B, #superclass : #Object, #package : 'App' }\nB >> go [ ^ x shout ]\n",
+        )
+        .unwrap();
+        let p = parse_project_full(&dir, &mut Vec::new()).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(calls(&p), vec![("B#go", "String#shout")]);
+    }
+
+    #[test]
+    fn symbol_does_not_swallow_statement_period() {
+        let v = raw_sends("x := #key. self foo. Bar baz");
+        assert_eq!(
+            v,
+            vec![
+                ("foo".to_string(), Recv::SelfRecv),
+                ("baz".to_string(), Recv::Class("Bar".into())),
+            ]
+        );
+    }
+
+    #[test]
+    fn doubled_quote_stays_inside_string() {
+        let v = raw_sends("self at: 'it''s' put: 3; foo");
+        assert_eq!(
+            v,
+            vec![
+                ("at:put:".to_string(), Recv::SelfRecv),
+                ("foo".to_string(), Recv::SelfRecv),
             ]
         );
     }
