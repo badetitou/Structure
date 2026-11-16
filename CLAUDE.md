@@ -11,6 +11,7 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 - `cargo clippy --workspace --all-targets -- -D warnings` — lints, must be clean
 - `cargo test --workspace` — all tests; `cargo test <name>` for one
 - `cargo run -p structure-cli -- analyze <path>` / `cargo build --release`
+- CI: `.github/workflows/ci.yml` (fmt, clippy, tests, vitest, svelte-check; no Tauri app, no wasm build)
 
 ## Map
 
