@@ -1,0 +1,186 @@
+# Builds the browser extension on a version tag and publishes it to Firefox
+# Add-ons (AMO) and the Chrome Web Store. Each store job is skipped when its
+# secrets are missing. One-time setup: app/README.md, "Publishing the extension".
+name: Extension release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      amo: ${{ steps.stores.outputs.amo }}
+      cws: ${{ steps.stores.outputs.cws }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Both stores want 1 to 4 dot-separated integers (no "-beta" suffix).
+          if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+){0,3}$ ]]; then
+            echo "::error::tag $GITHUB_REF_NAME is not v<1-4 dot-separated integers>"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Which stores are configured
+        id: stores
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          amo=false; cws=false
+          [ -n "$AMO_JWT_ISSUER" ] && [ -n "$AMO_JWT_SECRET" ] && amo=true
+          [ -n "$CWS_EXTENSION_ID" ] && [ -n "$CWS_PUBLISHER_ID" ] && [ -n "$CWS_CLIENT_ID" ] \
+            && [ -n "$CWS_CLIENT_SECRET" ] && [ -n "$CWS_REFRESH_TOKEN" ] && cws=true
+          echo "amo=$amo" >> "$GITHUB_OUTPUT"
+          echo "cws=$cws" >> "$GITHUB_OUTPUT"
+          [ "$amo" = true ] || echo "::notice::AMO secrets missing: Firefox publishing skipped"
+          [ "$cws" = true ] || echo "::notice::Chrome Web Store secrets missing: Chrome publishing skipped"
+
+      - name: Set manifest version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          manifest=app/ui/extension/public/manifest.json
+          jq --arg v "$VERSION" '.version = $v' "$manifest" > "$RUNNER_TEMP/manifest.json"
+          mv "$RUNNER_TEMP/manifest.json" "$manifest"
+
+      - name: Source archive
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # The tagged tree plus the versioned manifest, so AMO reviewers rebuild
+          # exactly what was submitted.
+          git add app/ui/extension/public/manifest.json
+          tree="$(git write-tree)"
+          git archive --format=zip --prefix="structure-$VERSION/" \
+            -o "structure-extension-$VERSION-source.zip" "$tree"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: LLVM for the wasm C build (tree-sitter)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm
+          echo "CC_wasm32_unknown_unknown=$(command -v clang)" >> "$GITHUB_ENV"
+          echo "AR_wasm32_unknown_unknown=$(command -v llvm-ar)" >> "$GITHUB_ENV"
+
+      - name: Build wasm
+        run: scripts/build-wasm.sh
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+
+      - name: Build extension
+        working-directory: app/ui
+        run: |
+          npm ci
+          npm run build:extension
+
+      - name: Extension archive
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          (cd app/ui/dist-extension && zip -r -X "$GITHUB_WORKSPACE/structure-extension-$VERSION.zip" .)
+          unzip -l "structure-extension-$VERSION.zip"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: extension
+          path: |
+            structure-extension-${{ steps.version.outputs.version }}.zip
+            structure-extension-${{ steps.version.outputs.version }}-source.zip
+          if-no-files-found: error
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: extension
+      - name: Attach zips to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" structure-extension-*.zip --clobber
+          else
+            gh release create "$TAG" structure-extension-*.zip --verify-tag --generate-notes
+          fi
+
+  firefox:
+    needs: build
+    if: needs.build.outputs.amo == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: extension
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Submit to addons.mozilla.org (listed)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          unzip -q "structure-extension-$VERSION.zip" -d dist
+          # Listed versions go through AMO review: submit and do not wait for it.
+          npx --yes web-ext@10.8.0 sign \
+            --source-dir dist \
+            --artifacts-dir web-ext-artifacts \
+            --channel listed \
+            --upload-source-code "structure-extension-$VERSION-source.zip" \
+            --approval-timeout 0
+
+  chrome:
+    needs: build
+    if: needs.build.outputs.cws == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: extension
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Upload and publish to the Chrome Web Store
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: npx --yes chrome-webstore-upload-cli@4.0.2 --source "structure-extension-$VERSION.zip"
