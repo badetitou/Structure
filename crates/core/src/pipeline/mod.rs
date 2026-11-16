@@ -19,8 +19,8 @@ pub use multi::{analyze_many, expand_roots};
 pub use snapshot::{MAX_SNAPSHOTS, analyze_snapshot, impact_at, impact_in_snapshot, snapshot};
 pub use structure_git::{resolve_base, resolve_commit, worktree_fingerprint};
 
-use std::path::Path;
-use std::sync::OnceLock;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use anyhow::{Context, bail};
@@ -74,7 +74,13 @@ impl Default for Options {
 
 #[derive(Debug, Clone)]
 pub struct Analysis {
-    pub graph: Graph,
+    /// Shared so that analyses differing only in classification can hold the
+    /// same graph without copying it.
+    pub graph: Arc<Graph>,
+    /// The analysed roots, in matrix order: the project itself, or each root
+    /// of a multi-root analysis after [`expand_roots`] (named as in
+    /// `matrix.projects`).
+    pub roots: Vec<PathBuf>,
     pub classification: Classification,
     pub matrix: Matrix,
     pub link_stats: Option<LinkStats>,
@@ -87,8 +93,9 @@ pub struct Analysis {
     /// Declared layers of the rules used (merged across roots, see
     /// [`analyze_many`]); the matrix only lists the ones it places symbols in.
     pub layers: Layers,
-    /// Built from `graph` on the first impact (see [`Analysis::impact_index`]).
-    impact_index: OnceLock<ImpactIndex>,
+    /// Built from `graph` on the first impact (see [`Analysis::impact_index`]);
+    /// shared with every analysis holding the same `graph`.
+    impact_index: Arc<OnceLock<ImpactIndex>>,
 }
 
 impl Analysis {
@@ -292,7 +299,8 @@ pub(super) fn analyze_in(
     step("done", 100);
 
     Ok(Analysis {
-        graph,
+        graph: Arc::new(graph),
+        roots: vec![root.to_path_buf()],
         classification,
         matrix,
         link_stats,
@@ -301,7 +309,7 @@ pub(super) fn analyze_in(
         metrics,
         warnings,
         layers,
-        impact_index: OnceLock::new(),
+        impact_index: Default::default(),
     })
 }
 

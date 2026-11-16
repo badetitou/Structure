@@ -194,19 +194,15 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
             root: root.display().to_string(),
             language: a.graph.language,
         });
-        for mut s in a.graph.symbols {
+        let part = std::sync::Arc::unwrap_or_clone(a.graph);
+        for mut s in part.symbols {
             s.id = prefix_id(name, &s.id);
             s.container = s.container.map(|c| prefix_id(name, &c));
             s.file = format!("{name}/{}", s.file);
             graph.symbols.push(s);
         }
         // Rpc edges are linked again on the merged graph below.
-        for mut e in a
-            .graph
-            .edges
-            .into_iter()
-            .filter(|e| e.kind != EdgeKind::Rpc)
-        {
+        for mut e in part.edges.into_iter().filter(|e| e.kind != EdgeKind::Rpc) {
             e.from = prefix_id(name, &e.from);
             e.to = prefix_id(name, &e.to);
             graph.edges.push(e);
@@ -268,7 +264,8 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
     matrix.projects = projects;
     matrix.warnings = warnings.clone();
     Analysis {
-        graph,
+        graph: std::sync::Arc::new(graph),
+        roots: roots.to_vec(),
         classification,
         matrix,
         link_stats,
