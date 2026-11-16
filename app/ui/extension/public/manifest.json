@@ -3,6 +3,13 @@
   "name": "Structure",
   "version": "0.1.0",
   "description": "Adds a Structure tab to GitHub pull requests: the layer x domain matrix of the PR with its changed and impacted cells.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
+  },
   "browser_specific_settings": {
     "gecko": {
       "id": "structure@structure.local",
