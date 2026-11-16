@@ -156,8 +156,10 @@ jobs:
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
           unzip -q "structure-extension-$VERSION.zip" -d dist
-          # AMO requires a license on every listed version.
-          echo '{"version": {"license": "MIT"}}' > "$RUNNER_TEMP/amo-metadata.json"
+          # AMO requires a license on every listed version, and a category for
+          # the listing (name and summary come from the manifest).
+          echo '{"categories": ["web-development"], "version": {"license": "MIT"}}' \
+            > "$RUNNER_TEMP/amo-metadata.json"
           # Listed versions go through AMO review: submit and do not wait for it.
           npx --yes web-ext@10.8.0 sign \
             --source-dir dist \

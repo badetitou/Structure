@@ -7,6 +7,13 @@ browser extension and attaches it to the GitHub release.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-16
+
+### Fixed
+
+- The release workflow gives Firefox Add-ons the listing category
+  (Web Development), which it requires for the first listed version.
+
 ## [0.1.2] - 2026-11-16
 
 ### Added
@@ -63,7 +70,8 @@ First public release: a proof of concept, local only.
   GitHub release and, when the store secrets are set, submits it to Firefox
   Add-ons and the Chrome Web Store.
 
-[Unreleased]: https://github.com/badetitou/Structure/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/badetitou/Structure/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/badetitou/Structure/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/badetitou/Structure/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/badetitou/Structure/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/badetitou/Structure/releases/tag/v0.1.0
