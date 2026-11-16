@@ -7,6 +7,17 @@ browser extension and attaches it to the GitHub release.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-16
+
+### Added
+
+- Structure is released under the MIT license (`LICENSE`).
+
+### Fixed
+
+- The release workflow sends the license to Firefox Add-ons, which rejected
+  the 0.1.1 submission without one.
+
 ## [0.1.1] - 2026-11-16
 
 ### Changed
@@ -52,6 +63,7 @@ First public release: a proof of concept, local only.
   GitHub release and, when the store secrets are set, submits it to Firefox
   Add-ons and the Chrome Web Store.
 
-[Unreleased]: https://github.com/badetitou/Structure/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/badetitou/Structure/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/badetitou/Structure/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/badetitou/Structure/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/badetitou/Structure/releases/tag/v0.1.0

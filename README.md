@@ -337,3 +337,7 @@ indexer. See [scripts/README.md](scripts/README.md).
   TypeScript have no call edges there: impact follows `Uses` and supertype edges. One root per PR, no HTTP or
   RPC links. It is not yet listed on the Chrome Web Store or addons.mozilla.org; install it
   from a [release](https://github.com/badetitou/Structure/releases/latest).
+
+## License
+
+[MIT](LICENSE).
