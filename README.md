@@ -281,8 +281,11 @@ Pharo package naming conventions such as `-Model`, `-UI`, `-Tests`
 override them for one project, add `<project>/.structure/rules.toml`: its rules
 take priority over the built-in ones, and its `[[layer]]` entries add layers or
 change the label and order of a built-in one (same `id`). A rule on a layer that
-no file declares is an error. The format is described in
-[rules/README.md](rules/README.md).
+no file declares is an error, as is a syntax error or an unknown field; the
+message names the file. When several projects are analysed together, the first
+one's layers win for a shared `id` and layers declared only by the others are
+added after its rows. The format, an example and the merge rules are described
+in [rules/README.md](rules/README.md#project-rules).
 
 ## Repository layout
 

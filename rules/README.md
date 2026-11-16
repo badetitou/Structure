@@ -51,12 +51,65 @@ rules/java.toml: invalid classification rules: rule 2 uses undeclared layer `ser
 
 ## Project rules
 
-`.structure/rules.toml` is merged over the default rules:
+A project can adapt the defaults with its own file,
+`<project root>/.structure/rules.toml` (the root is the directory given to
+`structure analyze` or opened in the app). It uses the same format as the
+default files, every section optional. Without the file nothing changes.
+
+It is merged over the default rules of the project's language:
 
 - its rules come first (they take priority);
 - its `[domain]` table, when present, replaces the default one;
 - its layers are merged by `id`: an existing id takes the project's `label`
-  and `order`, a new id is added.
+  and `order` (rename, reorder), a new id is added.
 
 The merged set is then checked: a project rule may use any layer declared by
 the default rules or by the project file.
+
+Example: a `view` row above the default ones, the `entry` row renamed, and a
+rule placing `*View` classes in `view`:
+
+```toml
+[[layer]]
+id = "view"
+label = "Views"
+order = 0        # same order as `ui`: ties keep `ui` first
+
+[[layer]]
+id = "entry"
+label = "Entry points"
+order = 3
+
+[[rule]]
+layer = "view"
+name_suffix = ["View"]
+```
+
+### Several projects
+
+When several roots are analysed together (`structure analyze a b`, or several
+folders in the app), each root is classified with its own defaults and its own
+`.structure/rules.toml`, then the layers are merged by `id`:
+
+- the first root (the primary one, whose name labels the matrix) keeps its
+  layers: for a shared id, its `label` and `order` win;
+- a layer declared only by later roots is added after the first root's
+  layers, in root order, then in that root's order (its own `order` value is
+  replaced to keep it after);
+- `unknown` stays last.
+
+The rows of the primary project therefore never move when a project is added.
+
+### Errors
+
+An invalid project file stops the analysis (the app shows it as an analysis
+error); the message names the file and the reason, for example:
+
+```text
+invalid /path/to/app/.structure/rules.toml: invalid classification rules: TOML parse error at line 2, column 1 ... unknown field `name_sufix`, expected one of `layer`, `any_annotation`, ...
+invalid /path/to/app/.structure/rules.toml: invalid classification rules: rule 1 uses undeclared layer `view` (declared layers: ui, ...)
+invalid /path/to/app/.structure/rules.toml: invalid classification rules: layer `view` is declared twice
+```
+
+Errors cover TOML syntax, unknown fields, a layer declared twice in the file,
+a declared `unknown` layer, and a rule on an undeclared layer.
