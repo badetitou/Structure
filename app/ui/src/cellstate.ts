@@ -1,4 +1,5 @@
 export const CHANGED = "var(--changed)";
+export const IMPACT_EDGE = "var(--edge-impact)";
 export const DEFAULT_FILL = "var(--cell)";
 
 /** distance 1 = strongest step of the `--impact-*` token ramp, fading to step 5. */
@@ -83,7 +84,7 @@ export function edgeStyle(kind: EdgeKind, weight: number, remote?: RemoteKind): 
     case "bwd":
       return { stroke: BWD, marker: "a-bwd", opacity: "0.95", width };
     case "imp":
-      return { stroke: CHANGED, marker: "a-imp", opacity: "0.9", width };
+      return { stroke: IMPACT_EDGE, marker: "a-imp", opacity: "0.9", width };
     default:
       if (remote) return { stroke: `var(--edge-${remote})`, marker: `a-${remote}`, opacity: "var(--edge-opacity)", width };
       return { stroke: "var(--edge)", marker: "a-def", opacity: "var(--edge-opacity)", width };

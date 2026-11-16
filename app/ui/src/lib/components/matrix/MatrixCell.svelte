@@ -33,6 +33,8 @@
         ? impactCellPaint(cell.id, impact.changed, impact.impacted)
         : { fill: DEFAULT_FILL, opacity: 1 },
   );
+  // Changed cells also get an outline, so they read apart from impacted ones by more than hue.
+  const changed = $derived(!hover && !!impact?.changed.has(cell.id));
   const label = $derived(`${layerName(cell.layer)}/${cell.label} (${cell.size})`);
   // Dense tiles touch: inset by half the stroke so neighbours do not overlap.
   const inset = $derived(detailed ? 0 : 0.5);
@@ -50,6 +52,7 @@
     rx={detailed ? 3 : undefined}
     style:fill={paint.fill}
     class:lit={paint.opacity === 1}
+    class:changed
     onmouseenter={() => onhover(cell.id)}
     onmouseleave={() => onhover(null)}
     onclick={() => onselect(cell)}
@@ -74,6 +77,13 @@
   }
   .dense {
     stroke-width: 0.5;
+  }
+  .changed {
+    stroke: var(--changed-outline);
+    stroke-width: 2;
+  }
+  .changed.dense {
+    stroke-width: 1.5;
   }
   text {
     fill: var(--foreground);

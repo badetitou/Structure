@@ -290,7 +290,7 @@
     {onclickcapture}
   >
     <defs>
-      {#each [["a-def", "var(--edge)"], ["a-fwd", "var(--fwd)"], ["a-bwd", "var(--bwd)"], ["a-imp", "var(--changed)"], ["a-http", "var(--edge-http)"], ["a-rpc", "var(--edge-rpc)"]] as [id, color] (id)}
+      {#each [["a-def", "var(--edge)"], ["a-fwd", "var(--fwd)"], ["a-bwd", "var(--bwd)"], ["a-imp", "var(--edge-impact)"], ["a-http", "var(--edge-http)"], ["a-rpc", "var(--edge-rpc)"]] as [id, color] (id)}
         <marker {id} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
           <path d="M0,0 L10,5 L0,10 z" style:fill={color} />
         </marker>

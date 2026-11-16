@@ -68,7 +68,7 @@ describe("edge style parity", () => {
     expect(edgeStyle("def", 1, "http")).toMatchObject({ stroke: "var(--edge-http)", marker: "a-http" });
     expect(edgeStyle("fwd", 1, "http")).toMatchObject({ stroke: "var(--fwd)" });
     expect(edgeStyle("bwd", 1)).toMatchObject({ stroke: "var(--bwd)", marker: "a-bwd", opacity: "0.95" });
-    expect(edgeStyle("imp", 1)).toMatchObject({ stroke: "var(--changed)", marker: "a-imp", opacity: "0.9" });
+    expect(edgeStyle("imp", 1)).toMatchObject({ stroke: "var(--edge-impact)", marker: "a-imp", opacity: "0.9" });
     expect(edgeStyle("def", 1)).toMatchObject({ stroke: "var(--edge)", marker: "a-def" });
   });
   it("default edges are 0.5, 0.1 while hovering, 0.12 while showing impact", () => {
