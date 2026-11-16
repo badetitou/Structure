@@ -6,9 +6,9 @@
   import { Button } from "$lib/components/ui/button";
   import type { DiffLine } from "../../api";
   import { fileLabel, rangeLabel, startsOpen, statusLetter, totals } from "../../diffview";
-  import { app } from "../../state.svelte";
+  import { git } from "../../stores/git.svelte";
 
-  const d = $derived(app.diff);
+  const d = $derived(git.diff);
   const sum = $derived(d?.data ? totals(d.data) : null);
 
   const rowClass: Record<DiffLine["kind"], string> = {

@@ -6,7 +6,9 @@
   import StatusBar from "./StatusBar.svelte";
   import Toolbar from "./Toolbar.svelte";
   import Workspace from "./workspace/Workspace.svelte";
-  import { app } from "../../state.svelte";
+  import { analysis } from "../../stores/analysis.svelte";
+  import { load, reset, runImpact, watchRules } from "../../stores/session";
+  import { shown } from "../../stores/shown";
 
   // Analyses `paths`, shows the progress, then the workspace of panels (matrix, details, history, …)
   // between one compact top bar and a status bar.
@@ -23,19 +25,18 @@
   onMount(() => {
     let live = true;
     let unwatch = () => {};
-    app
-      .load(paths)
+    load(paths)
       .then(() => {
         if (!live) return;
-        if (embedded) return app.runImpact(null, null);
+        if (embedded) return runImpact(null, null);
         // Reload the matrix when the project's rules files change.
-        unwatch = app.watchRules();
+        unwatch = watchRules();
       })
       .catch((e) => live && onExit(`Analysis failed: ${String(e)}`));
     return () => {
       live = false;
       unwatch();
-      app.reset();
+      reset();
     };
   });
 </script>
@@ -43,20 +44,20 @@
 <Tooltip.Provider>
   <div class="flex h-screen flex-col">
     <Toolbar
-      ready={app.phase === "ready" && !!app.work}
+      ready={analysis.phase === "ready" && !!analysis.work}
       onZoomIn={() => matrix?.zoomIn()}
       onZoomOut={() => matrix?.zoomOut()}
       onFit={() => matrix?.fitView()}
       onClose={() => onExit()}
       {embedded}
     />
-    {#if app.phase === "ready" && app.work}
-      {#if app.rulesError}
-        <div class="flex-none border-b px-4 py-1 text-[13px] text-destructive" role="alert">{app.rulesError}</div>
+    {#if analysis.phase === "ready" && analysis.work}
+      {#if analysis.rulesError}
+        <div class="flex-none border-b px-4 py-1 text-[13px] text-destructive" role="alert">{analysis.rulesError}</div>
       {/if}
-      {#if app.warnings.length > 0}
+      {#if shown.warnings.length > 0}
         <div class="flex-none border-b border-(--warn-border) bg-(--warn-bg) px-4 py-1 text-[13px] text-(--warn-fg)">
-          {#each app.warnings as w}<div>⚠ {w}</div>{/each}
+          {#each shown.warnings as w}<div>⚠ {w}</div>{/each}
         </div>
       {/if}
       <Workspace />

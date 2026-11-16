@@ -15,7 +15,10 @@
   import { FLAME_MAX_COLUMNS, MAX_COLUMNS, aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded, remapExpanded } from "../../domaintree";
   import { adjacency, reach, visibleEdges, type RemoteKind } from "../../graph";
   import { BAND_DENSE, BAND_NORMAL, STROKE_DENSE, STROKE_NORMAL, layout } from "../../layout";
-  import { app } from "../../state.svelte";
+  import { analysis } from "../../stores/analysis.svelte";
+  import { impact } from "../../stores/impact.svelte";
+  import { options } from "../../stores/options.svelte";
+  import { selection } from "../../stores/selection.svelte";
   import { fit, isFit, oneToOne, panBy, resize as resizeVb, toUser, wheelZoomFactor, zoomAtClamped } from "../../viewport";
   import type { ViewBox } from "../../viewport";
   import ColumnHeaders from "./matrix/ColumnHeaders.svelte";
@@ -27,19 +30,19 @@
   // feed per-cell / per-edge derivations, and pan / zoom is one `transform`.
   let { matrix }: { matrix: Matrix } = $props();
 
-  const mode = $derived(app.mode);
-  const transposed = $derived(app.transposed);
+  const mode = $derived(options.mode);
+  const transposed = $derived(options.transposed);
 
   // Collapsible columns along the domain tree (module domains), else one per domain.
   const tree = $derived(matrix.domain_tree && matrix.domain_tree.length > 0 ? matrix.domain_tree : undefined);
   // A new analysis or mode starts from its default expansion; the flame view opens the tree
   // much deeper so the matrix grows sideways. A commit snapshot of the same analysis keeps
   // the open groups (remapped by label, as its tree can differ) and the zoom.
-  const base = $derived(app.work ?? matrix);
+  const base = $derived(analysis.work ?? matrix);
   let override = $state.raw<{ base: Matrix; tree: DomainNode[]; flame: boolean; set: Set<string> } | null>(null);
   const flame = $derived(mode === "flame");
   // Aligned view: several projects with remote links, front and back domains share rows.
-  const alignedOn = $derived(app.aligned && canAlign(matrix.projects, matrix.httpEdges, matrix.rpcEdges));
+  const alignedOn = $derived(options.aligned && canAlign(matrix.projects, matrix.httpEdges, matrix.rpcEdges));
   const budget = $derived(flame ? FLAME_MAX_COLUMNS : MAX_COLUMNS);
   // Aligned: each project (top-level node) gets its own column budget, so the backend opens too.
   const defaultExpanded = (t: DomainNode[]) => {
@@ -80,7 +83,7 @@
       transposed,
       al ? al.layers.map((l) => layerLabel(matrix.layers, l.layer)) : matrix.layers.map((l) => l.label),
       al?.segments,
-      app.angledLabels,
+      options.angledLabels,
     ),
   );
   // Aligned: only the primary project's bands, shifted to its first row.
@@ -106,8 +109,8 @@
     return tile ? [{ cell, tile }] : [];
   }));
   // Edges are drawn in normal mode only.
-  const showHttp = $derived(app.showHttp);
-  const showRpc = $derived(app.showRpc);
+  const showHttp = $derived(options.showHttp);
+  const showRpc = $derived(options.showRpc);
   const tiled = (list: readonly CellEdge[], kind?: RemoteKind) =>
     list.flatMap((edge) => {
       const from = tileById.get(edge.from);
@@ -125,7 +128,7 @@
   // Hover: adjacency once per view matrix, then one BFS per direction per hovered cell.
   // Tied to the matrix, mode, impact and expansion it was made under: any change drops it with no stale frame.
   let hovered = $state.raw<{ id: string; keys: unknown[] } | null>(null);
-  const hoverKeys = () => [matrix, mode, app.impact, expanded, alignedOn];
+  const hoverKeys = () => [matrix, mode, impact.current, expanded, alignedOn];
   const hoveredId = $derived(
     hovered && hovered.keys.every((k, i) => k === hoverKeys()[i]) ? hovered.id : null,
   );
@@ -134,15 +137,15 @@
   const hover = $derived(
     hoveredId ? { id: hoveredId, fwd: reach(hoveredId, adj, "forward"), bwd: reach(hoveredId, adj, "backward") } : null,
   );
-  const impact = $derived(app.impact ? aggregateImpact(app.impact, vm.cellMap) : null);
-  const selTile = $derived(app.selected ? tileById.get(app.selected.id) : undefined);
+  const shownImpact = $derived(impact.current ? aggregateImpact(impact.current, vm.cellMap) : null);
+  const selTile = $derived(selection.selected ? tileById.get(selection.selected.id) : undefined);
   const selWidth = $derived((mode === "dense" ? STROKE_DENSE : STROKE_NORMAL)[1]);
 
   // Publish the aggregated view so the details panel names visible cells.
   $effect(() => {
-    app.view = vm;
+    selection.view = vm;
     return () => {
-      app.view = null;
+      selection.view = null;
     };
   });
 
@@ -150,7 +153,7 @@
   // after a rules reload, take the view's cell of the same id (its members may have changed).
   $effect(() => {
     const cells = vm.cells;
-    untrack(() => app.syncSelection(cells));
+    untrack(() => selection.sync(cells));
   });
 
   function setExpanded(key: string, on: boolean) {
@@ -159,7 +162,7 @@
     else set.delete(key);
     if (tree) override = { base, tree, flame, set };
     // Expand / collapse changes the cell ids: drop the selection and hover.
-    app.selectCell(null);
+    selection.select(null);
   }
 
   // Zoom / pan. The viewport keeps the pane's aspect (see viewport.ts); the
@@ -309,8 +312,8 @@
       <g
         transform={transposed ? `translate(${top} 0)` : `translate(0 ${top})`}
         class:hovering={!!hover}
-        class:impacting={!hover && !!impact}
-        style:--edge-opacity={defaultEdgeOpacity(!!hover, !!impact)}
+        class:impacting={!hover && !!shownImpact}
+        style:--edge-opacity={defaultEdgeOpacity(!!hover, !!shownImpact)}
       >
         {#each emptyTiles as t (`${t.layer}\u0000${t.domain}`)}
           {#if lay.detailed}
@@ -331,7 +334,7 @@
         {/each}
         <!-- Edges sit under the cells -->
         {#each edgeTiles as e (e.key)}
-          <MatrixEdge edge={e.edge} from={e.from} to={e.to} {hover} {impact} kind={e.kind} />
+          <MatrixEdge edge={e.edge} from={e.from} to={e.to} {hover} impact={shownImpact} kind={e.kind} />
         {/each}
         {#each cellTiles as c (c.cell.id)}
           <MatrixCell
@@ -340,9 +343,9 @@
             tile={c.tile}
             detailed={lay.detailed}
             {hover}
-            {impact}
+            impact={shownImpact}
             onhover={setHover}
-            onselect={(cell) => app.selectCell(cell)}
+            onselect={(cell) => selection.select(cell)}
           />
         {/each}
         <!-- The selected outline is drawn last so neighbours (dense tiles touch) do not cover it. -->

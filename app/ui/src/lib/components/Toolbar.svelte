@@ -12,7 +12,11 @@
   import { canAlign } from "../../aligned";
   import ThemeSwitch from "../../ThemeSwitch.svelte";
   import { parseMode } from "../../mode";
-  import { app } from "../../state.svelte";
+  import { analysis } from "../../stores/analysis.svelte";
+  import { impact } from "../../stores/impact.svelte";
+  import { options } from "../../stores/options.svelte";
+  import { clearImpact } from "../../stores/session";
+  import { shown } from "../../stores/shown";
   import { folderName } from "../../recent";
   import ImpactRange from "./ImpactRange.svelte";
   import OptionsButton from "./OptionsButton.svelte";
@@ -38,7 +42,7 @@
 
   // Several projects: their names joined; else the project name or folder.
   const title = $derived(
-    app.work?.projects?.length ? app.work.projects.map((p) => p.name).join(" + ") : app.work?.project || folderName(app.project),
+    analysis.work?.projects?.length ? analysis.work.projects.map((p) => p.name).join(" + ") : analysis.work?.project || folderName(analysis.project),
   );
 </script>
 
@@ -57,7 +61,7 @@
 
 <header class="flex h-10 flex-none items-center gap-1.5 overflow-x-auto border-b bg-card px-2 whitespace-nowrap">
   <img src="/logo.svg" alt="Structure" class="size-6 flex-none" />
-  <h1 class="m-0 max-w-56 truncate text-sm font-semibold" title={app.paths.join("\n")}>{title}</h1>
+  <h1 class="m-0 max-w-56 truncate text-sm font-semibold" title={analysis.paths.join("\n")}>{title}</h1>
   {#if ready}
   {@render divider()}
   {@render iconBtn(ZoomOut, "Zoom out", onZoomOut)}
@@ -69,8 +73,8 @@
     variant="outline"
     size="sm"
     aria-label="Matrix view"
-    value={app.mode}
-    onValueChange={(v) => v && app.setMode(parseMode(v))}
+    value={options.mode}
+    onValueChange={(v) => v && options.setMode(parseMode(v))}
   >
     <ToggleGroup.Item value="normal" aria-label="Normal view" class="px-2">Normal</ToggleGroup.Item>
     <ToggleGroup.Item value="dense" aria-label="Dense view" class="px-2">Dense</ToggleGroup.Item>
@@ -84,49 +88,49 @@
           variant="outline"
           size="sm"
           aria-label="Swap axes"
-          pressed={app.transposed}
-          onPressedChange={(on) => app.setTransposed(on)}><ArrowLeftRight /></Toggle
+          pressed={options.transposed}
+          onPressedChange={(on) => options.setTransposed(on)}><ArrowLeftRight /></Toggle
         >
       {/snippet}
     </Tooltip.Trigger>
     <Tooltip.Content
-      >Swap axes — {app.transposed ? "domains as rows, layers as columns" : "layers as rows, domains as columns"}</Tooltip.Content
+      >Swap axes — {options.transposed ? "domains as rows, layers as columns" : "layers as rows, domains as columns"}</Tooltip.Content
     >
   </Tooltip.Root>
-  {#if canAlign(app.matrix?.projects, app.matrix?.httpEdges ?? [], app.matrix?.rpcEdges ?? [])}
+  {#if canAlign(shown.matrix?.projects, shown.matrix?.httpEdges ?? [], shown.matrix?.rpcEdges ?? [])}
     <Toggle
       variant="outline"
       size="sm"
       class="px-2"
       aria-label="Align projects: front and back domains on shared rows"
-      pressed={app.aligned}
-      onPressedChange={(v) => app.setAligned(v)}>Align projects</Toggle
+      pressed={options.aligned}
+      onPressedChange={(v) => options.setAligned(v)}>Align projects</Toggle
     >
   {/if}
-  {#if (app.matrix?.httpEdges.length ?? 0) > 0}
+  {#if (shown.matrix?.httpEdges.length ?? 0) > 0}
     <Toggle
       variant="outline"
       size="sm"
       class="px-2"
       aria-label="Show front-to-back HTTP links"
-      pressed={app.showHttp}
-      onPressedChange={(v) => app.setShowHttp(v)}>HTTP links</Toggle
+      pressed={options.showHttp}
+      onPressedChange={(v) => options.setShowHttp(v)}>HTTP links</Toggle
     >
   {/if}
-  {#if (app.matrix?.rpcEdges.length ?? 0) > 0}
+  {#if (shown.matrix?.rpcEdges.length ?? 0) > 0}
     <Toggle
       variant="outline"
       size="sm"
       class="px-2"
       aria-label="Show GWT RPC links"
-      pressed={app.showRpc}
-      onPressedChange={(v) => app.setShowRpc(v)}>RPC links</Toggle
+      pressed={options.showRpc}
+      onPressedChange={(v) => options.setShowRpc(v)}>RPC links</Toggle
     >
   {/if}
-  {#if !app.multi && !embedded}
+  {#if !analysis.multi && !embedded}
   {@render divider()}
   <ImpactRange />
-  <Button variant="outline" size="sm" disabled={!app.impact || app.impactBusy} onclick={() => app.clearImpact()}
+  <Button variant="outline" size="sm" disabled={!impact.current || impact.busy} onclick={() => clearImpact()}
     >Clear impact</Button
   >
   {/if}
