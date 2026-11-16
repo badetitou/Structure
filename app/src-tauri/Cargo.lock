@@ -3031,7 +3031,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "structure-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -3043,7 +3043,7 @@ dependencies = [
 
 [[package]]
 name = "structure-classify"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "rayon",
@@ -3054,7 +3054,7 @@ dependencies = [
 
 [[package]]
 name = "structure-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "ignore",
@@ -3062,13 +3062,14 @@ dependencies = [
  "structure-git",
  "structure-ir",
  "structure-lang-java",
+ "structure-lang-pharo",
  "structure-lang-ts",
  "structure-scip",
 ]
 
 [[package]]
 name = "structure-git"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "structure-ir",
@@ -3076,14 +3077,14 @@ dependencies = [
 
 [[package]]
 name = "structure-ir"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "structure-lang-java"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "ignore",
@@ -3094,8 +3095,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "structure-lang-pharo"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "ignore",
+ "structure-ir",
+]
+
+[[package]]
 name = "structure-lang-ts"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "ignore",
@@ -3107,7 +3117,7 @@ dependencies = [
 
 [[package]]
 name = "structure-scip"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "libc",
@@ -3828,13 +3838,12 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter"
-version = "0.25.10"
+version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78f873475d258561b06f1c595d93308a7ed124d9977cb26b148c2084a4a3cc87"
+checksum = "37b2bed8f39a73439f3b0b7ed8f452be5d2911b5e9da69d352ef113bb7448fb8"
 dependencies = [
  "cc",
  "regex",
- "regex-syntax",
  "serde_json",
  "streaming-iterator",
  "tree-sitter-language",

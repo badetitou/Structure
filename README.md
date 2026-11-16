@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>See a whole codebase as one matrix, and see what a diff really touches.</b><br>
-  Structure turns a Java or TypeScript project into a call graph, folds it into
+  Structure turns a Java, TypeScript or Pharo project into a call graph, folds it into
   <code>layer × domain</code> cells, and renders it as an interactive matrix.
 </p>
 
@@ -19,8 +19,10 @@
   <code>business/catalog</code> lights up what it reaches (green) and what reaches it (blue).
 </sub></p>
 
-> **Status: proof of concept.** Local only, Java and TypeScript, class-level
-> granularity. See [Limitations](#limitations).
+> **Status: proof of concept.** Local only, Java, TypeScript and Pharo,
+> class-level granularity. See [Limitations](#limitations) and the
+> [changelog](CHANGELOG.md). Latest release:
+> [GitHub releases](https://github.com/badetitou/Structure/releases/latest).
 
 ## Why
 
@@ -47,6 +49,7 @@ on one screen, reads top to bottom, and answers two questions quickly:
 | **Front + back together** | Analyse an Angular front and a Spring back in one matrix; HTTP calls are matched to endpoints. GWT RPC calls are linked to their service implementations. |
 | **Three views** | *Normal* (labelled cells and edges), *Dense* (uniform tiles for big projects), *Flame* (column widths by size). |
 | **Compiler-accurate edges** | Tree-sitter for symbols, [SCIP](https://github.com/sourcegraph/scip) indexes for exact references. |
+| **Pharo too** | Tonel (`.st`) sources are read directly; message sends become call edges, resolved through `self`/`super`, class receivers and unique selectors. |
 | **Custom rules** | Classification is plain TOML; override it per project. |
 | **CLI and desktop app** | The `structure` binary emits JSON; the Tauri app is the interactive view. |
 | **Browser extension** | A *Structure* tab on GitHub pull requests, in Chrome and Firefox: the PR's matrix and impact, computed in the browser (WebAssembly). |
@@ -82,12 +85,23 @@ tiles.
 
 ## Quick start
 
+### Install the browser extension from a release
+
+Each [GitHub release](https://github.com/badetitou/Structure/releases/latest)
+carries `structure-extension-<version>.zip`, a ready-built extension for
+Chrome, Edge and Firefox. Unzip it and load the folder unpacked (see
+[Load it unpacked](#build-the-browser-extension) below), then open a pull
+request on GitHub and click the **Structure** tab. No Rust or Node needed.
+
+The desktop app and the CLI are built from source for now.
+
 ### Prerequisites
 
 - Rust (stable) and Node 20+
 - For the desktop app: `cargo install tauri-cli --version "^2"`
 - For Java indexing: a JDK, plus Maven or the project's Gradle wrapper. `scip-java` or Coursier (`cs`) is optional.
 - For TypeScript indexing: `npx` (the indexer is fetched and run for you)
+- For Pharo: nothing; Tonel sources (`src/<Package>/<Class>.class.st`) are read directly
 
 ### Run the desktop app
 
@@ -96,7 +110,7 @@ cd app/ui && npm install
 cd ../src-tauri && cargo tauri dev
 ```
 
-Click **Open project…**, choose a Java or TypeScript folder, then **Analyze**.
+Click **Open project…**, choose a Java, TypeScript or Pharo folder, then **Analyze**.
 Add a second folder to analyse a front and a back together.
 
 To try the UI without analysing anything, run it in a browser on sample data:
@@ -204,7 +218,7 @@ Load it unpacked:
 
 After a rebuild, click *Reload* on the extension and refresh the GitHub tab.
 
-Open a pull request of a Java or TypeScript repository and click the
+Open a pull request of a Java, TypeScript or Pharo (Tonel) repository and click the
 **Structure** tab. Without a token, GitHub limits anonymous API calls to 60 per
 hour and only public repositories work. To raise the limit or read private
 repositories, add a GitHub token in the extension's options page; it is stored
@@ -227,8 +241,8 @@ flowchart LR
     impact --> ui
 ```
 
-1. **Parse.** Tree-sitter extracts classes, ranges, annotations and supertypes.
-2. **Index.** The SCIP indexer runs as a subprocess. An existing `<project>/index.scip` is reused.
+1. **Parse.** Tree-sitter (Java, TypeScript) or the Tonel reader (Pharo) extracts classes, ranges, annotations and supertypes.
+2. **Index.** The SCIP indexer runs as a subprocess. An existing `<project>/index.scip` is reused. Pharo has no SCIP step: its call edges come from the Tonel reader.
 3. **Link.** SCIP occurrences are joined to tree-sitter symbols to produce `Call`, `Uses` and `Implements` edges.
 4. **Classify.** TOML rules assign each class a layer and a domain.
 5. **Quotient.** Symbols collapse into cells; edges are aggregated between cells.
@@ -254,7 +268,9 @@ package_contains = [".config.", ".configuration."]
 ```
 
 Built-in rules cover Spring, Stripes, MyBatis and JPA ([rules/java.toml](rules/java.toml))
-and Angular and NestJS ([rules/typescript.toml](rules/typescript.toml)). To
+Angular and NestJS ([rules/typescript.toml](rules/typescript.toml)), and
+Pharo package naming conventions such as `-Model`, `-UI`, `-Tests`
+([rules/pharo.toml](rules/pharo.toml)). To
 override them for one project, add `<project>/.structure/rules.toml`: its rules
 take priority over the built-in ones.
 
@@ -265,6 +281,7 @@ crates/
   ir/          Graph, Symbol, Edge, Matrix, Impact: the shared contracts
   lang-java/   tree-sitter front end for Java
   lang-ts/     tree-sitter front end for TypeScript
+  lang-pharo/  Tonel reader for Pharo (classes, methods, sends)
   scip/        reads index.scip, links occurrences to symbols
   classify/    rules and the quotient matrix
   git/         diff → changed and impacted cells
@@ -309,11 +326,14 @@ indexer. See [scripts/README.md](scripts/README.md).
 - **Class-level granularity.** Classification is heuristic and driven by the rules.
 - **Without `index.scip`** (or if indexing fails), only tree-sitter edges are used, so call edges are far fewer.
 - **Impact follows reverse edges only.** No dynamic dispatch, reflection or DI wiring beyond what SCIP sees.
-- **Language detection** uses `pom.xml` / `build.gradle*` (Java) or `tsconfig.json` / `package.json` (TypeScript). One language per root.
+- **Language detection** uses `pom.xml` / `build.gradle*` (Java) or `tsconfig.json` / `package.json` (TypeScript), or a Tonel `src/` folder (Pharo). One language per root.
 - **First indexing can take minutes** (Maven build, `npm install`).
 - **scip-java runs the project's Maven build.** A `~/.m2/settings.xml` that points to an unreachable private repository makes it hang; the app gives up after 10 minutes and falls back to tree-sitter.
 - **Gradle projects** are indexed through their own wrapper, which must support the JDK in use.
 - **Kotlin sources are ignored**; generated sources under `build/` are not modelled.
-- **The browser extension uses tree-sitter only** (no SCIP), so it has no call
-  edges: impact follows `Uses` and supertype edges. One root per PR, no HTTP or
-  RPC links. It is not published on the Chrome Web Store or addons.mozilla.org.
+- **Pharo call edges are heuristic.** Sends to other receivers resolve only when
+  the selector is defined once in the project.
+- **The browser extension uses tree-sitter only** (no SCIP), so Java and
+  TypeScript have no call edges there: impact follows `Uses` and supertype edges. One root per PR, no HTTP or
+  RPC links. It is not yet listed on the Chrome Web Store or addons.mozilla.org; install it
+  from a [release](https://github.com/badetitou/Structure/releases/latest).
