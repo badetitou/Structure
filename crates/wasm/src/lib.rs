@@ -1,7 +1,7 @@
 //! Pull-request analysis fully in memory, for WebAssembly (no filesystem, git
 //! or SCIP). The pure core is [`analyze_pr`]; [`wasm`] is the thin JS glue.
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use structure_classify::classify::{RuleSet, classify};
 use structure_classify::matrix;
 use structure_git::changes_from_diff;
@@ -11,37 +11,8 @@ use structure_ir::model::{CellSymbols, Classification, Impact};
 
 mod wasm;
 
-const JAVA_RULES: &str = include_str!("../../../rules/java.toml");
-const TS_RULES: &str = include_str!("../../../rules/typescript.toml");
-const PHARO_RULES: &str = include_str!("../../../rules/pharo.toml");
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Lang {
-    Java,
-    TypeScript,
-    Pharo,
-}
-
-/// Language of a set of paths: the one with more files (ties go to Java,
-/// then TypeScript, then Pharo).
-pub fn detect_language<'a>(paths: impl IntoIterator<Item = &'a str>) -> anyhow::Result<Lang> {
-    let (mut java, mut ts, mut st) = (0usize, 0usize, 0usize);
-    for p in paths {
-        if p.ends_with(".java") {
-            java += 1;
-        } else if p.ends_with(".ts") || p.ends_with(".tsx") {
-            ts += 1;
-        } else if structure_lang_pharo::is_tonel_source(p) {
-            st += 1;
-        }
-    }
-    match (java, ts, st) {
-        (0, 0, 0) => bail!("no supported sources: expected .java, .ts, .tsx or .st files"),
-        (j, t, s) if j >= t && j >= s => Ok(Lang::Java),
-        (_, t, s) if t >= s => Ok(Lang::TypeScript),
-        _ => Ok(Lang::Pharo),
-    }
-}
+/// Language of a set of paths (see [`structure_lang::detect_by_paths`]).
+pub use structure_lang::detect_by_paths as detect_language;
 
 /// Result of [`analyze_pr`].
 pub struct Analysis {
@@ -67,27 +38,12 @@ pub fn analyze_pr(
     base: &str,
     head: &str,
 ) -> anyhow::Result<Analysis> {
-    let lang = detect_language(files.iter().map(|(p, _)| p.as_str()))?;
+    let lang = structure_lang::frontend(detect_language(files.iter().map(|(p, _)| p.as_str()))?);
     let mut warnings = Vec::new();
-    let (graph, rules, sep) = match lang {
-        Lang::Java => (
-            structure_lang_java::parse_sources(project, files, &mut warnings)?,
-            (JAVA_RULES, "rules/java.toml"),
-            '.',
-        ),
-        Lang::TypeScript => (
-            structure_lang_ts::parse_sources(project, files)?,
-            (TS_RULES, "rules/typescript.toml"),
-            '/',
-        ),
-        Lang::Pharo => (
-            structure_lang_pharo::parse_sources(project, files, &mut warnings).graph,
-            (PHARO_RULES, "rules/pharo.toml"),
-            '-',
-        ),
-    };
-    let rules = RuleSet::from_embedded(rules.0, rules.1).context("loading default rules")?;
-    let classification = classify(&graph, &rules, sep);
+    let graph = lang.parse_sources(project, files, &mut warnings)?;
+    let (toml, name) = lang.default_rules();
+    let rules = RuleSet::from_embedded(toml, name).context("loading default rules")?;
+    let classification = classify(&graph, &rules, lang.module_separator());
     let mut matrix = matrix::build(&graph, &classification, &rules.layers(), project, 0);
     matrix.warnings = warnings.clone();
     let changes = changes_from_diff(diff);
@@ -104,6 +60,7 @@ pub fn analyze_pr(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use structure_ir::ir::Language;
 
     fn f(p: &str, c: &str) -> (String, String) {
         (p.to_string(), c.to_string())
@@ -214,11 +171,11 @@ mod tests {
             "src/P/package.st",
             "x.ts",
         ];
-        assert_eq!(detect_language(p).unwrap(), Lang::Pharo);
+        assert_eq!(detect_language(p).unwrap(), Language::Pharo);
         let p = ["a.ts", "b.tsx", "C.java"];
-        assert_eq!(detect_language(p).unwrap(), Lang::TypeScript);
+        assert_eq!(detect_language(p).unwrap(), Language::TypeScript);
         let p = ["a.ts", "B.java", "C.java"];
-        assert_eq!(detect_language(p).unwrap(), Lang::Java);
+        assert_eq!(detect_language(p).unwrap(), Language::Java);
     }
 
     #[test]

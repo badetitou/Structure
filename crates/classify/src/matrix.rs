@@ -332,12 +332,10 @@ mod tests {
 
     /// Layers declared by the default Java rules.
     fn java_layers() -> Layers {
-        crate::classify::RuleSet::from_embedded(
-            include_str!("../../../rules/java.toml"),
-            "rules/java.toml",
-        )
-        .unwrap()
-        .layers()
+        let (toml, name) = structure_lang::frontend(Language::Java).default_rules();
+        crate::classify::RuleSet::from_embedded(toml, name)
+            .unwrap()
+            .layers()
     }
 
     #[test]

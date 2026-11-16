@@ -4,13 +4,13 @@ use std::process::Command;
 use crate::pharo;
 use structure_ir::ir::{Graph, Language};
 
-use super::LanguageFrontend;
+use super::{Frontend, LanguageFrontend};
 
 pub struct PharoFrontend;
 
 impl LanguageFrontend for PharoFrontend {
-    fn language(&self) -> Language {
-        Language::Pharo
+    fn pure(&self) -> &'static dyn Frontend {
+        super::pure(Language::Pharo)
     }
 
     fn detect(&self, root: &Path) -> bool {
@@ -33,10 +33,6 @@ impl LanguageFrontend for PharoFrontend {
         "src/.properties or src/**/*.class.st (Pharo Tonel)"
     }
 
-    fn extensions(&self) -> &'static [&'static str] {
-        &["st"]
-    }
-
     fn indexer_command(&self, _root: &Path) -> Option<Command> {
         None
     }
@@ -55,17 +51,6 @@ impl LanguageFrontend for PharoFrontend {
         warnings: &mut Vec<String>,
     ) -> anyhow::Result<Graph> {
         pharo::parse_project_with_warnings(root, warnings)
-    }
-
-    fn default_rules(&self) -> (&'static str, &'static str) {
-        (
-            include_str!("../../../../rules/pharo.toml"),
-            "rules/pharo.toml",
-        )
-    }
-
-    fn module_separator(&self) -> char {
-        '-'
     }
 }
 
