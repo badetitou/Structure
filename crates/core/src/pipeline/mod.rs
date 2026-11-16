@@ -120,6 +120,7 @@ fn scip_cache_tag(lang: Language) -> String {
     match lang {
         Language::Java => format!("scip-java-{SCIP_JAVA_VERSION}"),
         Language::TypeScript => format!("scip-typescript-{SCIP_TS_VERSION}"),
+        Language::Pharo => "none".to_string(),
     }
 }
 

@@ -1,0 +1,52 @@
+# Pharo classification rules (Tonel packages like `MyApp-Core-Model`). First
+# match wins. `package_contains` is matched against `.<package>.`, so
+# `-Tests.` is a package suffix and `-Tests-` a middle segment.
+
+# --- Tests (no tests layer: util) ---
+[[rule]]
+layer = "util"
+any_supertype = ["TestCase", "TestResource"]
+
+[[rule]]
+layer = "util"
+package_contains = ["-Tests.", "-Tests-", "-Test.", "-Test-", "-Benchmarks."]
+
+# --- UI (Morphic, Spec) ---
+[[rule]]
+layer = "ui"
+any_supertype = ["SpPresenter", "SpAbstractPresenter", "ComposablePresenter", "Morph", "SpApplication"]
+
+[[rule]]
+layer = "ui"
+package_contains = ["-UI.", "-UI-", "-Spec.", "-Spec-", "-Widgets.", "-Widgets-", "-Morphic.", "-Presenters.", "-GUI."]
+
+# --- Persistence / API ---
+[[rule]]
+layer = "persistence"
+package_contains = ["-Persistence.", "-Persistence-", "-Storage.", "-Database.", "-Repository."]
+
+[[rule]]
+layer = "api_client"
+package_contains = ["-Client.", "-Client-"]
+
+[[rule]]
+layer = "entry"
+package_contains = ["-REST.", "-Server.", "-API.", "-CLI.", "-Commands."]
+
+# --- Model / core ---
+[[rule]]
+layer = "model"
+package_contains = ["-Model.", "-Model-", "-Entities.", "-Entity."]
+
+[[rule]]
+layer = "business"
+package_contains = ["-Core.", "-Core-", "-Services.", "-Service."]
+
+[[rule]]
+layer = "util"
+package_contains = ["-Utils.", "-Utilities.", "-Helpers.", "-Extensions.", "-Ext."]
+
+[domain]
+strategy = "auto"
+strip_suffixes = ["Presenter", "Service", "Model", "Repository", "Test", "Tests", "TestCase"]
+fallback = "misc"

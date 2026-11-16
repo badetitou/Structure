@@ -15,9 +15,11 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 ## Map
 
 - `Cargo.toml` — virtual workspace (edition 2024); `app/` (Tauri) is excluded.
-- `crates/` — one-way deps `ir` <- `lang-java`/`lang-ts`/`scip`/`classify`/`git` <- `core` <- `cli`:
+- `crates/` — one-way deps `ir` <- `lang-java`/`lang-ts`/`lang-pharo`/`scip`/`classify`/`git` <- `core` <- `cli`:
   - `ir` (`structure-ir`): `ir` (Graph/Symbol/Edge), `model`
     (Layer/Matrix/Impact/Progress) — contracts, serde only.
+  - `lang-pharo` (`structure-lang-pharo`): hand-written Tonel reader (classes,
+    methods, superclass and `Uses` edges; no `Call` edges yet).
   - `lang-java`, `lang-ts` (`structure-lang-*`): tree-sitter frontends (symbols,
     ranges, annotations, supertype and `Uses` edges; `ext:<Name>` = external type).
   - `scip` (`structure-scip`): `scip` reads `index.scip`; `link` joins SCIP

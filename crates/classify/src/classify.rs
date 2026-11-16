@@ -434,10 +434,10 @@ pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Class
 
 /// Module of a symbol: its package (Java) or file directory (TS).
 fn module_path(s: &Symbol, sep: char) -> Vec<String> {
-    // Java: the package (a class without one is in the default, empty module);
-    // TS: the file's directory. Split on that language's separator only.
+    // Java, Pharo: the package (a class without one is in the default, empty
+    // module); TS: the file's directory. Split on that language's separator only.
     let raw = match sep {
-        '.' => s.package.as_deref().unwrap_or(""),
+        '.' | '-' => s.package.as_deref().unwrap_or(""),
         _ => s.file.rsplit_once('/').map(|(d, _)| d).unwrap_or(""),
     };
     raw.split(sep)
@@ -574,7 +574,7 @@ fn convert(label: String, t: &Trie, sep: char) -> DomainNode {
     }
     let mut children: Vec<DomainNode> = vec![];
     if t.own > 0 && !t.children.is_empty() {
-        let last = label.rsplit(['.', '/']).next().unwrap_or(&label);
+        let last = label.rsplit(['.', '/', sep]).next().unwrap_or(&label);
         children.push(DomainNode {
             label: last.to_string(),
             domain: t.domain.clone(),
@@ -680,6 +680,11 @@ mod tests {
                 "rules/typescript.toml",
                 '/',
             ),
+            Language::Pharo => (
+                include_str!("../../../rules/pharo.toml"),
+                "rules/pharo.toml",
+                '-',
+            ),
         };
         RuleSet::from_embedded(toml, name)
     }
@@ -688,6 +693,7 @@ mod tests {
         let sep = match graph.language {
             Language::Java => '.',
             Language::TypeScript => '/',
+            Language::Pharo => '-',
         };
         super::classify(graph, rules, sep)
     }
@@ -1586,6 +1592,36 @@ aliases = { billing = ["invoices"] }
         // no package -> default module (fallback), not the file directory
         let tree = c.domain_tree.unwrap();
         assert_eq!(tree[0].domain.as_deref(), Some("misc"));
+    }
+
+    #[test]
+    fn parent_module_with_own_classes_is_labelled_by_leaf_with_separator() {
+        let ph = |n: &str, pkg: &str| sym(n, SymbolKind::Class, n, "src/x.st", Some(pkg));
+        let syms = vec![
+            ph("Alpha", "MyApp-Core"),
+            ph("Beta", "MyApp-Core-Model"),
+            ph("Gamma", "MyApp-Ui"),
+            ph("Delta", "Other-X"),
+            ph("Eps", "Other-Y"),
+        ];
+        let c = classify(
+            &graph(Language::Pharo, syms, vec![]),
+            &builtin(Language::Pharo).unwrap(),
+        );
+        fn labels(n: &DomainNode, out: &mut Vec<String>) {
+            out.push(n.label.clone());
+            n.children.iter().for_each(|c| labels(c, out));
+        }
+        let mut all = vec![];
+        c.domain_tree
+            .unwrap()
+            .iter()
+            .for_each(|n| labels(n, &mut all));
+        assert!(all.contains(&"Core".to_string()), "{all:?}");
+        assert!(
+            !all.iter()
+                .any(|l| l.contains("MyApp-Core") && l != "MyApp-Core")
+        );
     }
 
     /// Several rules match: the earliest decides layer and domain spec, per
