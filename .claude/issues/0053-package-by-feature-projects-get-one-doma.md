@@ -4,7 +4,7 @@ title: Package-by-feature projects get one domain per feature package
 status: done
 parent: null
 branch: claude/auto-domain-grouping-7d1fda
-remote: null
+remote: 41
 created: 2026-11-09
 ---
 ## Context

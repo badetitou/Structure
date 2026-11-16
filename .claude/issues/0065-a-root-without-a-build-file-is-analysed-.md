@@ -4,7 +4,7 @@ title: A root without a build file is analysed as its sub-projects
 status: done
 parent: 57
 branch: 62-split-undetectable-root
-remote: null
+remote: 53
 created: 2026-11-09
 ---
 ## Context

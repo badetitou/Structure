@@ -4,7 +4,7 @@ title: Matrix aligns front and back domains on shared rows, split by a double li
 status: done
 parent: null
 branch: 74-matrix-align-front-back
-remote: null
+remote: 62
 created: 2026-11-09
 ---
 ## Context

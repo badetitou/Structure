@@ -4,7 +4,7 @@ title: App lets the user pick several project folders
 status: done
 parent: 57
 branch: 59-app-multi-folders
-remote: null
+remote: 50
 created: 2026-11-09
 ---
 ## Context

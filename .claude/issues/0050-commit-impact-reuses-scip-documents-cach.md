@@ -4,7 +4,7 @@ title: Commit impact reuses SCIP documents cached per file blob instead of re-ru
 status: done
 parent: null
 branch: 50-scip-blob-cache
-remote: null
+remote: 38
 created: 2026-11-09
 ---
 ## Context

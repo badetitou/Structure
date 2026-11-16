@@ -4,7 +4,7 @@ title: Analysis shows live indexer progress while Maven or Gradle runs
 status: done
 parent: null
 branch: 10-indexer-progress
-remote: null
+remote: 10
 created: 2026-11-06
 ---
 ## Context

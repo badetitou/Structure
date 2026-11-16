@@ -4,7 +4,7 @@ title: Pick a commit to analyse from a history sidebar
 status: done
 parent: null
 branch: null
-remote: null
+remote: 4
 created: 2026-11-06
 ---
 ## Context

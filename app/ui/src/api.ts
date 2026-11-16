@@ -111,7 +111,7 @@ export interface Impact {
   /** Present when `head` was analysed in its snapshot: the matrix at that commit. */
   matrix?: Matrix;
 }
-type WireImpact = Omit<Impact, "matrix"> & { matrix?: WireMatrix };
+export type WireImpact = Omit<Impact, "matrix"> & { matrix?: WireMatrix };
 export interface Commit {
   id: string;
   short: string;
@@ -167,7 +167,7 @@ export interface Progress {
   detail?: string;
 }
 
-export const inTauri = "__TAURI_INTERNALS__" in window;
+export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -177,14 +177,14 @@ async function fetchSample<T>(name: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function pickFolder(): Promise<string | null> {
+async function default_pickFolder(): Promise<string | null> {
   if (!inTauri) return "/browser/sample-project";
   const sel = await open({ directory: true, multiple: false });
   return typeof sel === "string" ? sel : null;
 }
 
 /** Analyses one folder, or several together (`paths.length > 1`). */
-export async function analyze(
+async function default_analyze(
   paths: string[],
   onProgress: (p: Progress) => void,
 ): Promise<Matrix> {
@@ -220,7 +220,7 @@ export async function analyze(
 
 /** Impact of `base..head`; a commit snapshot may be analysed first, its
  * progress goes to `onProgress`. */
-export async function impact(
+async function default_impact(
   path: string,
   base: string | null,
   head: string | null,
@@ -253,7 +253,7 @@ export async function impact(
 
 /** One page of the symbols of `cells` (sorted by name); `head` = commit whose
  * matrix is shown, null for the working tree. */
-export async function cellSymbols(
+async function default_cellSymbols(
   paths: string[],
   head: string | null,
   generation: number,
@@ -269,13 +269,58 @@ export async function cellSymbols(
   return invoke<CellSymbols>("cell_symbols", { paths, head, generation, cells, offset, limit });
 }
 
-export async function history(path: string, limit?: number): Promise<History> {
+async function default_history(path: string, limit?: number): Promise<History> {
   if (!inTauri) return fetchSample<History>("history");
   return invoke<History>("history", { path, limit: limit ?? null });
 }
 
 /** Textual diff of `base..head`, same meaning as `impact` (null base = HEAD vs working tree). */
-export async function diff(path: string, base: string | null, head: string | null): Promise<Diff> {
+async function default_diff(path: string, base: string | null, head: string | null): Promise<Diff> {
   if (!inTauri) return fetchSample<Diff>("diff");
   return invoke<Diff>("diff", { path, base, head });
 }
+
+/** Where the data comes from: Tauri or samples (default), or a host page (viewer). */
+export interface Backend {
+  pickFolder(): Promise<string | null>;
+  analyze(paths: string[], onProgress: (p: Progress) => void): Promise<Matrix>;
+  impact(
+    path: string,
+    base: string | null,
+    head: string | null,
+    onProgress?: (p: Progress) => void,
+  ): Promise<Impact>;
+  cellSymbols(
+    paths: string[],
+    head: string | null,
+    generation: number,
+    cells: string[],
+    offset: number,
+    limit: number,
+  ): Promise<CellSymbols>;
+  history(path: string, limit?: number): Promise<History>;
+  diff(path: string, base: string | null, head: string | null): Promise<Diff>;
+}
+
+export const defaultBackend: Backend = {
+  pickFolder: default_pickFolder,
+  analyze: default_analyze,
+  impact: default_impact,
+  cellSymbols: default_cellSymbols,
+  history: default_history,
+  diff: default_diff,
+};
+
+let current: Backend = defaultBackend;
+
+/** Replaces the backend the functions below delegate to (the viewer page does it once at startup). */
+export function setBackend(b: Backend): void {
+  current = b;
+}
+
+export const pickFolder: Backend["pickFolder"] = (...a) => current.pickFolder(...a);
+export const analyze: Backend["analyze"] = (...a) => current.analyze(...a);
+export const impact: Backend["impact"] = (...a) => current.impact(...a);
+export const cellSymbols: Backend["cellSymbols"] = (...a) => current.cellSymbols(...a);
+export const history: Backend["history"] = (...a) => current.history(...a);
+export const diff: Backend["diff"] = (...a) => current.diff(...a);

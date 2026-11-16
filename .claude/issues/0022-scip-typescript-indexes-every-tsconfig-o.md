@@ -4,7 +4,7 @@ title: scip-typescript indexes every tsconfig of a large repository
 status: done
 parent: 20
 branch: 22-scip-ts-projects
-remote: null
+remote: 19
 created: 2026-11-06
 ---
 ## Context

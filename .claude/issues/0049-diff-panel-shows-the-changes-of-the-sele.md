@@ -4,7 +4,7 @@ title: Diff panel shows the changes of the selected commit
 status: done
 parent: null
 branch: 49-commit-diff-panel
-remote: null
+remote: 37
 created: 2026-11-09
 ---
 ## Context

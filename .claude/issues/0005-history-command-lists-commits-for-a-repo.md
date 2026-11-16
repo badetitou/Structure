@@ -4,7 +4,7 @@ title: History command lists commits for a repository
 status: done
 parent: 4
 branch: 5-history-command
-remote: null
+remote: 5
 created: 2026-11-06
 ---
 ## Context

@@ -4,7 +4,7 @@ title: Matrix has a flame view with size-proportional, deep domain columns
 status: done
 parent: null
 branch: claude/matrix-view-depth-horizontal-79fbf8
-remote: null
+remote: 40
 created: 2026-11-09
 ---
 ## Context

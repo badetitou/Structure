@@ -4,7 +4,7 @@ title: Languages plug in through a frontend trait instead of match arms
 status: done
 parent: 36
 branch: 41-language-frontend
-remote: null
+remote: 30
 created: 2026-11-06
 ---
 ## Context

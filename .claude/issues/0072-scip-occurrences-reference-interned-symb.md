@@ -4,7 +4,7 @@ title: SCIP occurrences reference interned symbols
 status: done
 parent: null
 branch: 72-scip-symbol-interning
-remote: null
+remote: 60
 created: 2026-11-09
 ---
 ## Context

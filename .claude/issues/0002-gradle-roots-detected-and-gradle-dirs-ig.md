@@ -4,7 +4,7 @@ title: Gradle roots detected and Gradle dirs ignored
 status: done
 parent: 1
 branch: 2-gradle-detection
-remote: null
+remote: 2
 created: 2026-11-06
 ---
 ## Context

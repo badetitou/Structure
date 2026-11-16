@@ -4,7 +4,7 @@ title: History clicks show analysis progress and are blocked while a commit is a
 status: in-review
 parent: null
 branch: 44-impact-busy-feedback
-remote: null
+remote: 33
 created: 2026-11-09
 ---
 ## Context

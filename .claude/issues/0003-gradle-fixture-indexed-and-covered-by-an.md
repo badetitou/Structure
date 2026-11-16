@@ -4,7 +4,7 @@ title: Gradle fixture indexed and covered by an e2e golden test
 status: done
 parent: 1
 branch: 3-gradle-fixture
-remote: null
+remote: 3
 created: 2026-11-06
 ---
 ## Context

@@ -4,7 +4,7 @@ title: Analysis screen is a tiling workspace of plugin panels
 status: done
 parent: null
 branch: null
-remote: null
+remote: 34
 created: 2026-11-09
 ---
 ## Context

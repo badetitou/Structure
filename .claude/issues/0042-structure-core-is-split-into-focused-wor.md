@@ -4,7 +4,7 @@ title: structure-core is split into focused workspace crates
 status: done
 parent: 36
 branch: 42-crate-split
-remote: null
+remote: 31
 created: 2026-11-06
 ---
 ## Context

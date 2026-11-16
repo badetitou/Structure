@@ -1,8 +1,10 @@
 /target
 /fixtures/
 /out/
+/crates/wasm/pkg/
 node_modules/
 /app/ui/dist/
+/app/ui/dist-extension/
 /app/src-tauri/target/
 /app/src-tauri/gen/
 .DS_Store

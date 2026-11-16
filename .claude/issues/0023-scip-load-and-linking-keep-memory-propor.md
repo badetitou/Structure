@@ -4,7 +4,7 @@ title: SCIP load and linking keep memory proportional to the graph
 status: done
 parent: 20
 branch: 23-link-memory
-remote: null
+remote: 20
 created: 2026-11-06
 ---
 ## Context

@@ -4,7 +4,7 @@ title: HTTP edges link frontend calls to backend endpoints
 status: done
 parent: 57
 branch: 58-http-edges
-remote: null
+remote: 49
 created: 2026-11-09
 ---
 ## Context

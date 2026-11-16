@@ -4,7 +4,7 @@ title: GWT RPC calls link the client to the server implementation
 status: done
 parent: 57
 branch: 63-gwt-rpc
-remote: null
+remote: 54
 created: 2026-11-09
 ---
 ## Context

@@ -4,7 +4,7 @@ title: Options page lets top matrix labels be angled at 45 degrees
 status: done
 parent: null
 branch: 75-options-angled-labels
-remote: null
+remote: 63
 created: 2026-11-09
 ---
 ## Context

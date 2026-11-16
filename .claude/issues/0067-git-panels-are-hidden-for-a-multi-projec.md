@@ -4,7 +4,7 @@ title: Git panels are hidden for a multi-project analysis even when grouped with
 status: done
 parent: 57
 branch: 64-hide-unavailable-panels
-remote: null
+remote: 55
 created: 2026-11-09
 ---
 ## Context

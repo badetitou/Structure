@@ -4,7 +4,7 @@ title: Structure analyses the VS Code repository on a laptop
 status: in-progress
 parent: null
 branch: null
-remote: null
+remote: 17
 created: 2026-11-06
 ---
 ## Context

@@ -4,7 +4,7 @@ title: History sidebar draws the commit graph with branch lanes
 status: done
 parent: null
 branch: 9-history-graph
-remote: null
+remote: 9
 created: 2026-11-06
 ---
 ## Context

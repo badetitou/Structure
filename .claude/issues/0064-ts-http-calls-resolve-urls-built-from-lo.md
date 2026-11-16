@@ -4,7 +4,7 @@ title: TS HTTP calls resolve URLs built from local variables
 status: done
 parent: 57
 branch: 61-ts-url-local-vars
-remote: null
+remote: 52
 created: 2026-11-09
 ---
 ## Context

@@ -4,7 +4,7 @@ title: Panels are registered contributions laid out in a resizable split tree
 status: done
 parent: 46
 branch: 45-tiling-panels
-remote: null
+remote: 35
 created: 2026-11-09
 ---
 ## Context
