@@ -18,7 +18,7 @@ invoke<CellSymbols>("cell_symbols", {
 });
 ```
 
-- `analyze(paths)` analyzes the Java/TypeScript project at `paths` (one folder) and returns the matrix.
+- `analyze(paths)` analyzes the Java/TypeScript/Pharo project at `paths` (one folder) and returns the matrix.
   With several paths it runs `pipeline::analyze_many` (front + back analysed
   together; the matrix carries `projects`, and `http_edges` when found). The
   cache key is the sorted, deduplicated canonical paths joined with `"\n"`, so
@@ -85,7 +85,7 @@ decreasing) and `detail` = latest build output line plus elapsed time
 ## Types
 
 ```ts
-type Language = "java" | "typescript";
+type Language = "java" | "typescript" | "pharo";
 type Layer =
   | "ui" | "state" | "api_client" | "entry" | "business"
   | "persistence" | "model" | "util" | "unknown"; // matrix rows, top to bottom

@@ -488,6 +488,7 @@ dependencies = [
  "structure-git",
  "structure-ir",
  "structure-lang-java",
+ "structure-lang-pharo",
  "structure-lang-ts",
  "structure-scip",
  "toml",
@@ -519,6 +520,15 @@ dependencies = [
  "structure-ir",
  "tree-sitter",
  "tree-sitter-java",
+]
+
+[[package]]
+name = "structure-lang-pharo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ignore",
+ "structure-ir",
 ]
 
 [[package]]
