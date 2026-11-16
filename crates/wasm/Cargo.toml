@@ -8,9 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 structure-ir = { path = "../ir" }
-structure-lang-java = { path = "../lang-java" }
-structure-lang-ts = { path = "../lang-ts" }
-structure-lang-pharo = { path = "../lang-pharo" }
+structure-lang = { path = "../lang" }
 structure-classify = { path = "../classify" }
 structure-git = { path = "../git" }
 anyhow.workspace = true

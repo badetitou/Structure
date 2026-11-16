@@ -4,7 +4,7 @@ use std::process::Command;
 use crate::java;
 use structure_ir::ir::{Graph, Language};
 
-use super::{LanguageFrontend, find_on_path};
+use super::{Frontend, LanguageFrontend, find_on_path};
 
 pub const SCIP_JAVA_VERSION: &str = "0.12.3";
 
@@ -25,8 +25,8 @@ fn find_cs() -> Option<PathBuf> {
 pub struct JavaFrontend;
 
 impl LanguageFrontend for JavaFrontend {
-    fn language(&self) -> Language {
-        Language::Java
+    fn pure(&self) -> &'static dyn Frontend {
+        super::pure(Language::Java)
     }
 
     fn detect(&self, root: &Path) -> bool {
@@ -36,10 +36,6 @@ impl LanguageFrontend for JavaFrontend {
 
     fn markers(&self) -> &'static str {
         "pom.xml/build.gradle/build.gradle.kts/settings.gradle/settings.gradle.kts (Java)"
-    }
-
-    fn extensions(&self) -> &'static [&'static str] {
-        &["java"]
     }
 
     fn indexer_command(&self, _root: &Path) -> Option<Command> {
@@ -88,16 +84,5 @@ impl LanguageFrontend for JavaFrontend {
         warnings: &mut Vec<String>,
     ) -> anyhow::Result<Graph> {
         java::parse_project_with_warnings(root, warnings)
-    }
-
-    fn default_rules(&self) -> (&'static str, &'static str) {
-        (
-            include_str!("../../../../rules/java.toml"),
-            "rules/java.toml",
-        )
-    }
-
-    fn module_separator(&self) -> char {
-        '.'
     }
 }

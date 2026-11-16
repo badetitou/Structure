@@ -1,0 +1,11 @@
+[package]
+name = "structure-lang"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+structure-ir = { path = "../ir" }
+structure-lang-java = { path = "../lang-java" }
+structure-lang-ts = { path = "../lang-ts" }
+structure-lang-pharo = { path = "../lang-pharo" }
+anyhow.workspace = true

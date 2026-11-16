@@ -56,7 +56,7 @@ invoke<CellSymbols>("cell_symbols", {
   before); the working-tree analysis stays fresh for `impact` when the rules
   files are the only change. Errors: no cached analysis (`no analysis to
   reclassify, run Analyze`), an invalid rules file (the message names it, see
-  `rules/README.md`); the cache is then unchanged. The browser-only samples and
+  `crates/lang/rules/README.md`); the cache is then unchanged. The browser-only samples and
   the viewer do not support it (`Backend.capabilities.reclassify` is false and
   `Backend.reclassify` is absent).
 - `rules_stamp(paths)`: an opaque string that changes when a rules file of
@@ -145,7 +145,7 @@ interface Matrix {
   projects?: { name: string; root: string; language: Language }[];
   // Definitions of the layers present, sorted by order. Several roots: a
   // shared id takes the first root's label/order; layers only declared by
-  // later roots follow the first root's (see rules/README.md).
+  // later roots follow the first root's (see crates/lang/rules/README.md).
   layers: LayerDef[];
   domains: string[];
   cells: Cell[];     // non-empty cells only, sorted by (layer, domain)

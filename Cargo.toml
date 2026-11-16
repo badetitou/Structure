@@ -5,6 +5,7 @@ members = [
     "crates/lang-java",
     "crates/lang-ts",
     "crates/lang-pharo",
+    "crates/lang",
     "crates/scip",
     "crates/classify",
     "crates/highlight",

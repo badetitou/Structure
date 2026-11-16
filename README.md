@@ -274,10 +274,10 @@ layer = "util"
 package_contains = [".config.", ".configuration."]
 ```
 
-Built-in rules cover Spring, Stripes, MyBatis and JPA ([rules/java.toml](rules/java.toml))
-Angular and NestJS ([rules/typescript.toml](rules/typescript.toml)), and
+Built-in rules cover Spring, Stripes, MyBatis and JPA ([rules/java.toml](crates/lang/rules/java.toml))
+Angular and NestJS ([rules/typescript.toml](crates/lang/rules/typescript.toml)), and
 Pharo package naming conventions such as `-Model`, `-UI`, `-Tests`
-([rules/pharo.toml](rules/pharo.toml)). To
+([rules/pharo.toml](crates/lang/rules/pharo.toml)). To
 override them for one project, add `<project>/.structure/rules.toml`: its rules
 take priority over the built-in ones, and its `[[layer]]` entries add layers or
 change the label and order of a built-in one (same `id`). A rule on a layer that
@@ -285,7 +285,7 @@ no file declares is an error, as is a syntax error or an unknown field; the
 message names the file. When several projects are analysed together, the first
 one's layers win for a shared `id` and layers declared only by the others are
 added after its rows. The format, an example and the merge rules are described
-in [rules/README.md](rules/README.md#project-rules).
+in [rules/README.md](crates/lang/rules/README.md#project-rules).
 
 ## Repository layout
 
@@ -295,6 +295,7 @@ crates/
   lang-java/   tree-sitter front end for Java
   lang-ts/     tree-sitter front end for TypeScript
   lang-pharo/  Tonel reader for Pharo (classes, methods, sends)
+  lang/        pure language registry and built-in classification rules (rules/)
   scip/        reads index.scip, links occurrences to symbols
   classify/    rules and the quotient matrix
   git/         diff → changed and impacted cells
@@ -304,7 +305,6 @@ crates/
 app/
   src-tauri/   Tauri 2 commands over the pipeline
   ui/          Vite + Svelte 5 + TypeScript; extension/ and src/extension/ hold the browser extension
-rules/         built-in classification rules
 docs/          plan, Tauri API contract, sample JSON
 scripts/       fetch and index the demo fixtures, build the wasm module
 tests/golden/  expected classifications

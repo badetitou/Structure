@@ -178,7 +178,7 @@ pub(super) fn analyze_in(
 
     step("indexing", 5);
     let t = Instant::now();
-    let exts = crate::lang::frontend(lang).extensions();
+    let exts = crate::lang::pure(lang).extensions();
     let tag = scip_cache_tag(lang);
     let reuse = opts.use_scip && !opts.reindex && from_cache && !root.join("index.scip").is_file();
     let composed = if reuse {
@@ -277,11 +277,7 @@ pub(super) fn analyze_in(
     step("classifying", 80);
     let t = Instant::now();
     let rules = rules_for(root, lang)?;
-    let classification = classify(
-        &graph,
-        &rules,
-        crate::lang::frontend(lang).module_separator(),
-    );
+    let classification = classify(&graph, &rules, crate::lang::pure(lang).module_separator());
     metrics.phase("classify", t, None);
 
     step("building matrix", 95);
@@ -323,7 +319,7 @@ pub const PROJECT_RULES: &str = ".structure/rules.toml";
 /// file is an error naming its path.
 fn rules_for(root: &Path, lang: Language) -> anyhow::Result<RuleSet> {
     let rules = {
-        let (toml, name) = crate::lang::frontend(lang).default_rules();
+        let (toml, name) = crate::lang::pure(lang).default_rules();
         RuleSet::from_embedded(toml, name)?
     };
     let custom = root.join(PROJECT_RULES);

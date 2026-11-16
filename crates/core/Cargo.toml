@@ -11,6 +11,7 @@ structure-ir = { path = "../ir" }
 structure-lang-java = { path = "../lang-java" }
 structure-lang-ts = { path = "../lang-ts" }
 structure-lang-pharo = { path = "../lang-pharo" }
+structure-lang = { path = "../lang" }
 structure-scip = { path = "../scip" }
 structure-classify = { path = "../classify" }
 structure-git = { path = "../git" }

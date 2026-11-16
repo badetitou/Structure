@@ -16,7 +16,7 @@ fn newer_sources(root: &Path, lang: Language, index: &Path) -> usize {
     let Ok(indexed) = std::fs::metadata(index).and_then(|m| m.modified()) else {
         return 0;
     };
-    let exts = frontend(lang).extensions();
+    let exts = crate::lang::pure(lang).extensions();
     ignore::WalkBuilder::new(root)
         // `.gradle` is explicit: keeps it out even if `.hidden(false)` is set later.
         .filter_entry(|e| {

@@ -1,10 +1,10 @@
 //! Declarative layer/domain classification of top-level symbols.
 //!
-//! Rules live in TOML files (`rules/*.toml`), which also declare the layers
-//! (`[[layer]]`, see `rules/README.md`). A rule matches when ALL of its
-//! given matchers match; each matcher is "any of" its list. The first matching
-//! rule (file order) decides the layer. Without a match, a structural fallback
-//! applies (DTO-like class -> `model`, else `unknown`).
+//! Rules live in TOML files (`crates/lang/rules/*.toml`), which also declare
+//! the layers (`[[layer]]`, see `crates/lang/rules/README.md`). A rule matches
+//! when ALL of its given matchers match; each matcher is "any of" its list. The
+//! first matching rule (file order) decides the layer. Without a match, a
+//! structural fallback applies (DTO-like class -> `model`, else `unknown`).
 
 use crate::layers::Layers;
 use crate::matrix::{id_index, top_level_indices};
@@ -761,24 +761,9 @@ fn module_domains<'a>(
 mod tests {
     use super::*;
 
+    /// Default rules of `lang`, from the language registry.
     fn builtin(lang: Language) -> anyhow::Result<RuleSet> {
-        let (toml, name, _) = match lang {
-            Language::Java => (
-                include_str!("../../../rules/java.toml"),
-                "rules/java.toml",
-                '.',
-            ),
-            Language::TypeScript => (
-                include_str!("../../../rules/typescript.toml"),
-                "rules/typescript.toml",
-                '/',
-            ),
-            Language::Pharo => (
-                include_str!("../../../rules/pharo.toml"),
-                "rules/pharo.toml",
-                '-',
-            ),
-        };
+        let (toml, name) = structure_lang::frontend(lang).default_rules();
         RuleSet::from_embedded(toml, name)
     }
 
@@ -794,11 +779,7 @@ mod tests {
     }
 
     fn classify(graph: &Graph, rules: &RuleSet) -> Classification {
-        let sep = match graph.language {
-            Language::Java => '.',
-            Language::TypeScript => '/',
-            Language::Pharo => '-',
-        };
+        let sep = structure_lang::frontend(graph.language).module_separator();
         super::classify(graph, rules, sep)
     }
     use structure_ir::ir::{Edge, Language, Range};
@@ -1210,8 +1191,11 @@ aliases = { order = ["LineItem"] }
 
     #[test]
     fn builtin_rules_parse() {
-        assert!(!builtin(Language::Java).unwrap().rules.is_empty());
-        assert!(!builtin(Language::TypeScript).unwrap().rules.is_empty());
+        // Every language of the registry ships valid, non-empty default rules.
+        for f in structure_lang::all() {
+            let rs = builtin(f.language()).unwrap();
+            assert!(!rs.rules.is_empty(), "{:?}", f.language());
+        }
     }
 
     #[test]

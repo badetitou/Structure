@@ -79,7 +79,7 @@ fn classify_root(
     lang: Language,
 ) -> anyhow::Result<(Classification, Layers)> {
     let rules = rules_for(root, lang)?;
-    let sep = crate::lang::frontend(lang).module_separator();
+    let sep = crate::lang::pure(lang).module_separator();
     Ok((classify(graph, &rules, sep), rules.layers()))
 }
 

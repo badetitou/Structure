@@ -19,8 +19,10 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 ## Map
 
 - `Cargo.toml` — virtual workspace (edition 2024); `app/` (Tauri) is excluded.
-- `crates/` — one-way deps `ir` <- `lang-java`/`lang-ts`/`lang-pharo`/`scip`/`classify`/`highlight` <- `git` <- `core` <- `cli`
-  (`git` needs only `ir` and `highlight`; the others go straight to `core`):
+- `crates/` — one-way deps `ir` <- `lang-java`/`lang-ts`/`lang-pharo` <- `lang`;
+  `ir` <- `scip`/`classify`/`highlight` <- `git`; `lang`/`scip`/`classify`/`git` <- `core` <- `cli`;
+  `lang`/`classify`/`git` <- `wasm` (`git` needs only `ir` and `highlight`;
+  `classify` dev-depends on `lang` for its tests, `lang` never depends on `classify`):
   - `ir` (`structure-ir`): `ir` (Graph/Symbol/Edge), `model`
     (LayerId/LayerDef/Matrix/Impact/Progress), `highlight` (Anchor/Seed/HighlightRequest/
     Highlight) — contracts, serde only; feature `ts`
@@ -29,12 +31,18 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     methods, superclass and `Uses` edges; no `Call` edges yet).
   - `lang-java`, `lang-ts` (`structure-lang-*`): tree-sitter frontends (symbols,
     ranges, annotations, supertype and `Uses` edges; `ext:<Name>` = external type).
+  - `lang` (`structure-lang`): pure (wasm-safe) language registry — `Frontend`
+    trait (`language`, `extensions`, `is_source`, `parse_sources` over in-memory
+    files, `default_rules`, `module_separator`), `all()`/`frontend()`,
+    `detect_by_paths` (majority of sources, ties Java > TypeScript > Pharo).
+    Owns the embedded default rules `rules/*.toml` (layer/domain rules and
+    `[[layer]]` declarations, see `crates/lang/rules/README.md`), kept as plain
+    strings (validated by `classify`'s tests).
   - `scip` (`structure-scip`): `scip` reads `index.scip`; `link` joins SCIP
     occurrences to tree-sitter symbols → `Call`/`Uses`/`Implements` edges;
     `metrics` (run stats).
-  - `classify` (`structure-classify`): `classify` + `rules/*.toml` (embedded
-    layer/domain rules and `[[layer]]` declarations, see `rules/README.md`;
-    per-language default rules and module separator); `layers` (`Layers`: the
+  - `classify` (`structure-classify`): `classify` (`RuleSet`: parse, merge,
+    validate rules TOML; classification by rules + module separator); `layers` (`Layers`: the
     declared `LayerDef`s sorted by order, `unknown` implicit and last);
     `matrix` — quotient graph.
   - `highlight` (`structure-highlight`): pure (wasm-safe) highlight model over a
@@ -45,8 +53,9 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     ref/fingerprint helpers (`resolve_base`, `resolve_commit`, `worktree_fingerprint`).
   - `core` (`structure-core`): facade, re-exports the crates above under their old
     module names (`ir`, `model`, `java`, `ts`, `scip`, `link`, `metrics`, `classify`,
-    `layers`, `matrix`, `impact`, `highlight`). Own code: `lang/` (`LanguageFrontend` trait, registry
-    `all()`/`frontend()`, Java/TS indexer + detection) and `pipeline/` (`mod`
+    `layers`, `matrix`, `impact`, `highlight`). Own code: `lang/` (native `LanguageFrontend`
+    trait: marker detection, indexer, parse from disk; `pure()` gives the
+    `structure-lang` frontend; registry `all()`/`frontend()`) and `pipeline/` (`mod`
     analyze/detect + `<root>/.structure/rules.toml` merged over the defaults,
     `multi` several roots — first root's layers win, `reclassify` rules
     re-applied to a cached graph + `rules_stamp`, `indexer`, `process`,
@@ -58,6 +67,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     path + fingerprint, commit snapshots — generations and paging, `reclassify`;
     API mirrors the Tauri commands).
 - `crates/cli` — bin `structure` (`analyze`, `impact`). Keep `main` thin.
+- `crates/wasm` (`structure-wasm`) — in-memory PR analysis for the browser
+  extension (`analyze_pr`, JS glue in `wasm.rs`); `scripts/build-wasm.sh`.
 - `app/` — Tauri 2 app: `src-tauri` (thin commands over a managed `Session`), `ui` (Vite + Svelte
   5 + TS, vitest): `src/api.ts` backend wrappers over the generated wire types
   in `src/generated/` (never hand-edited), `src/stores/` rune stores (analysis, impact, selection,

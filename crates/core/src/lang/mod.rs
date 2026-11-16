@@ -1,11 +1,14 @@
-//! Language frontends: everything that differs per language (detection,
-//! indexer, sources, parsing, default classification rules, module separator)
-//! behind one trait. A new language needs:
-//! - a `Language` variant in `structure-ir`;
-//! - a parser crate and one module here implementing [`LanguageFrontend`];
+//! Native language frontends: the per-language parts that need a process or
+//! the filesystem (marker detection, SCIP indexer, parsing a project from
+//! disk). The pure parts (extensions, in-memory parsing, default rules, module
+//! separator) live in `structure-lang` ([`pure`]), shared with the wasm build.
+//! A new language needs:
+//! - a `Language` variant in `structure-ir` and a frontend in `structure-lang`;
+//! - one module here implementing [`LanguageFrontend`];
 //! - one `static` and one line in [`all`], and one arm in [`frontend`].
 //!
-//! The `registry_is_consistent` test fails if a variant is missing from [`all`].
+//! The `registry_is_consistent` test fails if a variant is missing from [`all`]
+//! or if [`all`] and `structure_lang::all` disagree.
 
 mod java;
 mod pharo;
@@ -16,20 +19,25 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use structure_ir::ir::{Graph, Language};
+pub use structure_lang::Frontend;
+/// Pure frontend of a language (`structure_lang::frontend`).
+pub use structure_lang::frontend as pure;
 
 pub use java::SCIP_JAVA_VERSION;
 pub use ts_args::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts_index_args};
 pub use typescript::SCIP_TS_VERSION;
 
 pub trait LanguageFrontend: Sync {
+    /// The pure part of this language (rules, separator, extensions).
+    fn pure(&self) -> &'static dyn Frontend;
     /// Serialized identifier of the language.
-    fn language(&self) -> Language;
+    fn language(&self) -> Language {
+        self.pure().language()
+    }
     /// Whether `root` looks like a project of this language (marker files).
     fn detect(&self, root: &Path) -> bool;
     /// Human description of the detection markers, for error messages.
     fn markers(&self) -> &'static str;
-    /// Source file extensions (without dot).
-    fn extensions(&self) -> &'static [&'static str];
     /// SCIP indexer invocation, or `None` if no indexer is available.
     fn indexer_command(&self, root: &Path) -> Option<Command>;
     /// Build-tool specific advice appended to indexer failures.
@@ -44,10 +52,6 @@ pub trait LanguageFrontend: Sync {
     ) -> anyhow::Result<Graph> {
         self.parse_project(root)
     }
-    /// Embedded default rules: `(toml, display name)`.
-    fn default_rules(&self) -> (&'static str, &'static str);
-    /// Separator of module paths in symbol ids (domain inference).
-    fn module_separator(&self) -> char;
 }
 
 static JAVA: java::JavaFrontend = java::JavaFrontend;
@@ -92,10 +96,13 @@ mod tests {
                 "{lang:?} missing from all()"
             );
         }
+        let pure: Vec<Language> = structure_lang::all().iter().map(|f| f.language()).collect();
+        let native: Vec<Language> = all().iter().map(|f| f.language()).collect();
+        assert_eq!(native, pure, "same languages in the same priority order");
         for f in all() {
             assert_eq!(frontend(f.language()).language(), f.language());
-            assert!(!f.extensions().is_empty());
-            let (toml, name) = f.default_rules();
+            assert_eq!(f.pure().language(), f.language());
+            let (toml, name) = f.pure().default_rules();
             assert!(crate::classify::RuleSet::from_embedded(toml, name).is_ok());
         }
     }

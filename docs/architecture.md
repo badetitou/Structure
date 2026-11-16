@@ -50,7 +50,7 @@ Cible :
 - fichier de projet optionnel (`.structure/rules.toml`) qui ajoute, renomme ou
   réordonne ; en multi-projet, fusion par `id` : la première racine
   l'emporte (libellé, ordre), les couches propres aux suivantes sont
-  ajoutées après les siennes (`rules/README.md`) ;
+  ajoutées après les siennes (`crates/lang/rules/README.md`) ;
 - dynamique : `reclassify(paths)` relit les règles et recalcule la matrice
   depuis le graphe en cache, sans réindexer ni reparser (nouvelle génération ;
   les snapshots de commit en cache sont abandonnés) ; l'app sonde

@@ -5,15 +5,15 @@ use crate::ts;
 use structure_ir::ir::{Graph, Language};
 
 use super::ts_args::{node_heap_mb, node_options, ts_index_args};
-use super::{LanguageFrontend, find_on_path};
+use super::{Frontend, LanguageFrontend, find_on_path};
 
 pub const SCIP_TS_VERSION: &str = "0.6.1";
 
 pub struct TypeScriptFrontend;
 
 impl LanguageFrontend for TypeScriptFrontend {
-    fn language(&self) -> Language {
-        Language::TypeScript
+    fn pure(&self) -> &'static dyn Frontend {
+        super::pure(Language::TypeScript)
     }
 
     fn detect(&self, root: &Path) -> bool {
@@ -22,10 +22,6 @@ impl LanguageFrontend for TypeScriptFrontend {
 
     fn markers(&self) -> &'static str {
         "tsconfig.json/package.json (TypeScript)"
-    }
-
-    fn extensions(&self) -> &'static [&'static str] {
-        &["ts", "tsx"]
     }
 
     fn indexer_command(&self, root: &Path) -> Option<Command> {
@@ -50,16 +46,5 @@ impl LanguageFrontend for TypeScriptFrontend {
 
     fn parse_project(&self, root: &Path) -> anyhow::Result<Graph> {
         ts::parse_project(root)
-    }
-
-    fn default_rules(&self) -> (&'static str, &'static str) {
-        (
-            include_str!("../../../../rules/typescript.toml"),
-            "rules/typescript.toml",
-        )
-    }
-
-    fn module_separator(&self) -> char {
-        '/'
     }
 }
