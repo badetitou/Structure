@@ -66,4 +66,9 @@ describe("selectionLabel", () => {
     expect(selectionLabel(cell(1))).toBe("ui / d · 1 symbol");
     expect(selectionLabel(cell(12))).toBe("ui / d · 12 symbols");
   });
+  it("uses the layer label of the matrix definitions", () => {
+    expect(selectionLabel(cell(2), [{ id: "ui", label: "User interface", order: 0 }])).toBe(
+      "User interface / d · 2 symbols",
+    );
+  });
 });

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button } from "$lib/components/ui/button";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { layerName } from "../../aligned";
+  import { layerLabel } from "../../aligned";
   import { remoteLinks } from "../../graph";
   import { hasMore } from "../../cellsymbols";
   import { initialCaps, moreLabel, showMore } from "../../symbolcap";
@@ -25,7 +25,7 @@
   );
   const viewName = (id: string) => {
     const c = app.view?.cells.find((x) => x.id === id);
-    return c ? `${layerName(c.layer)} / ${c.label}` : id;
+    return c ? `${layerLabel(app.matrix?.layers, c.layer)} / ${c.label}` : id;
   };
   const list = $derived(app.selected && app.symbols?.cell === app.selected.id ? app.symbols : null);
 </script>
@@ -68,7 +68,7 @@
     {/if}
     {#if app.selected}
       {@const c = app.selected}
-      {@render heading(`${layerName(c.layer)}/${c.label} — ${c.size} symbols`)}
+      {@render heading(`${layerLabel(app.matrix?.layers, c.layer)}/${c.label} — ${c.size} symbols`)}
       {#if http && (http.out.length > 0 || http.in.length > 0)}
         {@render heading("HTTP")}
         <ul class="m-0 list-disc pl-4">

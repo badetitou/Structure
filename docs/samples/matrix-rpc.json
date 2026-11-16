@@ -2,7 +2,11 @@
   "project": "gwtdemo",
   "language": "java",
   "layers": [
-    "unknown"
+    {
+      "id": "unknown",
+      "label": "unknown",
+      "order": 8
+    }
   ],
   "domains": [
     "order",

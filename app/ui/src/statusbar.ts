@@ -1,5 +1,5 @@
-import { layerName } from "./aligned";
-import type { Impact, Progress, Stats } from "./api";
+import { layerLabel } from "./aligned";
+import type { Impact, LayerDef, Progress, Stats } from "./api";
 import { shortSha } from "./diffview";
 import type { ViewCell } from "./domaintree";
 
@@ -33,6 +33,6 @@ export function impactLabel(impact: Impact | null, busy: Progress | null): strin
 }
 
 /** "layer / domain · 12 symbols", or null when no cell is selected. */
-export function selectionLabel(cell: ViewCell | null): string | null {
-  return cell ? `${layerName(cell.layer)} / ${cell.label} · ${plural(cell.size, "symbol")}` : null;
+export function selectionLabel(cell: ViewCell | null, layers?: readonly LayerDef[]): string | null {
+  return cell ? `${layerLabel(layers, cell.layer)} / ${cell.label} · ${plural(cell.size, "symbol")}` : null;
 }

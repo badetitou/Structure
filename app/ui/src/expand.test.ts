@@ -9,7 +9,10 @@ describe("expandMatrix", () => {
     const w = {
       project: "p",
       language: "java",
-      layers: ["ui", "model"],
+      layers: [
+        { id: "ui", label: "ui", order: 0 },
+        { id: "model", label: "model", order: 6 },
+      ],
       domains: ["a", "b"],
       cells: [cell("ui:a", "ui", "a"), cell("ui:b", "ui", "b"), cell("model:a", "model", "a")],
       edges: [
@@ -37,7 +40,10 @@ describe("expandMatrix", () => {
     const base = {
       project: "p",
       language: "java",
-      layers: ["ui", "model"],
+      layers: [
+        { id: "ui", label: "ui", order: 0 },
+        { id: "model", label: "model", order: 6 },
+      ],
       domains: ["a"],
       cells: [cell("ui:a", "ui", "a"), cell("model:a", "model", "a")],
       edges: [],

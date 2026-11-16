@@ -102,9 +102,15 @@ decreasing) and `detail` = latest build output line plus elapsed time
 
 ```ts
 type Language = "java" | "typescript" | "pharo";
-type Layer =
-  | "ui" | "state" | "api_client" | "entry" | "business"
-  | "persistence" | "model" | "util" | "unknown"; // matrix rows, top to bottom
+// Layer id, a snake_case string. Built-in layers, top to bottom: "ui",
+// "state", "api_client", "entry", "business", "persistence", "model", "util";
+// "unknown" (unclassified symbols) is implicit and always last.
+type LayerId = string;
+interface LayerDef {
+  id: LayerId;
+  label: string;  // text shown for the layer (built-in layers: the id)
+  order: number;  // rows sorted by ascending order (built-in: 0..7, unknown 8)
+}
 
 interface Matrix {
   project: string;   // several roots: the first root's name
@@ -113,7 +119,7 @@ interface Matrix {
   // symbol ids are `<name>::<id>` and domains `<name>/<domain>`.
   // `link_stats` of a merged analysis are the first root's.
   projects?: { name: string; root: string; language: Language }[];
-  layers: Layer[];   // only the layers present, in Layer order
+  layers: LayerDef[]; // definitions of the layers present, sorted by order
   domains: string[];
   cells: Cell[];     // non-empty cells only, sorted by (layer, domain)
   edges: EdgeGroup[]; // cell-to-cell calls/uses, grouped by source cell
@@ -142,7 +148,7 @@ interface DomainNode {
 }
 interface Cell {
   id: string; // "<layer>:<domain>", e.g. "business:account"
-  layer: Layer;
+  layer: LayerId;
   domain: string;
   size: number;   // number of top-level symbols; list them with `cell_symbols`
 }

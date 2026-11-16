@@ -1,16 +1,17 @@
 //! Quotient graph: symbol-level graph + classification -> layer x domain matrix.
 
+use crate::layers::Layers;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use structure_ir::ir::{EdgeKind, Graph};
 use structure_ir::model::{
-    Cell, CellSymbol, CellSymbols, Classification, EdgeGroup, Layer, Matrix, Stats,
+    Cell, CellSymbol, CellSymbols, Classification, EdgeGroup, LayerDef, LayerId, Matrix, Stats,
 };
 
 /// Cell id of any symbol (lifted to its top-level symbol first).
 pub fn cell_of(graph: &Graph, cls: &Classification, symbol_id: &str) -> Option<String> {
     let top = graph.top_level_of(symbol_id)?;
     let p = cls.placements.get(&top.id)?;
-    Some(Cell::id_for(p.layer, &p.domain))
+    Some(Cell::id_for(&p.layer, &p.domain))
 }
 
 /// Symbol edges lifted to top-level ids, deduped with counts, self-loops and
@@ -93,7 +94,7 @@ pub fn cell_symbols(
         let Some(p) = cls.placements.get(&s.id) else {
             continue;
         };
-        let id = Cell::id_for(p.layer, &p.domain);
+        let id = Cell::id_for(&p.layer, &p.domain);
         if let Some(v) = per_cell.get_mut(id.as_str()) {
             v.push(CellSymbol {
                 id: s.id.clone(),
@@ -125,32 +126,50 @@ pub fn cell_symbols(
     }
 }
 
+/// Matrix of the built-in layers (see [`Layers::builtin`]).
 pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64) -> Matrix {
-    let mut sizes: BTreeMap<(Layer, String), usize> = BTreeMap::new();
+    build_with(graph, cls, &Layers::builtin(), project, elapsed_ms)
+}
+
+/// Rows follow the order of `layers`; a placement on an undefined layer gets
+/// a synthetic definition after the known ones.
+pub fn build_with(
+    graph: &Graph,
+    cls: &Classification,
+    layers: &Layers,
+    project: &str,
+    elapsed_ms: u64,
+) -> Matrix {
+    // Keyed by (layer rank, layer id, domain): rows in layer order.
+    let mut sizes: BTreeMap<(usize, &str, &str), usize> = BTreeMap::new();
     for s in graph.symbols.iter().filter(|s| s.container.is_none()) {
         if let Some(p) = cls.placements.get(&s.id) {
-            *sizes.entry((p.layer, p.domain.clone())).or_default() += 1;
+            let key = (layers.rank(&p.layer), p.layer.as_str(), p.domain.as_str());
+            *sizes.entry(key).or_default() += 1;
         }
     }
-    let layers: Vec<Layer> = sizes
-        .keys()
-        .map(|(l, _)| *l)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
+    let mut layer_defs: Vec<LayerDef> = Vec::new();
+    for (_, l, _) in sizes.keys() {
+        if layer_defs.last().is_none_or(|d| d.id.as_str() != *l) {
+            layer_defs.push(layers.def_or_default(&LayerId::from(*l)));
+        }
+    }
     let domains: Vec<String> = sizes
         .keys()
-        .map(|(_, d)| d.clone())
+        .map(|(_, _, d)| d.to_string())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
     let cells: Vec<Cell> = sizes
         .into_iter()
-        .map(|((layer, domain), size)| Cell {
-            id: Cell::id_for(layer, &domain),
-            layer,
-            domain,
-            size,
+        .map(|((_, layer, domain), size)| {
+            let layer = LayerId::from(layer);
+            Cell {
+                id: Cell::id_for(&layer, domain),
+                layer,
+                domain: domain.to_string(),
+                size,
+            }
         })
         .collect();
     let index: HashMap<&str, usize> = cells
@@ -166,7 +185,7 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
         .map(|s| {
             let p = cls.placements.get(&s.id)?;
             index
-                .get(Cell::id_for(p.layer, &p.domain).as_str())
+                .get(Cell::id_for(&p.layer, &p.domain).as_str())
                 .copied()
         })
         .collect();
@@ -205,7 +224,7 @@ pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64
         project: project.to_string(),
         language: graph.language,
         projects: vec![],
-        layers,
+        layers: layer_defs,
         domains,
         cells,
         edges,
@@ -289,12 +308,12 @@ mod tests {
         ];
         let mut cls = Classification::default();
         for (id, layer, dom) in [
-            ("Ctl", Layer::Entry, "account"),
-            ("Ctl2", Layer::Entry, "account"),
-            ("Svc", Layer::Business, "account"),
-            ("Aaa", Layer::Business, "account"),
-            ("Repo", Layer::Persistence, "account"),
-            ("Repo2", Layer::Persistence, "billing"),
+            ("Ctl", LayerId::from("entry"), "account"),
+            ("Ctl2", LayerId::from("entry"), "account"),
+            ("Svc", LayerId::from("business"), "account"),
+            ("Aaa", LayerId::from("business"), "account"),
+            ("Repo", LayerId::from("persistence"), "account"),
+            ("Repo2", LayerId::from("persistence"), "billing"),
         ] {
             cls.placements.insert(
                 id.into(),
@@ -316,12 +335,69 @@ mod tests {
     }
 
     #[test]
+    fn rows_follow_the_layer_definitions() {
+        let (g, mut cls) = fixture();
+        for p in cls.placements.values_mut() {
+            if p.layer.as_str() == "business" {
+                p.layer = "zzz".into();
+            }
+        }
+        cls.placements.insert(
+            "Repo2".into(),
+            Placement {
+                layer: LayerId::unknown(),
+                domain: "billing".into(),
+            },
+        );
+        let def = |id: &str, order| LayerDef {
+            id: id.into(),
+            label: id.to_uppercase(),
+            order,
+        };
+        let layers = Layers::new([def("entry", 2), def("persistence", 1)]);
+        let m = build_with(&g, &cls, &layers, "p", 0);
+        let rows: Vec<(&str, &str)> = m
+            .layers
+            .iter()
+            .map(|d| (d.id.as_str(), d.label.as_str()))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("persistence", "PERSISTENCE"),
+                ("entry", "ENTRY"),
+                ("unknown", "unknown"),
+                ("zzz", "zzz")
+            ]
+        );
+        let ids: Vec<_> = m.cells.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "persistence:account",
+                "entry:account",
+                "unknown:billing",
+                "zzz:account"
+            ]
+        );
+    }
+
+    #[test]
     fn builds_cells_and_edges() {
         let (g, cls) = fixture();
         let m = build(&g, &cls, "p", 7);
+        let layers: Vec<(&str, &str, u32)> = m
+            .layers
+            .iter()
+            .map(|d| (d.id.as_str(), d.label.as_str(), d.order))
+            .collect();
         assert_eq!(
-            m.layers,
-            vec![Layer::Entry, Layer::Business, Layer::Persistence]
+            layers,
+            [
+                ("entry", "entry", 3),
+                ("business", "business", 4),
+                ("persistence", "persistence", 5)
+            ]
         );
         assert_eq!(m.domains, vec!["account", "billing"]);
         let ids: Vec<_> = m.cells.iter().map(|c| c.id.as_str()).collect();
@@ -468,7 +544,10 @@ mod tests {
             edge("A", "ghost", EdgeKind::Uses), // unresolved endpoint
         ];
         let mut cls = Classification::default();
-        for (id, layer) in [("A", Layer::Entry), ("B", Layer::Business)] {
+        for (id, layer) in [
+            ("A", LayerId::from("entry")),
+            ("B", LayerId::from("business")),
+        ] {
             cls.placements.insert(
                 id.into(),
                 Placement {

@@ -1,7 +1,7 @@
 // Aligned view of a multi-project matrix: one layer segment per project and one
 // domain row per group of columns linked by remote (http / rpc) edges, so a front
 // domain and the back domain it calls sit on the same row.
-import type { CellEdge, Layer } from "./api";
+import type { CellEdge, LayerDef, LayerId } from "./api";
 import type { Column, ViewCell, ViewMatrix } from "./domaintree";
 
 /** One row of the aligned domain axis: at most one column per project. */
@@ -16,7 +16,7 @@ export interface AlignedLayer {
   /** `${project}|${layer}` */
   key: string;
   project: string;
-  layer: Layer;
+  layer: LayerId;
 }
 
 export interface Aligned {
@@ -37,6 +37,12 @@ export function layerName(key: string): string {
   return i < 0 ? key : key.slice(i + 1);
 }
 
+/** Label of a view cell's layer (aligned or plain) from the matrix definitions; the id when undefined. */
+export function layerLabel(defs: readonly LayerDef[] | undefined, key: string): string {
+  const id = layerName(key);
+  return defs?.find((d) => d.id === id)?.label ?? id;
+}
+
 /** Project owning a column: the prefix before the first `/` of its first domain. */
 export function projectOf(col: Column, projects: readonly string[]): number {
   const d = col.domains[0] ?? col.key;
@@ -47,7 +53,7 @@ export function projectOf(col: Column, projects: readonly string[]): number {
 export function align(
   vm: ViewMatrix,
   cols: readonly Column[],
-  layers: readonly Layer[],
+  layers: readonly LayerId[],
   projects: readonly string[],
   remote: readonly CellEdge[],
 ): Aligned {
@@ -139,7 +145,7 @@ export function align(
     const p = projOf.get(c.domain) ?? 0;
     const row = rowOf.get(c.domain);
     if (!row) continue;
-    const layer = `${projects[p] ?? ""}${SEP}${c.layer}` as Layer;
+    const layer: LayerId = `${projects[p] ?? ""}${SEP}${c.layer}`;
     const id = `${layer}:${row.key}`;
     idMap.set(c.id, id);
     cells.push({ ...c, id, layer, domain: row.key });

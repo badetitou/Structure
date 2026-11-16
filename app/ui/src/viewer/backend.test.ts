@@ -7,7 +7,7 @@ import { cellSymbolsClient } from "./protocol";
 const wireMatrix: WireMatrix = {
   project: "p",
   language: "java",
-  layers: ["business"],
+  layers: [{ id: "business", label: "business", order: 4 }],
   domains: ["account"],
   cells: [{ id: "business:account", layer: "business", domain: "account", size: 2 }],
   edges: [],

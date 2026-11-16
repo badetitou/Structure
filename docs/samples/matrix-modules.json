@@ -2,8 +2,16 @@
   "project": "verveinej-sample",
   "language": "java",
   "layers": [
-    "model",
-    "unknown"
+    {
+      "id": "model",
+      "label": "model",
+      "order": 6
+    },
+    {
+      "id": "unknown",
+      "label": "unknown",
+      "order": 8
+    }
   ],
   "domains": [
     "famixjavaentities",

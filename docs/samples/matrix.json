@@ -2,11 +2,31 @@
   "project": "jpetstore-6",
   "language": "java",
   "layers": [
-    "entry",
-    "business",
-    "persistence",
-    "model",
-    "util"
+    {
+      "id": "entry",
+      "label": "entry",
+      "order": 3
+    },
+    {
+      "id": "business",
+      "label": "business",
+      "order": 4
+    },
+    {
+      "id": "persistence",
+      "label": "persistence",
+      "order": 5
+    },
+    {
+      "id": "model",
+      "label": "model",
+      "order": 6
+    },
+    {
+      "id": "util",
+      "label": "util",
+      "order": 7
+    }
   ],
   "domains": [
     "account",

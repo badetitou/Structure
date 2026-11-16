@@ -22,7 +22,8 @@ import type { Hunk } from "./generated/Hunk";
 import type { ImpactedCell } from "./generated/ImpactedCell";
 import type { ImpactedSymbol } from "./generated/ImpactedSymbol";
 import type { Language } from "./generated/Language";
-import type { Layer } from "./generated/Layer";
+import type { LayerDef } from "./generated/LayerDef";
+import type { LayerId } from "./generated/LayerId";
 import type { LineKind } from "./generated/LineKind";
 import type { Progress } from "./generated/Progress";
 import type { Stats } from "./generated/Stats";
@@ -45,7 +46,8 @@ export type {
   ImpactedCell,
   ImpactedSymbol,
   Language,
-  Layer,
+  LayerDef,
+  LayerId,
   LineKind,
   Progress,
   Stats,
