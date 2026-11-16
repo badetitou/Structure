@@ -1,0 +1,133 @@
+# Structure — cible d'architecture
+
+Plan de refonte décidé le 2026-11-16. Complète `plan.md` (POC) ; chaque étape
+de la feuille de route est une PR à un seul sujet.
+
+## Principe
+
+```
+Sources ──► Graph ──► Lens (quotient) ──► Overlays (highlights) ──► Views
+(langages)  (IR)      (layer×domain…)     (diff, trace…)            (matrice, détails…)
+            └─────────── engine Rust (pur + natif) ──────────┘     └─── UI (TS) ───┘
+```
+
+Chaque flèche est un contrat. Le code **pur** (ir, langages, classify,
+highlight) compile en wasm ; le code **natif** (git, indexeurs SCIP, cache,
+système de fichiers) n'existe que dans l'engine natif.
+
+## 1. Langages
+
+Constat : la correspondance langage → règles/séparateur existe en trois copies
+(`core/src/lang`, `wasm/src/lib.rs`, tests de `classify`) ; le pipeline a des
+cas Pharo et un `match` de tag de cache ; `LanguageFrontend` mêle parsing pur
+et indexeur natif ; `Symbol` porte `http`/`http_calls`/`rpc_calls` et
+`EdgeKind` a `Http`/`Rpc` en dur.
+
+Cible :
+- crate pur `structure-lang` : trait `Frontend { language, extensions,
+  is_source, parse_sources(files) -> ParseOutput, default_rules,
+  module_separator }` + registre, utilisé par `core` et `wasm` ;
+- trait natif `Indexer` dans `core`, optionnel par langage (détection,
+  commande, aide, tag de cache SCIP) — Pharo n'en a pas ;
+- `ParseOutput.stats` : métriques génériques (remplace `metrics.sends`) ;
+- ports : `Port { protocol, role: Provides | Requires, key }` sur les symboles,
+  trait `Linker` → arêtes `EdgeKind::Remote(protocol)` ; `http_link` et
+  `rpc_link` deviennent deux linkers ;
+- un dépôt peut contenir plusieurs langages : la détection rend une liste,
+  `multi.rs` fusionne des unités `(racine, langage)`.
+
+## 2. Couches configurables
+
+Les règles nomment déjà les couches par chaîne ; seuls la liste et l'ordre
+sont figés (enum `Layer` dans `model.rs`, type `Layer` dans `api.ts`).
+
+Cible :
+- `Layer` devient `LayerId(String)` ; `Matrix.layers` porte les définitions
+  `{ id, label, order }` ; `unknown` reste implicite, toujours en dernier ;
+- section `[[layer]]` dans les règles TOML ; les règles par défaut déclarent
+  les couches standard ;
+- fichier de projet optionnel (`.structure/rules.toml`) qui ajoute, renomme ou
+  réordonne ; en multi-projet, fusion par `id` ;
+- dynamique : `reclassify(rules)` recalcule la matrice depuis le graphe en
+  cache, sans réindexer ni reparser. Édition depuis l'UI plus tard.
+
+## 3. Séparation front/back
+
+Constat : cache et orchestration vivent dans `app/src-tauri/src/commands.rs` ;
+les types sont écrits deux fois (`model.rs`, `api.ts`) ; le `Backend` TS
+signale l'indisponibilité en rejetant des promesses.
+
+Cible :
+- engine Rust `Session` : possède le cache, expose `open(paths)`, `matrix`,
+  `cell_symbols`, `highlight(request)`, `reclassify`, `history`, `diff` ;
+  commandes Tauri, CLI et (sous-ensemble) wasm passent par elle ;
+- types TS générés depuis Rust (`ts-rs` ou `specta`) — nouvelle dépendance,
+  justifiée par la dérive entre `model.rs` et `api.ts` ;
+- `Backend` TS avec `capabilities { history, diff, pickFolder,
+  highlightSources[] }` dont dérivent les `available()` des panneaux ;
+  `AppState` découpé en stores : analyse, highlights, sélection, git.
+
+## 4. Vues
+
+Acquis : registre de panneaux + dockview.
+
+Cible :
+- contrat `ViewContext { lens, overlays, selection, actions }` passé à chaque
+  vue, au lieu de lire `app` ; sélection et overlays forment un bus partagé ;
+- séparer la *lens* (back : manière de quotienter — layer × domaine, arbre de
+  packages, projet × couche) du *rendu* (front : matrice, dense, graphe de
+  voisinage, liste) ;
+- options d'affichage (dense, transposé, aligné) par instance de panneau
+  (paramètres dockview) et non globales : deux matrices côte à côte possibles.
+
+## 5. Highlights (overlays)
+
+`compute_with` (`crates/git/src/impact.rs`) enchaîne déjà trois étapes :
+résoudre (fichier + lignes → symboles), propager (BFS des appelants), agréger
+(symboles → cellules).
+
+Cible, dans le code pur :
+
+```rust
+enum Anchor { Symbol(String), Location { file, lines }, Qualified { name, file_hint, line } }
+struct Seed { anchor: Anchor, role: Role /* changed, frame(n), … */ }
+struct HighlightRequest { source: SourceInfo, seeds: Vec<Seed>,
+                          propagate: Propagation /* Callers | Callees | None | Path, max_depth */ }
+struct Highlight { source, symbols: [{id, role, distance}], cells: [{id, role, distance}],
+                   unresolved: Vec<Anchor>, warnings }
+```
+
+- `Impact` devient un `Highlight` de source `git-diff` (+ base/head, matrice du
+  snapshot) ; « modifié / impacté » devient `role`.
+- UI : `app.highlights[]`, overlays nommés.
+- Sélecteur d'overlays : visible seulement quand au moins deux overlays sont
+  chargés ; clic = un seul (celui par défaut), cmd/ctrl-clic = ajoute ou
+  retire. Chaque overlay a sa couleur (tokens `app.css`) ; une cellule touchée
+  par plusieurs overlays est découpée en bandes, au-delà de trois un style
+  « multiple » neutre et l'infobulle les liste.
+
+### Plus tard
+
+- Source stack trace : champ « Highlight depuis une trace » où l'on colle une
+  trace ; frames parsées par langage (`Frontend::parse_trace_frame`),
+  propagation `Path` ou `None` ; vue Trace.
+- Intégration MCP (une session Claude envoie la trace elle-même) seulement
+  après la version « coller ».
+
+## Feuille de route
+
+Issue parente : #68 (une sous-issue par étape, une case = une PR).
+
+1. #83 Contrats : génération des types TS depuis Rust.
+2. #69 Highlight pur : extraire resolve / propagate / aggregate de
+   `compute_with` (sans changement de comportement) ; modèle `Highlight`,
+   `Impact` comme source git.
+3. #70 UI highlights : `app.highlights[]`, sélecteur, rendu multi-overlay.
+4. #71 Engine `Session` : sortir cache et orchestration de `commands.rs` ;
+   puis `Backend` à capacités.
+5. #72 Couches : `LayerId` (sans changement de comportement) ; `[[layer]]` ;
+   fichier de projet ; `reclassify`.
+6. #73 Langages : crate `structure-lang` pur (le wasm l'utilise) ; trait
+   `Indexer` ; ports et linkers ; dépôts multi-langages.
+7. #74 Vues : `ViewContext` ; options par panneau ; lens configurables.
+8. #75 Plus tard : source stack trace (coller), vue Trace ; MCP ensuite.
