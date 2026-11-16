@@ -5,7 +5,11 @@ The commands in `src-tauri/src/commands.rs` are thin wrappers over a managed
 canonical path, and per commit for snapshots); they run it on a blocking
 thread, emit its progress as `analysis-progress` events and return its errors
 as strings. Pipeline warnings travel in the `warnings` field of `Matrix` and
-`Impact`. In a plain browser the UI falls back to `docs/samples/*.json`.
+`Impact`. While a project is open the UI polls `rules_stamp` every 2 s and
+calls `reclassify` when the project's `.structure/rules.toml` changes (also
+the "Reload rules" button of the Options page): `AppState.reloadRules` keeps
+the selection whose cell still exists, re-runs the impact shown, and on error
+keeps the matrix and shows `rulesError` above it. In a plain browser the UI falls back to `docs/samples/*.json`.
 
 Prerequisites: Rust toolchain, `cargo install tauri-cli --version "^2"`, Node 20+,
 platform webview deps (macOS: none extra).

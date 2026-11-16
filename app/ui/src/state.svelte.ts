@@ -6,7 +6,7 @@ import type { SymbolList } from "./cellsymbols";
 import { selectionDiff } from "./history";
 import type { Selection } from "./history";
 import type { Mode } from "./layout";
-import { RequestGuard, shownMatrix } from "./matrixsel";
+import { RequestGuard, retainSelection, shownMatrix } from "./matrixsel";
 import {
   loadAligned,
   loadAngled,
@@ -33,6 +33,9 @@ export interface DiffState {
 }
 
 const START: Progress = { step: "starting…", pct: 0 };
+
+/** How often the project's rules files are checked for changes while a project is open. */
+export const RULES_POLL_MS = 2000;
 
 /** State of the analysis screen: project, analysis, selection, impact, history. */
 export class AppState {
@@ -72,6 +75,16 @@ export class AppState {
   /** Textual diff of the history selection (or typed range), null when none is selected. */
   diff = $state.raw<DiffState | null>(null);
 
+  /** Last rules reload failure (invalid rules file…); the matrix shown is kept. */
+  rulesError = $state("");
+  /** True while the rules are being reloaded. */
+  rulesBusy = $state(false);
+  /** Last seen stamp of the rules files, null until known. */
+  private rulesStamp: string | null = null;
+  private rulesReq = 0;
+  /** Range of the impact shown (or running), re-run after a rules reload. */
+  private impactRange: { base: string | null; head: string | null } | null = null;
+
   private guard = new RequestGuard();
   private diffGuard = new RequestGuard();
   private symReq = 0;
@@ -105,6 +118,8 @@ export class AppState {
     const req = this.loadReq;
     this.paths = paths;
     this.phase = "loading";
+    // Taken before the analysis so that an edit made meanwhile is reloaded.
+    const stamp = this.readRulesStamp(paths);
     let m: Matrix;
     try {
       m = await analyzeAndRecord(paths, (p) =>
@@ -119,6 +134,9 @@ export class AppState {
     if (req !== this.loadReq) return;
     this.work = m;
     this.phase = "ready";
+    void stamp.then((s) => {
+      if (req === this.loadReq && this.rulesStamp === null) this.rulesStamp = s;
+    });
     if (this.multi) return; // no git history across several repos
     try {
       const h = await api.history(paths[0]);
@@ -145,7 +163,91 @@ export class AppState {
     this.impactError = "";
     this.impactBusy = false;
     this.impactProgress = null;
+    this.impactRange = null;
+    this.rulesReq++;
+    this.rulesError = "";
+    this.rulesBusy = false;
+    this.rulesStamp = null;
     this.clearDiff();
+  }
+
+  /** Stamp of the rules files of `paths`, null when unknown (unsupported or failed). */
+  private async readRulesStamp(paths: string[]): Promise<string | null> {
+    try {
+      return (await api.rulesStamp(paths)) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Re-applies the project's rules to the analysis without re-parsing it. The selection is
+   * kept when its cell still exists and the impact shown is computed again; on failure the
+   * matrix stays and the error goes to `rulesError`. */
+  async reloadRules(): Promise<void> {
+    if (this.phase !== "ready" || !this.work) return;
+    const load = this.loadReq;
+    const req = ++this.rulesReq;
+    const current = () => load === this.loadReq && req === this.rulesReq;
+    this.rulesBusy = true;
+    try {
+      // Stamp of the rules applied now, so the next poll does not reload them again.
+      const stamp = await this.readRulesStamp(this.paths);
+      if (!current()) return;
+      if (stamp !== null) this.rulesStamp = stamp;
+      const m = await api.reclassify(this.paths);
+      if (!current()) return;
+      this.rulesError = "";
+      this.applyReclassified(m);
+    } catch (e) {
+      if (current()) this.rulesError = `Rules reload failed: ${String(e)}`;
+    } finally {
+      if (current()) this.rulesBusy = false;
+    }
+  }
+
+  private applyReclassified(m: Matrix) {
+    const sel = this.selected;
+    const showsWork = this.matrix === this.work;
+    this.work = m;
+    if (showsWork) {
+      // The old generation is gone: list the kept cell's symbols again.
+      this.selected = sel ? retainSelection(sel, m) : null;
+      void this.loadSymbols(false);
+    }
+    const range = this.impactRange;
+    if (range) {
+      // Computed with the old classification (a running one too): run it again.
+      this.guard.invalidate();
+      this.impactBusy = false;
+      void this.runImpact(range.base, range.head, true);
+    }
+  }
+
+  /** Reloads the rules when their files changed since last checked (polled while a project is open). */
+  async checkRules(): Promise<void> {
+    if (this.phase !== "ready" || this.rulesBusy) return;
+    const load = this.loadReq;
+    const stamp = await this.readRulesStamp(this.paths);
+    if (load !== this.loadReq || stamp === null) return;
+    const prev = this.rulesStamp;
+    this.rulesStamp = stamp;
+    if (prev !== null && prev !== stamp) await this.reloadRules();
+  }
+
+  /** Polls the rules files every `RULES_POLL_MS`; returns the function that stops it. */
+  watchRules(): () => void {
+    const id = setInterval(() => void this.checkRules(), RULES_POLL_MS);
+    return () => clearInterval(id);
+  }
+
+  /** Keeps the selection in step with the cells drawn: dropped when its cell left the view,
+   * replaced by the view's cell of the same id when that one differs (after a rules reload). */
+  syncSelection(cells: ViewCell[]) {
+    const sel = this.selected;
+    if (!sel) return;
+    const next = cells.find((c) => c.id === sel.id);
+    if (!next) this.selectCell(null);
+    else if (next.size !== sel.size || next.members.join("\n") !== sel.members.join("\n")) this.selectCell(next);
   }
 
   setShowHttp(on: boolean) {
@@ -209,9 +311,10 @@ export class AppState {
 
   /** Diff of two refs (null = HEAD / working tree); shows the commit snapshot when there is one.
    * Ignored while another impact runs. */
-  async runImpact(base: string | null, head: string | null): Promise<void> {
+  async runImpact(base: string | null, head: string | null, keepSelection = false): Promise<void> {
     if (this.impactBusy || this.multi) return;
     const req = this.guard.begin();
+    this.impactRange = { base, head };
     this.impactError = "";
     this.impactBusy = true;
     this.impactProgress = START;
@@ -220,7 +323,7 @@ export class AppState {
         if (this.guard.isCurrent(req)) this.impactProgress = p;
       });
       if (!this.guard.isCurrent(req)) return; // superseded or cleared meanwhile
-      this.setImpact(res);
+      this.setImpact(res, keepSelection);
     } catch (e) {
       if (this.guard.isCurrent(req)) this.impactError = `Impact failed: ${String(e)}`;
     } finally {
@@ -233,6 +336,7 @@ export class AppState {
 
   clearImpact() {
     this.guard.invalidate();
+    this.impactRange = null;
     this.historySel = null;
     this.impactError = "";
     this.impactBusy = false;
@@ -277,12 +381,16 @@ export class AppState {
     this.diff = null;
   }
 
-  private setImpact(imp: Impact | null) {
+  /** With `keepSelection` (re-run after a rules reload), a selected cell that still exists
+   * in the new matrix stays selected. */
+  private setImpact(imp: Impact | null, keepSelection = false) {
     const before = this.matrix;
+    const sel = this.selected;
     this.impact = imp;
-    if (this.matrix !== before) {
-      // Another snapshot: cell ids are not comparable.
-      this.selected = null;
+    const now = this.matrix;
+    if (now !== before) {
+      // Another snapshot: cell ids are not comparable, unless only the rules changed.
+      this.selected = keepSelection && sel && now ? retainSelection(sel, now) : null;
       void this.loadSymbols(false);
     }
   }

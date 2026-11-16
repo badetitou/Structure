@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Impact, Matrix } from "./api";
-import { RequestGuard, shownMatrix } from "./matrixsel";
+import { RequestGuard, retainSelection, shownMatrix } from "./matrixsel";
+import type { ViewCell } from "./domaintree";
 
 const mk = (project: string) => ({ project }) as unknown as Matrix;
 const imp = (matrix?: Matrix) => ({ base: "a", head: "b", matrix }) as unknown as Impact;
@@ -30,5 +31,16 @@ describe("shownMatrix", () => {
   it("uses the snapshot matrix when present", () => {
     const snap = mk("snap");
     expect(shownMatrix(work, imp(snap))).toBe(snap);
+  });
+});
+
+describe("retainSelection", () => {
+  const m = { cells: [{ id: "a", size: 2 }, { id: "c", size: 4 }] } as unknown as Matrix;
+  const sel = { id: "v", label: "v", size: 9, members: ["a", "b", "c"] } as unknown as ViewCell;
+  it("keeps the members that still exist, with their new size", () => {
+    expect(retainSelection(sel, m)).toEqual({ ...sel, members: ["a", "c"], size: 6 });
+  });
+  it("is null when no member is left", () => {
+    expect(retainSelection({ ...sel, members: ["b"] }, m)).toBeNull();
   });
 });

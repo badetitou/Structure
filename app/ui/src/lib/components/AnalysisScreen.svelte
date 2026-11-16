@@ -22,14 +22,19 @@
 
   onMount(() => {
     let live = true;
+    let unwatch = () => {};
     app
       .load(paths)
       .then(() => {
-        if (embedded && live) return app.runImpact(null, null);
+        if (!live) return;
+        if (embedded) return app.runImpact(null, null);
+        // Reload the matrix when the project's rules files change.
+        unwatch = app.watchRules();
       })
       .catch((e) => live && onExit(`Analysis failed: ${String(e)}`));
     return () => {
       live = false;
+      unwatch();
       app.reset();
     };
   });
@@ -46,6 +51,9 @@
       {embedded}
     />
     {#if app.phase === "ready" && app.work}
+      {#if app.rulesError}
+        <div class="flex-none border-b px-4 py-1 text-[13px] text-destructive" role="alert">{app.rulesError}</div>
+      {/if}
       {#if app.warnings.length > 0}
         <div class="flex-none border-b border-(--warn-border) bg-(--warn-bg) px-4 py-1 text-[13px] text-(--warn-fg)">
           {#each app.warnings as w}<div>⚠ {w}</div>{/each}

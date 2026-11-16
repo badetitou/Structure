@@ -150,7 +150,7 @@ fn qualify_tree(project: &str, nodes: &[DomainNode]) -> Vec<DomainNode> {
 /// its layers, labels and orders; a layer only declared by later roots is
 /// appended after them, in root order then in that root's order, so the
 /// primary root's rows never move. `unknown` stays implicit and last.
-fn merge_layers<'a>(per_root: impl IntoIterator<Item = &'a Layers>) -> Layers {
+pub(super) fn merge_layers<'a>(per_root: impl IntoIterator<Item = &'a Layers>) -> Layers {
     let mut roots = per_root.into_iter();
     let mut defs: Vec<LayerDef> = roots.next().map_or_else(Vec::new, |l| l.defs().to_vec());
     defs.retain(|d| !d.id.is_unknown());
@@ -170,6 +170,60 @@ fn merge_layers<'a>(per_root: impl IntoIterator<Item = &'a Layers>) -> Layers {
     Layers::new(defs)
 }
 
+/// Per-root classifications merged into one: symbol ids `<project>::<id>`,
+/// domains `<project>/<domain>`, and one domain-tree node per project.
+#[derive(Default)]
+pub(super) struct MergedClassification {
+    placements: BTreeMap<String, Placement>,
+    tree: Vec<DomainNode>,
+    any_tree: bool,
+}
+
+impl MergedClassification {
+    /// Adds the classification of project `name`; `sizes` (top-level symbols
+    /// placed per domain) make its tree leaves when it has no domain tree.
+    pub(super) fn add(&mut self, name: &str, cls: Classification, sizes: BTreeMap<String, usize>) {
+        for (id, p) in cls.placements {
+            self.placements.insert(
+                prefix_id(name, &id),
+                Placement {
+                    layer: p.layer,
+                    domain: format!("{name}/{}", p.domain),
+                },
+            );
+        }
+        let children = match &cls.domain_tree {
+            Some(t) => {
+                self.any_tree = true;
+                qualify_tree(name, t)
+            }
+            // Domains are name roots: one leaf per domain.
+            None => sizes
+                .into_iter()
+                .map(|(d, size)| DomainNode {
+                    domain: Some(format!("{name}/{d}")),
+                    label: d,
+                    size,
+                    children: vec![],
+                })
+                .collect(),
+        };
+        self.tree.push(DomainNode {
+            label: name.to_string(),
+            domain: None,
+            size: children.iter().map(|c| c.size).sum(),
+            children,
+        });
+    }
+
+    pub(super) fn finish(self) -> Classification {
+        Classification {
+            placements: self.placements,
+            domain_tree: self.any_tree.then_some(self.tree),
+        }
+    }
+}
+
 fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysis {
     let mut graph = Graph {
         root: parts[0].graph.root.clone(),
@@ -177,9 +231,7 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
         symbols: vec![],
         edges: vec![],
     };
-    let mut placements: BTreeMap<String, Placement> = BTreeMap::new();
-    let mut tree: Vec<DomainNode> = vec![];
-    let mut any_tree = false;
+    let mut merged = MergedClassification::default();
     let mut projects: Vec<Project> = vec![];
     let mut warnings: Vec<String> = vec![];
     let mut metrics = crate::metrics::Metrics::default();
@@ -194,60 +246,24 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
             root: root.display().to_string(),
             language: a.graph.language,
         });
-        for mut s in a.graph.symbols {
+        let part = std::sync::Arc::unwrap_or_clone(a.graph);
+        for mut s in part.symbols {
             s.id = prefix_id(name, &s.id);
             s.container = s.container.map(|c| prefix_id(name, &c));
             s.file = format!("{name}/{}", s.file);
             graph.symbols.push(s);
         }
         // Rpc edges are linked again on the merged graph below.
-        for mut e in a
-            .graph
-            .edges
-            .into_iter()
-            .filter(|e| e.kind != EdgeKind::Rpc)
-        {
+        for mut e in part.edges.into_iter().filter(|e| e.kind != EdgeKind::Rpc) {
             e.from = prefix_id(name, &e.from);
             e.to = prefix_id(name, &e.to);
             graph.edges.push(e);
         }
-        for (id, p) in a.classification.placements {
-            placements.insert(
-                prefix_id(name, &id),
-                Placement {
-                    layer: p.layer,
-                    domain: format!("{name}/{}", p.domain),
-                },
-            );
+        let mut sizes: BTreeMap<String, usize> = BTreeMap::new();
+        for c in &a.matrix.cells {
+            *sizes.entry(c.domain.clone()).or_default() += c.size;
         }
-        let children = match &a.classification.domain_tree {
-            Some(t) => {
-                any_tree = true;
-                qualify_tree(name, t)
-            }
-            // Domains are name roots: one leaf per domain.
-            None => {
-                let mut sizes: BTreeMap<&str, usize> = BTreeMap::new();
-                for c in &a.matrix.cells {
-                    *sizes.entry(c.domain.as_str()).or_default() += c.size;
-                }
-                sizes
-                    .into_iter()
-                    .map(|(d, size)| DomainNode {
-                        label: d.to_string(),
-                        domain: Some(format!("{name}/{d}")),
-                        size,
-                        children: vec![],
-                    })
-                    .collect()
-            }
-        };
-        tree.push(DomainNode {
-            label: name.clone(),
-            domain: None,
-            size: children.iter().map(|c| c.size).sum(),
-            children,
-        });
+        merged.add(name, a.classification, sizes);
         warnings.extend(a.warnings.into_iter().map(|w| format!("{name}: {w}")));
         elapsed += a.matrix.stats.elapsed_ms;
         metrics.phases.extend(a.metrics.phases);
@@ -260,15 +276,13 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
     graph.edges.extend(rpc_edges);
     metrics.record_edges(&graph);
 
-    let classification = Classification {
-        placements,
-        domain_tree: any_tree.then_some(tree),
-    };
+    let classification = merged.finish();
     let mut matrix: Matrix = matrix::build(&graph, &classification, &layers, &names[0], elapsed);
     matrix.projects = projects;
     matrix.warnings = warnings.clone();
     Analysis {
-        graph,
+        graph: std::sync::Arc::new(graph),
+        roots: roots.to_vec(),
         classification,
         matrix,
         link_stats,

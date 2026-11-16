@@ -100,10 +100,19 @@ folders in the app), each root is classified with its own defaults and its own
 
 The rows of the primary project therefore never move when a project is added.
 
+### Reloading
+
+The desktop app watches the project files (it checks them every 2 seconds
+while a project is open) and, when one changes, applies the rules again to the
+analysis it holds: the matrix is rebuilt from the graph already parsed, without
+indexing or parsing again. The Options page has a "Reload rules" button doing
+the same on demand.
+
 ### Errors
 
 An invalid project file stops the analysis (the app shows it as an analysis
-error); the message names the file and the reason, for example:
+error; on a reload it shows the error above the matrix and keeps the one it
+had); the message names the file and the reason, for example:
 
 ```text
 invalid /path/to/app/.structure/rules.toml: invalid classification rules: TOML parse error at line 2, column 1 ... unknown field `name_sufix`, expected one of `layer`, `any_annotation`, ...

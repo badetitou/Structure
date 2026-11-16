@@ -9,6 +9,8 @@ fn main() {
         .manage(structure_core::session::Session::new())
         .invoke_handler(tauri::generate_handler![
             commands::analyze,
+            commands::reclassify,
+            commands::rules_stamp,
             commands::impact,
             commands::history,
             commands::cell_symbols,

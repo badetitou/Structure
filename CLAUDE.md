@@ -48,14 +48,15 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     `layers`, `matrix`, `impact`, `highlight`). Own code: `lang/` (`LanguageFrontend` trait, registry
     `all()`/`frontend()`, Java/TS indexer + detection) and `pipeline/` (`mod`
     analyze/detect + `<root>/.structure/rules.toml` merged over the defaults,
-    `multi` several roots — first root's layers win, `indexer`, `process`,
+    `multi` several roots — first root's layers win, `reclassify` rules
+    re-applied to a cached graph + `rules_stamp`, `indexer`, `process`,
     `progress`, `snapshot`, `history`) and
     `http_link` (matches TS `http_calls` to Java `http` endpoints → `Http` edges,
     multi-root only) and `rpc_link` (matches GWT `rpc_calls` to the classes
     implementing the sync service → `Rpc` edges, one or several roots) and
     `session` (`Session`: owns cached analyses — working trees by canonical
-    path + fingerprint, commit snapshots — generations and paging; API mirrors
-    the Tauri commands).
+    path + fingerprint, commit snapshots — generations and paging, `reclassify`;
+    API mirrors the Tauri commands).
 - `crates/cli` — bin `structure` (`analyze`, `impact`). Keep `main` thin.
 - `app/` — Tauri 2 app: `src-tauri` (thin commands over a managed `Session`), `ui` (Vite + Svelte
   5 + TS, vitest): `src/api.ts` backend wrappers over the generated wire types

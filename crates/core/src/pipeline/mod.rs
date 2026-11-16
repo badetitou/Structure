@@ -1,11 +1,12 @@
 //! End-to-end pipeline: detect language, index (SCIP), parse, link,
-//! classify, build the matrix, compute impact.
+//! classify, build the matrix, compute impact; reclassify an analysis.
 
 mod history;
 mod indexer;
 mod multi;
 mod process;
 mod progress;
+mod reclassify;
 pub mod scip_cache;
 mod snapshot;
 #[cfg(test)]
@@ -16,11 +17,12 @@ pub use crate::lang::{SCIP_JAVA_VERSION, SCIP_TS_VERSION};
 pub use history::{history, impact};
 pub use indexer::{ensure_index, ensure_index_with_progress};
 pub use multi::{analyze_many, expand_roots};
+pub use reclassify::{reclassify, rules_stamp, rules_stamp_of};
 pub use snapshot::{MAX_SNAPSHOTS, analyze_snapshot, impact_at, impact_in_snapshot, snapshot};
 pub use structure_git::{resolve_base, resolve_commit, worktree_fingerprint};
 
-use std::path::Path;
-use std::sync::OnceLock;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use anyhow::{Context, bail};
@@ -74,7 +76,12 @@ impl Default for Options {
 
 #[derive(Debug, Clone)]
 pub struct Analysis {
-    pub graph: Graph,
+    /// Shared with the analyses [`reclassify`] makes from this one.
+    pub graph: Arc<Graph>,
+    /// The analysed roots, in matrix order: the project itself, or each root
+    /// of a multi-root analysis after [`expand_roots`] (named as in
+    /// `matrix.projects`).
+    pub roots: Vec<PathBuf>,
     pub classification: Classification,
     pub matrix: Matrix,
     pub link_stats: Option<LinkStats>,
@@ -87,8 +94,9 @@ pub struct Analysis {
     /// Declared layers of the rules used (merged across roots, see
     /// [`analyze_many`]); the matrix only lists the ones it places symbols in.
     pub layers: Layers,
-    /// Built from `graph` on the first impact (see [`Analysis::impact_index`]).
-    impact_index: OnceLock<ImpactIndex>,
+    /// Built from `graph` on the first impact (see [`Analysis::impact_index`]);
+    /// shared with every analysis holding the same `graph` ([`reclassify`]).
+    impact_index: Arc<OnceLock<ImpactIndex>>,
 }
 
 impl Analysis {
@@ -292,7 +300,8 @@ pub(super) fn analyze_in(
     step("done", 100);
 
     Ok(Analysis {
-        graph,
+        graph: Arc::new(graph),
+        roots: vec![root.to_path_buf()],
         classification,
         matrix,
         link_stats,
@@ -301,7 +310,7 @@ pub(super) fn analyze_in(
         metrics,
         warnings,
         layers,
-        impact_index: OnceLock::new(),
+        impact_index: Default::default(),
     })
 }
 

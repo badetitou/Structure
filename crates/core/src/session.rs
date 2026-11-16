@@ -108,6 +108,37 @@ impl<T> Cache<T> {
         })
     }
 
+    /// Drop the commit snapshots of the project keyed `key`.
+    fn remove_snapshots_of(&self, key: &str) -> anyhow::Result<()> {
+        let prefix = snapshot_key(key, "");
+        self.with(|v| v.retain(|e| !(e.snapshot && e.key.starts_with(&prefix))))
+    }
+
+    /// Swap the value of `key`'s entry, if it still has generation `expected`,
+    /// for `value` under the fresh `generation` and `fingerprint`. False when
+    /// the entry is gone or was replaced meanwhile.
+    fn replace(
+        &self,
+        key: &str,
+        expected: u64,
+        generation: u64,
+        fingerprint: Option<String>,
+        value: Arc<T>,
+    ) -> anyhow::Result<bool> {
+        self.with(|v| {
+            let Some(e) = v
+                .iter_mut()
+                .find(|e| e.key == key && e.generation == expected)
+            else {
+                return false;
+            };
+            e.generation = generation;
+            e.fingerprint = fingerprint;
+            e.value = value;
+            true
+        })
+    }
+
     fn put(&self, entry: Entry<T>) -> anyhow::Result<()> {
         self.with(|v| {
             v.retain(|e| e.key != entry.key);
@@ -193,6 +224,31 @@ fn combine_fingerprints(fps: Vec<Option<String>>) -> Option<String> {
     Some(fps.join("\n"))
 }
 
+/// A fingerprint without the lines of project rules files
+/// ([`pipeline::PROJECT_RULES`]): equal for two working trees that differ in
+/// their rules only.
+fn without_rules(fp: &str) -> String {
+    let suffix = format!("/{}", pipeline::PROJECT_RULES);
+    fp.lines()
+        .filter(|l| {
+            // Status lines read `XY <path>\t<len>\t<mtime>`.
+            let path = l.get(3..).and_then(|r| r.split('\t').next());
+            !path.is_some_and(|p| p == pipeline::PROJECT_RULES || p.ends_with(&suffix))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Fingerprint to keep for a working-tree entry once reclassified: the
+/// current one when the tree only changed in its rules files since `cached`
+/// was taken (the rules are now applied), else `cached` unchanged.
+fn reclassified_fingerprint(cached: Option<String>, current: Option<String>) -> Option<String> {
+    match (cached, current) {
+        (Some(old), Some(cur)) if without_rules(&old) == without_rules(&cur) => Some(cur),
+        (old, _) => old,
+    }
+}
+
 /// Display form of a revision: 7 chars for a full hex SHA, else as given.
 fn short_rev(rev: &str) -> &str {
     if rev.len() >= 40 && rev.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -273,6 +329,53 @@ impl Session {
             value: a.clone(),
         })?;
         Ok(a)
+    }
+
+    /// Re-apply the rules of the projects at `paths` (as given to
+    /// [`Session::analyze`]) to their cached analysis without re-indexing or
+    /// re-parsing: classification, layers and matrix are recomputed from the
+    /// cached graph, which is kept along with its impact index. The new
+    /// matrix carries a fresh generation, so requests made against the old
+    /// one fail with "analysis changed". A rules file is the only change
+    /// that keeps the working tree fresh for [`Session::impact`].
+    ///
+    /// The project's cached commit snapshots are dropped: they were
+    /// classified with the rules of their own commit, and dropping them keeps
+    /// every cached classification one a fresh analysis would give (the next
+    /// commit impact analyses its snapshot again). On error (no cached
+    /// analysis, invalid rules) the cache is unchanged.
+    pub fn reclassify(&self, paths: &[String]) -> anyhow::Result<Matrix> {
+        let (roots, key) = canonical_many(paths)?;
+        let (_, fingerprint, generation, cached) = self
+            .cache
+            .get(&key)?
+            .ok_or_else(|| anyhow!("no analysis to reclassify, run Analyze"))?;
+        let mut a = pipeline::reclassify(&cached)?;
+        drop(cached);
+        let fingerprint = reclassified_fingerprint(fingerprint, combined_fingerprint(&roots));
+        let next = self.cache.next_generation();
+        a.matrix.generation = next;
+        let matrix = a.matrix.clone();
+        if !self
+            .cache
+            .replace(&key, generation, next, fingerprint, Arc::new(a))?
+        {
+            bail!("analysis changed, re-run Analyze");
+        }
+        self.cache.remove_snapshots_of(&key)?;
+        Ok(matrix)
+    }
+
+    /// Stamp of the rules files of the projects at `paths` (see
+    /// [`pipeline::rules_stamp`]): poll it and call [`Session::reclassify`]
+    /// when it changes. The cached analysis' roots are reused so a poll only
+    /// stats the rules files; without one the roots are expanded again.
+    pub fn rules_stamp(&self, paths: &[String]) -> anyhow::Result<String> {
+        let (roots, key) = canonical_many(paths)?;
+        match self.cache.get(&key)? {
+            Some((_, _, _, a)) => Ok(pipeline::rules_stamp_of(&a.roots)),
+            None => pipeline::rules_stamp(&roots),
+        }
     }
 
     /// Impact of `base..head` on the project at `path`. Without `head` it is
@@ -625,6 +728,135 @@ mod tests {
             format!("{:#}", s.analyze(&[], &no_scip(), &|_| {}).unwrap_err()),
             "no project given"
         );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+    const VIEW_RULES: &str = "[[layer]]\nid = \"view\"\nlabel = \"Views\"\norder = 0\n\
+                              [[rule]]\nlayer = \"view\"\nname_suffix = [\"A\"]\n";
+
+    fn layer_ids(m: &Matrix) -> Vec<String> {
+        m.layers.iter().map(|l| l.id.to_string()).collect()
+    }
+
+    #[test]
+    fn without_rules_ignores_only_rules_files() {
+        let fp = "sha\n?? app/.structure/rules.toml\t10\t5\n M app/src/A.java\t3\t4";
+        let edited = "sha\n?? app/.structure/rules.toml\t12\t9\n M app/src/A.java\t3\t4";
+        assert_eq!(without_rules(fp), without_rules(edited));
+        assert_eq!(without_rules(fp), "sha\n M app/src/A.java\t3\t4");
+        assert_eq!(without_rules("sha\n?? .structure/rules.toml\t1\t1"), "sha");
+        let source = "sha\n?? app/.structure/rules.toml\t10\t5\n M app/src/A.java\t3\t7";
+        assert_ne!(without_rules(fp), without_rules(source));
+        let s = |x: &str| Some(x.to_string());
+        assert_eq!(reclassified_fingerprint(s(fp), s(edited)), s(edited));
+        assert_eq!(reclassified_fingerprint(s(fp), s(source)), s(fp));
+        assert_eq!(reclassified_fingerprint(s(fp), None), s(fp));
+        assert_eq!(reclassified_fingerprint(None, s(edited)), None);
+    }
+
+    #[test]
+    fn reclassify_applies_new_rules_without_parsing_again() {
+        let (repo, _, _) = temp_repo("reclassify");
+        let root = repo.join("app");
+        let paths = vec![root.to_string_lossy().into_owned()];
+        let s = Session::with_impact_options(no_scip());
+        let m = s.analyze(&paths, &no_scip(), &|_| {}).unwrap();
+        assert!(!layer_ids(&m).contains(&"view".to_string()));
+        let old_cells: Vec<String> = m.cells.iter().map(|c| c.id.clone()).collect();
+
+        // Sources gone: only the cached graph can produce A and B now.
+        std::fs::remove_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join(".structure")).unwrap();
+        std::fs::write(root.join(pipeline::PROJECT_RULES), VIEW_RULES).unwrap();
+        let r = s.reclassify(&paths).unwrap();
+        assert_eq!(r.stats, m.stats, "same graph, same stats");
+        assert!(layer_ids(&r).contains(&"view".to_string()), "{r:?}");
+        let view: Vec<&str> = r
+            .cells
+            .iter()
+            .filter(|c| c.layer.as_str() == "view")
+            .map(|c| c.id.as_str())
+            .collect();
+        assert_eq!(view.len(), 1, "A only: {view:?}");
+
+        // A fresh generation: the old matrix's requests fail, the new one's work.
+        assert!(r.generation > m.generation);
+        let e = s
+            .cell_symbols(&paths, None, m.generation, &old_cells, None, None)
+            .unwrap_err();
+        assert_eq!(format!("{e:#}"), "analysis changed, re-run Analyze");
+        let view_cells: Vec<String> = view.iter().map(|c| c.to_string()).collect();
+        let syms = s
+            .cell_symbols(&paths, None, r.generation, &view_cells, None, None)
+            .unwrap();
+        assert_eq!(
+            syms.symbols
+                .iter()
+                .map(|x| x.name.as_str())
+                .collect::<Vec<_>>(),
+            ["A"]
+        );
+        let again = s.reclassify(&paths).unwrap();
+        assert!(again.generation > r.generation);
+        assert_eq!(again.cells, r.cells);
+
+        // Invalid rules: an error naming the file; the cache is unchanged.
+        std::fs::write(
+            root.join(pipeline::PROJECT_RULES),
+            "[[rule]]\nlayer = \"nope\"\n",
+        )
+        .unwrap();
+        let e = format!("{:#}", s.reclassify(&paths).unwrap_err());
+        assert!(e.contains(".structure/rules.toml"), "{e}");
+        assert!(
+            s.cell_symbols(&paths, None, again.generation, &view_cells, None, None)
+                .is_ok()
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn reclassify_needs_an_analysis() {
+        let tmp = std::env::temp_dir().to_string_lossy().into_owned();
+        let e = Session::new().reclassify(&[tmp]).unwrap_err();
+        assert!(format!("{e:#}").contains("run Analyze"), "{e:#}");
+    }
+
+    #[test]
+    fn reclassify_keeps_working_tree_fresh_and_drops_snapshots() {
+        let (repo, c1, c2) = temp_repo("reclassify-cache");
+        let root = repo.join("app");
+        let path = root.to_string_lossy().into_owned();
+        let paths = vec![path.clone()];
+        let s = Session::with_impact_options(no_scip());
+        let steps = Mutex::new(Vec::<String>::new());
+        let record = |p: Progress| steps.lock().unwrap().push(p.step);
+        s.analyze(&paths, &no_scip(), &|_| {}).unwrap();
+        s.impact(&path, Some(&c1), Some(&c2), &|_| {}).unwrap();
+        let before = s.rules_stamp(&paths).unwrap();
+        // The cached roots give the stamp a fresh expansion gives.
+        assert_eq!(Session::new().rules_stamp(&paths).unwrap(), before);
+
+        std::fs::create_dir_all(root.join(".structure")).unwrap();
+        std::fs::write(root.join(pipeline::PROJECT_RULES), VIEW_RULES).unwrap();
+        assert_ne!(s.rules_stamp(&paths).unwrap(), before);
+        let r = s.reclassify(&paths).unwrap();
+        assert!(layer_ids(&r).contains(&"view".to_string()));
+
+        // A rules-only change keeps the working-tree analysis: no re-analysis.
+        s.impact(&path, Some(&c1), None, &record).unwrap();
+        assert_eq!(
+            *steps.lock().unwrap(),
+            vec!["computing impact".to_string(), "done".to_string()]
+        );
+        assert!(
+            s.cell_symbols(&paths, None, r.generation, &[], None, None)
+                .is_ok()
+        );
+        // The commit snapshot was dropped: analysed again.
+        steps.lock().unwrap().clear();
+        s.impact(&path, Some(&c1), Some(&c2), &record).unwrap();
+        let first = steps.lock().unwrap().first().cloned();
+        assert_eq!(first, Some(format!("checking out {}", &c2[..7])));
         let _ = std::fs::remove_dir_all(&repo);
     }
 }

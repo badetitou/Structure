@@ -126,6 +126,20 @@ async function default_analyze(
   }
 }
 
+/** Re-applies the projects' rules to the cached analysis of `paths` (no re-parsing); the
+ * matrix carries a new generation. Not supported by the browser-only samples. */
+async function default_reclassify(paths: string[]): Promise<Matrix> {
+  if (!inTauri) throw new Error("Reloading rules needs the desktop app");
+  return expandMatrix(await invoke<WireMatrix>("reclassify", { paths }));
+}
+
+/** Opaque stamp of the projects' rules files (changes when one is edited); null when
+ * there is nothing to watch (browser-only samples). */
+async function default_rulesStamp(paths: string[]): Promise<string | null> {
+  if (!inTauri) return null;
+  return invoke<string>("rules_stamp", { paths });
+}
+
 /** Impact of `base..head`; a commit snapshot may be analysed first, its
  * progress goes to `onProgress`. */
 async function default_impact(
@@ -192,6 +206,10 @@ async function default_diff(path: string, base: string | null, head: string | nu
 export interface Backend {
   pickFolder(): Promise<string | null>;
   analyze(paths: string[], onProgress: (p: Progress) => void): Promise<Matrix>;
+  /** Re-applies the rules to the analysis of `paths` without re-parsing; rejects when unsupported. */
+  reclassify(paths: string[]): Promise<Matrix>;
+  /** Stamp of the rules files of `paths`, polled to reload on change; null: nothing to watch. */
+  rulesStamp(paths: string[]): Promise<string | null>;
   impact(
     path: string,
     base: string | null,
@@ -213,6 +231,8 @@ export interface Backend {
 export const defaultBackend: Backend = {
   pickFolder: default_pickFolder,
   analyze: default_analyze,
+  reclassify: default_reclassify,
+  rulesStamp: default_rulesStamp,
   impact: default_impact,
   cellSymbols: default_cellSymbols,
   history: default_history,
@@ -228,6 +248,8 @@ export function setBackend(b: Backend): void {
 
 export const pickFolder: Backend["pickFolder"] = (...a) => current.pickFolder(...a);
 export const analyze: Backend["analyze"] = (...a) => current.analyze(...a);
+export const reclassify: Backend["reclassify"] = (...a) => current.reclassify(...a);
+export const rulesStamp: Backend["rulesStamp"] = (...a) => current.rulesStamp(...a);
 export const impact: Backend["impact"] = (...a) => current.impact(...a);
 export const cellSymbols: Backend["cellSymbols"] = (...a) => current.cellSymbols(...a);
 export const history: Backend["history"] = (...a) => current.history(...a);

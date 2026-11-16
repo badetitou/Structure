@@ -1,6 +1,6 @@
 # Tauri API (UI contract)
 
-The UI talks to the Rust side through five commands and one event. JSON field
+The UI talks to the Rust side through seven commands and one event. JSON field
 names are snake_case; enums are snake_case strings. Rust definitions live in
 `crates/ir/src/model.rs` and `ir.rs`. Samples: `docs/samples/matrix.json`,
 `docs/samples/impact.json`.
@@ -25,6 +25,8 @@ distance.
 
 ```ts
 invoke<Matrix>("analyze", { paths: string[] });
+invoke<Matrix>("reclassify", { paths: string[] });
+invoke<string>("rules_stamp", { paths: string[] });
 invoke<Impact>("impact", { path: string, base: string | null, head: string | null });
 invoke<History>("history", { path: string, limit: number | null });
 invoke<Diff>("diff", { path: string, base: string | null, head: string | null });
@@ -42,6 +44,27 @@ invoke<CellSymbols>("cell_symbols", {
   list is an error. `impact`, `history` and `diff` still take one `path` and
   are not meant for a multi-project analysis: the UI makes no such call
   (their panels are unavailable when `paths.length > 1`).
+- `reclassify(paths)`: applies the rules again (language defaults plus each
+  analysed root's `.structure/rules.toml`, merged across roots as `analyze`
+  does) to the analysis `analyze(paths)` cached, and returns the new matrix.
+  Nothing is indexed, parsed or linked again: classification, layers and
+  matrix are recomputed from the cached graph, so `stats` stay the same.
+  The matrix carries a new `generation`: `cell_symbols` calls with the old one
+  fail with `analysis changed, re-run Analyze`, and an impact shown must be
+  computed again. The project's cached commit snapshots are dropped (the next
+  commit impact analyses its snapshot again, with the rules of that commit, as
+  before); the working-tree analysis stays fresh for `impact` when the rules
+  files are the only change. Errors: no cached analysis (`no analysis to
+  reclassify, run Analyze`), an invalid rules file (the message names it, see
+  `rules/README.md`); the cache is then unchanged. The browser-only samples do
+  not support it (`Backend.reclassify` rejects).
+- `rules_stamp(paths)`: an opaque string that changes when a rules file of
+  `paths` is created, edited or removed (the analysed roots, after the same
+  sub-project expansion as `analyze`, taken from the cached analysis when
+  there is one, with the size and mtime of each `.structure/rules.toml`).
+  Cheap: the app polls it every 2 s while a project
+  is open and calls `reclassify` when it changes. `Backend.rulesStamp`
+  resolves `null` (nothing to watch) outside Tauri.
 - `impact(path, base, head)`: `base = null` means HEAD vs working tree;
   otherwise `base..head` (`head = null` means working tree). Impact cell ids
   and symbol ids refer to the ids in the `Matrix` from `analyze`.
@@ -61,7 +84,7 @@ invoke<CellSymbols>("cell_symbols", {
   `Impact.head` (the backend resolves any `head` you gave `impact` to a full
   SHA, and snapshots are cached under it). `generation` is `Matrix.generation`
   of the matrix on screen; if the cached analysis was replaced since (for
-  example `impact` re-parsed an edited working tree), the call fails with
+  example `impact` re-parsed an edited working tree, or `reclassify` ran), the call fails with
   `analysis changed, re-run Analyze`. Paged: `offset` default 0, `limit` default 500, at most 2000.
   Reads the analyses cached by `analyze` / `impact`; same error when none
   exists. The cache keeps each project's working-tree analysis and at most 2
