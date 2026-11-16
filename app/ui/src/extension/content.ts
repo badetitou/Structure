@@ -76,12 +76,12 @@ function showFrameBlocked(s: PanelState, iframe: HTMLIFrameElement) {
 /** Where GitHub renders the page of a repository; the panel goes at its end, outside React's tree. */
 const CONTAINER_SELECTOR = "#repo-content-pjax-container, main";
 
-/** The PR's own content: everything that follows the tab bar inside the content container. */
-function prContent(
-  nav: HTMLElement,
-): { container: HTMLElement; ancestors: HTMLElement[]; following: HTMLElement[] } | null {
-  const container = nav.closest<HTMLElement>(CONTAINER_SELECTOR);
-  if (!container) return null;
+/**
+ * The PR's own content: everything that follows the tab bar inside the content container
+ * (the page body when GitHub's layout has none of the known containers).
+ */
+function prContent(nav: HTMLElement): { container: HTMLElement; ancestors: HTMLElement[]; following: HTMLElement[] } {
+  const container = nav.closest<HTMLElement>(CONTAINER_SELECTOR) ?? document.body;
   const ancestors: HTMLElement[] = [];
   const following: HTMLElement[] = [];
   for (let a: HTMLElement | null = nav; a && a !== container; a = a.parentElement) {
@@ -109,7 +109,7 @@ function showContent() {
 function applyOpen(s: PanelState) {
   const nav = tabBar();
   const content = nav ? prContent(nav) : null;
-  if (content) {
+  if (nav && content) {
     for (const e of content.following) {
       if (e.hasAttribute(HIDDEN_ATTR)) continue;
       e.setAttribute(HIDDEN_ATTR, e.style.display);
@@ -124,7 +124,7 @@ function applyOpen(s: PanelState) {
     // Last child of the container: with the PR content hidden it sits right under the tab bar.
     if (s.panel.parentElement !== content.container || s.panel.nextElementSibling) content.container.append(s.panel);
     s.panel.style.cssText =
-      `display:flex;flex-direction:column;width:100%;box-sizing:border-box;height:${Math.max(400, window.innerHeight - (nav?.offsetHeight ?? 0) - 8)}px;`;
+      `display:flex;flex-direction:column;width:100%;box-sizing:border-box;height:${Math.max(400, window.innerHeight - nav.offsetHeight - 8)}px;`;
   } else {
     // No tab bar: cover the page.
     s.panel.style.cssText =
@@ -137,15 +137,15 @@ function applyOpen(s: PanelState) {
 function setOpen(open: boolean) {
   if (!state) return;
   state.open = open;
+  const nav = tabBar();
   if (open) {
     applyOpen(state);
-    // Tab bar at the top of the viewport, the panel filling the rest.
-    (tabBar() ?? state.panel).scrollIntoView({ block: "start" });
+    // Stay where the page is, like GitHub's own tabs; only bring back a tab bar scrolled out of view.
+    if (nav && nav.getBoundingClientRect().bottom < 0) nav.scrollIntoView({ block: "start" });
   } else {
     showContent();
     state.panel.style.display = "none";
   }
-  const nav = tabBar();
   const tab = document.getElementById(TAB_ID);
   if (nav && tab) selectStructureTab(nav, tab, open);
 }
