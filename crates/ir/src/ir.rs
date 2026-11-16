@@ -8,6 +8,7 @@ pub enum Language {
     Java,
     #[serde(rename = "typescript")]
     TypeScript,
+    Pharo,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

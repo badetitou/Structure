@@ -10,6 +10,7 @@ name = "structure_core"
 structure-ir = { path = "../ir" }
 structure-lang-java = { path = "../lang-java" }
 structure-lang-ts = { path = "../lang-ts" }
+structure-lang-pharo = { path = "../lang-pharo" }
 structure-scip = { path = "../scip" }
 structure-classify = { path = "../classify" }
 structure-git = { path = "../git" }
