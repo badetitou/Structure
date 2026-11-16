@@ -13,27 +13,33 @@ mod wasm;
 
 const JAVA_RULES: &str = include_str!("../../../rules/java.toml");
 const TS_RULES: &str = include_str!("../../../rules/typescript.toml");
+const PHARO_RULES: &str = include_str!("../../../rules/pharo.toml");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lang {
     Java,
     TypeScript,
+    Pharo,
 }
 
-/// Language of a set of paths: the one with more files (Java wins a tie).
+/// Language of a set of paths: the one with more files (ties go to Java,
+/// then TypeScript, then Pharo).
 pub fn detect_language<'a>(paths: impl IntoIterator<Item = &'a str>) -> anyhow::Result<Lang> {
-    let (mut java, mut ts) = (0usize, 0usize);
+    let (mut java, mut ts, mut st) = (0usize, 0usize, 0usize);
     for p in paths {
         if p.ends_with(".java") {
             java += 1;
         } else if p.ends_with(".ts") || p.ends_with(".tsx") {
             ts += 1;
+        } else if structure_lang_pharo::is_tonel_source(p) {
+            st += 1;
         }
     }
-    match (java, ts) {
-        (0, 0) => bail!("no supported sources: expected .java, .ts or .tsx files"),
-        (j, t) if j >= t => Ok(Lang::Java),
-        _ => Ok(Lang::TypeScript),
+    match (java, ts, st) {
+        (0, 0, 0) => bail!("no supported sources: expected .java, .ts, .tsx or .st files"),
+        (j, t, s) if j >= t && j >= s => Ok(Lang::Java),
+        (_, t, s) if t >= s => Ok(Lang::TypeScript),
+        _ => Ok(Lang::Pharo),
     }
 }
 
@@ -73,6 +79,11 @@ pub fn analyze_pr(
             structure_lang_ts::parse_sources(project, files)?,
             TS_RULES,
             '/',
+        ),
+        Lang::Pharo => (
+            structure_lang_pharo::parse_sources(project, files, &mut warnings).graph,
+            PHARO_RULES,
+            '-',
         ),
     };
     let rules = RuleSet::from_embedded(rules, "default rules").context("loading default rules")?;
@@ -157,7 +168,53 @@ mod tests {
     }
 
     #[test]
+    fn pharo_changed_and_impacted() {
+        let files = vec![
+            f(
+                "src/BaselineOfDemo/BaselineOfDemo.class.st",
+                "Class { #name : 'BaselineOfDemo', #superclass : 'BaselineOf', #category : 'BaselineOfDemo' }\n",
+            ),
+            f(
+                "src/Demo-Model/package.st",
+                "Package { #name : 'Demo-Model' }\n",
+            ),
+            f(
+                "src/Demo-Model/DmItem.class.st",
+                "Class {\n\t#name : 'DmItem',\n\t#superclass : 'Object',\n\t#category : 'Demo-Model'\n}\n\n{ #category : 'accessing' }\nDmItem >> price [\n\t^ 1\n]\n",
+            ),
+            f(
+                "src/Demo-UI/DmPresenter.class.st",
+                "Class {\n\t#name : 'DmPresenter',\n\t#superclass : 'SpPresenter',\n\t#category : 'Demo-UI'\n}\n\n{ #category : 'rendering' }\nDmPresenter >> total [\n\t^ DmItem new price\n]\n",
+            ),
+        ];
+        let a = analyze_pr(
+            &files,
+            &diff_for("src/Demo-Model/DmItem.class.st"),
+            "demo",
+            "b",
+            "h",
+        )
+        .unwrap();
+        assert_eq!(a.graph.language, structure_ir::ir::Language::Pharo);
+        let item = cell_of(&a, "DmItem");
+        assert!(a.impact.changed_cells.contains(&item));
+        assert!(
+            a.impact
+                .impacted_cells
+                .iter()
+                .any(|c| c.id == cell_of(&a, "DmPresenter"))
+        );
+    }
+
+    #[test]
     fn mixed_picks_majority() {
+        let p = [
+            "src/P/A.class.st",
+            "src/P/B.class.st",
+            "src/P/package.st",
+            "x.ts",
+        ];
+        assert_eq!(detect_language(p).unwrap(), Lang::Pharo);
         let p = ["a.ts", "b.tsx", "C.java"];
         assert_eq!(detect_language(p).unwrap(), Lang::TypeScript);
         let p = ["a.ts", "B.java", "C.java"];

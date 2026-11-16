@@ -677,6 +677,52 @@ pub fn parse_project_full(root: &Path, warnings: &mut Vec<String>) -> anyhow::Re
             .unwrap_or_default();
         parsed.push(parse_source(&rel, &src, &dir));
     }
+    Ok(build(&root.to_string_lossy(), parsed, warnings))
+}
+
+/// Whether `path` (`/`-separated, relative to the repository root) is a Tonel
+/// source [`parse_sources`] reads: a `.st` file other than `package.st`,
+/// outside [`IGNORED_DIRS`].
+pub fn is_tonel_source(path: &str) -> bool {
+    let mut parts = path.split('/');
+    let name = parts.next_back().unwrap_or_default();
+    name.ends_with(".st") && name != "package.st" && !parts.any(|d| IGNORED_DIRS.contains(&d))
+}
+
+/// [`parse_project_full`] over in-memory `(path, content)` pairs (paths
+/// relative to the repository root, `/`-separated), for callers without a
+/// filesystem. Files [`is_tonel_source`] rejects are skipped. When any path
+/// is under `src/`, only those are read, as on disk.
+pub fn parse_sources(
+    project: &str,
+    files: &[(String, String)],
+    warnings: &mut Vec<String>,
+) -> Parsed {
+    let mut files: Vec<&(String, String)> =
+        files.iter().filter(|(p, _)| is_tonel_source(p)).collect();
+    let in_src = files.iter().any(|(p, _)| p.starts_with("src/"));
+    if in_src {
+        files.retain(|(p, _)| p.starts_with("src/"));
+    }
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    let base = if in_src { "src" } else { "" };
+    let parsed = files
+        .into_iter()
+        .map(|(path, src)| {
+            let dir = path
+                .rsplit_once('/')
+                .map(|(d, _)| d)
+                .filter(|d| *d != base)
+                .and_then(|d| d.rsplit('/').next())
+                .unwrap_or_default();
+            parse_source(path, src, dir)
+        })
+        .collect();
+    build(project, parsed, warnings)
+}
+
+/// Links parsed files into a project graph (see [`parse_project_full`]).
+fn build(root: &str, parsed: Vec<FileSymbols>, warnings: &mut Vec<String>) -> Parsed {
     for f in &parsed {
         warnings.extend(f.warning.clone());
     }
@@ -830,16 +876,16 @@ pub fn parse_project_full(root: &Path, warnings: &mut Vec<String>) -> anyhow::Re
     symbols.retain(|s| ids.insert(s.id.clone()));
     symbols.sort_by(|a, b| a.id.cmp(&b.id));
     edges.sort_by(|a, b| (&a.from, &a.to, a.kind.rank()).cmp(&(&b.from, &b.to, b.kind.rank())));
-    Ok(Parsed {
+    Parsed {
         graph: Graph {
-            root: root.to_string_lossy().into_owned(),
+            root: root.to_string(),
             language: Language::Pharo,
             symbols,
             edges,
         },
         calls,
         stats,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -1334,5 +1380,33 @@ OrderService >> + other [
                 ("foo".to_string(), Recv::SelfRecv),
             ]
         );
+    }
+
+    #[test]
+    fn parse_sources_matches_disk() {
+        let files = vec![
+            (
+                "src/Demo-Model/DmItem.class.st".to_string(),
+                "Class {\n\t#name : 'DmItem',\n\t#superclass : 'Object',\n\t#category : 'Demo-Model'\n}\n\n{ #category : 'x' }\nDmItem >> price [\n\t^ 1\n]\n".to_string(),
+            ),
+            (
+                "src/Demo-UI/Object.extension.st".to_string(),
+                "Extension { #name : 'Object' }\n\n{ #category : '*Demo-UI' }\nObject >> dmTotal [\n\t^ DmItem new price\n]\n".to_string(),
+            ),
+            ("src/Demo-UI/package.st".to_string(), "Package { #name : 'Demo-UI' }\n".to_string()),
+            ("README.md".to_string(), "x".to_string()),
+        ];
+        let dir = std::env::temp_dir().join(format!("structure-pharo-mem-{}", std::process::id()));
+        for (p, c) in &files {
+            let path = dir.join(p);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, c).unwrap();
+        }
+        let mut w = Vec::new();
+        let disk = parse_project_full(&dir, &mut w).unwrap();
+        let mem = parse_sources(&dir.to_string_lossy(), &files, &mut Vec::new());
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(!mem.graph.edges.is_empty());
+        assert_eq!(mem, disk);
     }
 }

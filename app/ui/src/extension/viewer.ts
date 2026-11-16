@@ -69,7 +69,7 @@ async function main() {
     const m = e instanceof Error ? e.message : String(e);
     const unsupported = /no supported sources/.test(m);
     return say(
-      unsupported ? "Unsupported language: no .java, .ts or .tsx source found in this repository." : `Analysis failed: ${m}`,
+      unsupported ? "Unsupported language: no .java, .ts, .tsx or Pharo (.st) source found in this repository." : `Analysis failed: ${m}`,
       true,
     );
   }

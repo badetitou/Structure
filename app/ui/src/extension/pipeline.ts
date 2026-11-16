@@ -19,7 +19,7 @@ export interface FetchOptions {
   onProgress?: (text: string) => void;
 }
 
-export const SOURCE_EXTENSIONS = [".java", ".ts", ".tsx"];
+export const SOURCE_EXTENSIONS = [".java", ".ts", ".tsx", ".st"];
 
 export async function fetchPr(ref: PrRef, opts: FetchOptions = {}): Promise<PrData> {
   const f = opts.fetch ?? fetch;
