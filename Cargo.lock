@@ -584,6 +584,7 @@ dependencies = [
  "structure-git",
  "structure-ir",
  "structure-lang-java",
+ "structure-lang-pharo",
  "structure-lang-ts",
  "wasm-bindgen",
 ]
