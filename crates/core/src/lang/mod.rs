@@ -8,6 +8,7 @@
 //! The `registry_is_consistent` test fails if a variant is missing from [`all`].
 
 mod java;
+mod pharo;
 mod ts_args;
 mod typescript;
 
@@ -51,10 +52,11 @@ pub trait LanguageFrontend: Sync {
 
 static JAVA: java::JavaFrontend = java::JavaFrontend;
 static TYPESCRIPT: typescript::TypeScriptFrontend = typescript::TypeScriptFrontend;
+static PHARO: pharo::PharoFrontend = pharo::PharoFrontend;
 
 /// All frontends, in detection priority order.
 pub fn all() -> &'static [&'static dyn LanguageFrontend] {
-    static ALL: [&dyn LanguageFrontend; 2] = [&JAVA, &TYPESCRIPT];
+    static ALL: [&dyn LanguageFrontend; 3] = [&JAVA, &TYPESCRIPT, &PHARO];
     &ALL
 }
 
@@ -63,6 +65,7 @@ pub fn frontend(lang: Language) -> &'static dyn LanguageFrontend {
     match lang {
         Language::Java => &JAVA,
         Language::TypeScript => &TYPESCRIPT,
+        Language::Pharo => &PHARO,
     }
 }
 
@@ -80,9 +83,9 @@ mod tests {
     #[test]
     fn registry_is_consistent() {
         // Exhaustive: adding a variant breaks compilation here until listed.
-        for lang in [Language::Java, Language::TypeScript] {
+        for lang in [Language::Java, Language::TypeScript, Language::Pharo] {
             match lang {
-                Language::Java | Language::TypeScript => {}
+                Language::Java | Language::TypeScript | Language::Pharo => {}
             }
             assert!(
                 all().iter().any(|f| f.language() == lang),

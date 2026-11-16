@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { expandMatrix } from "./expand";
 
-export type Language = "java" | "typescript";
+export type Language = "java" | "typescript" | "pharo";
 export type Layer =
   | "ui"
   | "state"

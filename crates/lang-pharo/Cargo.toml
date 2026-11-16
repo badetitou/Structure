@@ -1,0 +1,9 @@
+[package]
+name = "structure-lang-pharo"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+structure-ir = { path = "../ir" }
+anyhow.workspace = true
+ignore.workspace = true
