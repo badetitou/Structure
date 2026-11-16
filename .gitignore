@@ -9,4 +9,5 @@ node_modules/
 /app/src-tauri/gen/
 .DS_Store
 /app/ui/public/samples/
+/.claude/issues/
 /.claude/worktrees/
