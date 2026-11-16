@@ -70,8 +70,10 @@ Cible :
 - types TS générés depuis Rust — fait (#83) : `ts-rs`, derive derrière la
   feature `ts` de `structure-ir`, fichiers commités dans
   `app/ui/src/generated/`, un test échoue s'ils sont périmés ;
-- `Backend` TS avec `capabilities { history, diff, pickFolder,
-  highlightSources[] }` dont dérivent les `available()` des panneaux ;
+- `Backend` TS avec `capabilities { history, diff, pickFolder, reclassify,
+  highlightSources[] }` dont dérivent les `available()` des panneaux, le
+  bouton « Reload rules » et la surveillance des règles ; une méthode non
+  supportée est absente au lieu de rejeter — fait (#71) ;
   `AppState` découpé en stores : analyse, highlights, sélection, git.
 
 ## 4. Vues

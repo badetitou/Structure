@@ -18,6 +18,8 @@
   } = $props();
 
   let recents = $state(loadRecent());
+  // Hosts without a folder picker (none shows Home today) only offer the recent projects.
+  const canPick = api.capabilities().pickFolder;
 
   async function add() {
     const picked = await api.pickFolder();
@@ -50,7 +52,9 @@
       </Card.Description>
     </Card.Header>
     <Card.Content class="flex flex-col gap-3">
-      <Button variant="outline" onclick={add}>{paths.length ? "Add another folder…" : "Open project…"}</Button>
+      {#if canPick}
+        <Button variant="outline" onclick={add}>{paths.length ? "Add another folder…" : "Open project…"}</Button>
+      {/if}
       {#if paths.length}
         <ul class="flex flex-col gap-1">
           {#each paths as p (p)}

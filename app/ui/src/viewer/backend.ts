@@ -15,16 +15,11 @@ export function viewerBackend(data: ViewerData): Backend {
   // Expanded once: analyze and impact share the object, so the app treats it as the working tree.
   const matrix = expandMatrix(wire);
   const impact: Impact = { ...rest, matrix };
-  const unavailable = (what: string) => () => Promise.reject(new Error(`${what} is not available in the viewer`));
+  // No folder picker, rules reload, history or diff: those methods are absent.
   return {
-    pickFolder: unavailable("Picking a folder"),
+    capabilities: { history: false, diff: false, pickFolder: false, reclassify: false, highlightSources: ["git-diff"] },
     analyze: async () => matrix,
-    reclassify: unavailable("Reloading rules"),
-    rulesStamp: async () => null,
     impact: async () => impact,
     cellSymbols: (_paths, _head, _generation, cells, offset, limit) => data.cellSymbols(cells, offset, limit),
-    // Rejecting leaves `app.history` null, which makes the history and diff panels unavailable.
-    history: unavailable("History"),
-    diff: unavailable("Diff"),
   };
 }

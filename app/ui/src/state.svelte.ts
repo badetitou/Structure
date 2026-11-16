@@ -99,6 +99,19 @@ export class AppState {
     return (this.work?.projects?.length ?? 0) > 1;
   }
 
+  /** History panel: the backend has a history and this single project has one (a git repo). */
+  get historyAvailable(): boolean {
+    return api.capabilities().history && !this.multi && this.history !== null;
+  }
+  /** Diff panel: the backend computes diffs of the history's ranges. */
+  get diffAvailable(): boolean {
+    return api.capabilities().diff && this.historyAvailable;
+  }
+  /** The rules can be reloaded (and are watched) once the analysis is there. */
+  get rulesReloadable(): boolean {
+    return api.capabilities().reclassify && this.phase === "ready";
+  }
+
   /** The matrix to display: the commit snapshot's when the impact carries one, else the working tree. */
   get matrix(): Matrix | null {
     return this.work ? shownMatrix(this.work, this.impact) : null;
@@ -138,6 +151,7 @@ export class AppState {
       if (req === this.loadReq && this.rulesStamp === null) this.rulesStamp = s;
     });
     if (this.multi) return; // no git history across several repos
+    if (!api.capabilities().history) return;
     try {
       const h = await api.history(paths[0]);
       if (req === this.loadReq) this.history = h;
@@ -173,6 +187,7 @@ export class AppState {
 
   /** Stamp of the rules files of `paths`, null when unknown (unsupported or failed). */
   private async readRulesStamp(paths: string[]): Promise<string | null> {
+    if (!api.capabilities().reclassify) return null;
     try {
       return (await api.rulesStamp(paths)) ?? null;
     } catch {
@@ -184,7 +199,7 @@ export class AppState {
    * kept when its cell still exists and the impact shown is computed again; on failure the
    * matrix stays and the error goes to `rulesError`. */
   async reloadRules(): Promise<void> {
-    if (this.phase !== "ready" || !this.work) return;
+    if (!this.rulesReloadable || !this.work) return;
     const load = this.loadReq;
     const req = ++this.rulesReq;
     const current = () => load === this.loadReq && req === this.rulesReq;
@@ -225,7 +240,7 @@ export class AppState {
 
   /** Reloads the rules when their files changed since last checked (polled while a project is open). */
   async checkRules(): Promise<void> {
-    if (this.phase !== "ready" || this.rulesBusy) return;
+    if (!this.rulesReloadable || this.rulesBusy) return;
     const load = this.loadReq;
     const stamp = await this.readRulesStamp(this.paths);
     if (load !== this.loadReq || stamp === null) return;
@@ -234,8 +249,10 @@ export class AppState {
     if (prev !== null && prev !== stamp) await this.reloadRules();
   }
 
-  /** Polls the rules files every `RULES_POLL_MS`; returns the function that stops it. */
+  /** Polls the rules files every `RULES_POLL_MS`; returns the function that stops it.
+   * Nothing to poll when the backend cannot reload the rules. */
   watchRules(): () => void {
+    if (!api.capabilities().reclassify) return () => {};
     const id = setInterval(() => void this.checkRules(), RULES_POLL_MS);
     return () => clearInterval(id);
   }
@@ -365,7 +382,7 @@ export class AppState {
 
   /** Loads the diff of `base..head`; a later selection supersedes it. */
   async loadDiff(base: string | null, head: string | null): Promise<void> {
-    if (this.multi) return;
+    if (this.multi || !api.capabilities().diff) return;
     const req = this.diffGuard.begin();
     this.diff = { base, head, loading: true };
     try {
