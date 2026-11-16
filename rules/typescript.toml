@@ -1,5 +1,46 @@
 # TypeScript classification rules (Angular, NestJS). First match wins.
 
+# --- Layers (matrix rows, top to bottom by `order`; `unknown` is implicit, last) ---
+[[layer]]
+id = "ui"
+label = "ui"
+order = 0
+
+[[layer]]
+id = "state"
+label = "state"
+order = 1
+
+[[layer]]
+id = "api_client"
+label = "api_client"
+order = 2
+
+[[layer]]
+id = "entry"
+label = "entry"
+order = 3
+
+[[layer]]
+id = "business"
+label = "business"
+order = 4
+
+[[layer]]
+id = "persistence"
+label = "persistence"
+order = 5
+
+[[layer]]
+id = "model"
+label = "model"
+order = 6
+
+[[layer]]
+id = "util"
+label = "util"
+order = 7
+
 # --- NestJS ---
 [[rule]]
 layer = "entry"

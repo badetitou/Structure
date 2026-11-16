@@ -7,7 +7,7 @@ pub mod pipeline;
 pub mod rpc_link;
 pub mod session;
 
-pub use structure_classify::{classify, matrix};
+pub use structure_classify::{classify, layers, matrix};
 pub use structure_git::{diff, impact};
 pub use structure_highlight as highlight;
 pub use structure_ir::{ir, model};

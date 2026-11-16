@@ -126,14 +126,10 @@ pub fn cell_symbols(
     }
 }
 
-/// Matrix of the built-in layers (see [`Layers::builtin`]).
-pub fn build(graph: &Graph, cls: &Classification, project: &str, elapsed_ms: u64) -> Matrix {
-    build_with(graph, cls, &Layers::builtin(), project, elapsed_ms)
-}
-
-/// Rows follow the order of `layers`; a placement on an undefined layer gets
-/// a synthetic definition after the known ones.
-pub fn build_with(
+/// Rows follow the order of `layers` (from the rules, see
+/// `RuleSet::layers`); a placement on an undefined layer gets a synthetic
+/// definition after the known ones.
+pub fn build(
     graph: &Graph,
     cls: &Classification,
     layers: &Layers,
@@ -334,6 +330,16 @@ mod tests {
         )
     }
 
+    /// Layers declared by the default Java rules.
+    fn java_layers() -> Layers {
+        crate::classify::RuleSet::from_embedded(
+            include_str!("../../../rules/java.toml"),
+            "rules/java.toml",
+        )
+        .unwrap()
+        .layers()
+    }
+
     #[test]
     fn rows_follow_the_layer_definitions() {
         let (g, mut cls) = fixture();
@@ -355,7 +361,7 @@ mod tests {
             order,
         };
         let layers = Layers::new([def("entry", 2), def("persistence", 1)]);
-        let m = build_with(&g, &cls, &layers, "p", 0);
+        let m = build(&g, &cls, &layers, "p", 0);
         let rows: Vec<(&str, &str)> = m
             .layers
             .iter()
@@ -385,7 +391,7 @@ mod tests {
     #[test]
     fn builds_cells_and_edges() {
         let (g, cls) = fixture();
-        let m = build(&g, &cls, "p", 7);
+        let m = build(&g, &cls, &java_layers(), "p", 7);
         let layers: Vec<(&str, &str, u32)> = m
             .layers
             .iter()
@@ -449,7 +455,7 @@ mod tests {
             .map(String::from)
             .into();
         let all = cell_symbols(&g, &cls, &cells, 0, 100);
-        let m = build(&g, &cls, "p", 0);
+        let m = build(&g, &cls, &java_layers(), "p", 0);
         let want: usize = m.cells[..2].iter().map(|c| c.size).sum();
         assert_eq!(all.total, want, "duplicate cell ids count once");
         assert_eq!(all.symbols.len(), want);
@@ -496,7 +502,7 @@ mod tests {
             edge("Ctl#a", "Aaa", EdgeKind::Http),
             edge("Svc#m", "Aaa", EdgeKind::Http), // intra-cell
         ];
-        let m = build(&g, &cls, "p", 0);
+        let m = build(&g, &cls, &java_layers(), "p", 0);
         assert!(m.edges.is_empty());
         let e: Vec<_> = m
             .http_edges
@@ -516,7 +522,7 @@ mod tests {
     #[test]
     fn json_roundtrip() {
         let (g, cls) = fixture();
-        let m = build(&g, &cls, "p", 1);
+        let m = build(&g, &cls, &java_layers(), "p", 1);
         let s = serde_json::to_string(&m).unwrap();
         let back: Matrix = serde_json::from_str(&s).unwrap();
         assert_eq!(m, back);
@@ -570,7 +576,7 @@ mod tests {
                 ("A".to_string(), "U".to_string(), EdgeKind::Uses, 1),
             ]
         );
-        let m = build(&g, &cls, "p", 0);
+        let m = build(&g, &cls, &java_layers(), "p", 0);
         let sizes: Vec<_> = m.cells.iter().map(|c| (c.id.as_str(), c.size)).collect();
         assert_eq!(sizes, [("entry:x", 1), ("business:x", 1)]);
         assert_eq!(m.edges.len(), 1);
