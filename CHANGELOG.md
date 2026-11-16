@@ -7,6 +7,13 @@ browser extension and attaches it to the GitHub release.
 
 ## [Unreleased]
 
+### Added
+
+- Rules files declare their layers (`[[layer]]` with `id`, `label`, `order`);
+  a project's `.structure/rules.toml` can add layers or relabel and reorder the
+  built-in ones. A rule on an undeclared layer is an error naming the file and
+  the layer.
+
 ## [0.1.3] - 2026-11-16
 
 ### Fixed

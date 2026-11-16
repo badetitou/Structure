@@ -11,8 +11,9 @@ use anyhow::bail;
 
 use super::{Analysis, Options, analyze_in, project_name};
 use crate::ir::{EdgeKind, Graph};
+use crate::layers::Layers;
 use crate::matrix;
-use crate::model::{Classification, DomainNode, Matrix, Placement, Progress, Project};
+use crate::model::{Classification, DomainNode, LayerDef, Matrix, Placement, Progress, Project};
 
 /// Root dir names, suffixed `-2`, `-3`... when they clash.
 pub(super) fn unique_names(roots: &[PathBuf]) -> Vec<String> {
@@ -161,8 +162,16 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
     // The first root's link stats only (not summed, not a later root's).
     let link_stats = parts[0].link_stats;
     let mut elapsed = 0;
+    // Each root's layers (from its rules), merged by id: a later root wins.
+    let mut layer_defs: Vec<LayerDef> = vec![];
 
     for ((root, name), a) in roots.iter().zip(&names).zip(parts) {
+        for d in &a.matrix.layers {
+            match layer_defs.iter_mut().find(|l| l.id == d.id) {
+                Some(l) => *l = d.clone(),
+                None => layer_defs.push(d.clone()),
+            }
+        }
         projects.push(Project {
             name: name.clone(),
             root: root.display().to_string(),
@@ -238,7 +247,13 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
         placements,
         domain_tree: any_tree.then_some(tree),
     };
-    let mut matrix: Matrix = matrix::build(&graph, &classification, &names[0], elapsed);
+    let mut matrix: Matrix = matrix::build(
+        &graph,
+        &classification,
+        &Layers::new(layer_defs),
+        &names[0],
+        elapsed,
+    );
     matrix.projects = projects;
     matrix.warnings = warnings.clone();
     Analysis {

@@ -272,9 +272,12 @@ pub(super) fn analyze_in(
     if custom.is_file() {
         let text = std::fs::read_to_string(&custom)
             .with_context(|| format!("reading {}", custom.display()))?;
-        let user = RuleSet::from_toml_str(&text)
-            .with_context(|| format!("parsing {}", custom.display()))?;
+        let user =
+            RuleSet::parse(&text).with_context(|| format!("parsing {}", custom.display()))?;
         rules = rules.merge(user);
+        rules
+            .validate()
+            .with_context(|| format!("parsing {}", custom.display()))?;
     }
     let classification = classify(
         &graph,
@@ -286,7 +289,13 @@ pub(super) fn analyze_in(
     step("building matrix", 95);
     let t = Instant::now();
     let elapsed = started.elapsed().as_millis() as u64;
-    let mut matrix = matrix::build(&graph, &classification, &project_name(root), elapsed);
+    let mut matrix = matrix::build(
+        &graph,
+        &classification,
+        &rules.layers(),
+        &project_name(root),
+        elapsed,
+    );
     matrix.warnings = warnings.clone();
     metrics.phase("matrix", t, None);
     step("done", 100);

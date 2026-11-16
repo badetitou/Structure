@@ -72,23 +72,23 @@ pub fn analyze_pr(
     let (graph, rules, sep) = match lang {
         Lang::Java => (
             structure_lang_java::parse_sources(project, files, &mut warnings)?,
-            JAVA_RULES,
+            (JAVA_RULES, "rules/java.toml"),
             '.',
         ),
         Lang::TypeScript => (
             structure_lang_ts::parse_sources(project, files)?,
-            TS_RULES,
+            (TS_RULES, "rules/typescript.toml"),
             '/',
         ),
         Lang::Pharo => (
             structure_lang_pharo::parse_sources(project, files, &mut warnings).graph,
-            PHARO_RULES,
+            (PHARO_RULES, "rules/pharo.toml"),
             '-',
         ),
     };
-    let rules = RuleSet::from_embedded(rules, "default rules").context("loading default rules")?;
+    let rules = RuleSet::from_embedded(rules.0, rules.1).context("loading default rules")?;
     let classification = classify(&graph, &rules, sep);
-    let mut matrix = matrix::build(&graph, &classification, project, 0);
+    let mut matrix = matrix::build(&graph, &classification, &rules.layers(), project, 0);
     matrix.warnings = warnings.clone();
     let changes = changes_from_diff(diff);
     let mut impact = impact::compute(&graph, &classification, &changes, base, Some(head));

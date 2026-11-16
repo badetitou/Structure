@@ -1,21 +1,10 @@
 //! Known layers: their ids, labels and order (matrix rows, top to bottom).
 //!
-//! For now the list is built in ([`Layers::builtin`]); the implicit `unknown`
-//! layer is always present and always last.
+//! The layers are declared by the rules (`[[layer]]`, see
+//! `RuleSet::layers`); the implicit `unknown` layer is always present and
+//! always last.
 
 use structure_ir::model::{LayerDef, LayerId};
-
-/// Built-in layers, top to bottom; `unknown` is added after them.
-const BUILTIN: [&str; 8] = [
-    "ui",
-    "state",
-    "api_client",
-    "entry",
-    "business",
-    "persistence",
-    "model",
-    "util",
-];
 
 /// Layer definitions sorted by `order`, `unknown` last.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,15 +13,6 @@ pub struct Layers {
 }
 
 impl Layers {
-    /// Today's layers: label = id, order = position.
-    pub fn builtin() -> Layers {
-        Layers::new(BUILTIN.iter().zip(0..).map(|(id, order)| LayerDef {
-            id: LayerId::from(*id),
-            label: (*id).to_string(),
-            order,
-        }))
-    }
-
     /// Sorts `defs` by order and appends the implicit `unknown` layer after
     /// them (an `unknown` given in `defs` is dropped).
     pub fn new(defs: impl IntoIterator<Item = LayerDef>) -> Layers {
@@ -88,31 +68,6 @@ impl Layers {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn builtin_keeps_todays_order_with_unknown_last() {
-        let l = Layers::builtin();
-        let ids: Vec<&str> = l.defs().iter().map(|d| d.id.as_str()).collect();
-        assert_eq!(
-            ids,
-            [
-                "ui",
-                "state",
-                "api_client",
-                "entry",
-                "business",
-                "persistence",
-                "model",
-                "util",
-                "unknown"
-            ]
-        );
-        assert!(l.defs().windows(2).all(|w| w[0].order < w[1].order));
-        assert!(l.defs().iter().all(|d| d.label == d.id.as_str()));
-        assert!(l.rank(&"entry".into()) < l.rank(&"business".into()));
-        assert!(l.contains(&LayerId::unknown()));
-        assert!(!l.contains(&"service".into()));
-    }
 
     #[test]
     fn new_sorts_and_keeps_unknown_implicit_and_last() {

@@ -33,9 +33,10 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     occurrences to tree-sitter symbols → `Call`/`Uses`/`Implements` edges;
     `metrics` (run stats).
   - `classify` (`structure-classify`): `classify` + `rules/*.toml` (embedded
-    layer/domain rules, per-language default rules and module separator);
-    `layers` (known layers: built-in `LayerDef` list, `unknown` implicit and
-    last); `matrix` — quotient graph.
+    layer/domain rules and `[[layer]]` declarations, see `rules/README.md`;
+    per-language default rules and module separator); `layers` (`Layers`: the
+    declared `LayerDef`s sorted by order, `unknown` implicit and last);
+    `matrix` — quotient graph.
   - `highlight` (`structure-highlight`): pure (wasm-safe) highlight model over a
     graph: `HighlightIndex`, `resolve` (anchors → top-level symbols),
     `propagate` (callers/callees BFS), `aggregate` (→ cells), `highlight`.
@@ -44,7 +45,7 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     ref/fingerprint helpers (`resolve_base`, `resolve_commit`, `worktree_fingerprint`).
   - `core` (`structure-core`): facade, re-exports the crates above under their old
     module names (`ir`, `model`, `java`, `ts`, `scip`, `link`, `metrics`, `classify`,
-    `matrix`, `impact`, `highlight`). Own code: `lang/` (`LanguageFrontend` trait, registry
+    `layers`, `matrix`, `impact`, `highlight`). Own code: `lang/` (`LanguageFrontend` trait, registry
     `all()`/`frontend()`, Java/TS indexer + detection) and `pipeline/` (`mod`
     analyze/detect, `indexer`, `process`, `progress`, `snapshot`, `history`) and
     `http_link` (matches TS `http_calls` to Java `http` endpoints → `Http` edges,

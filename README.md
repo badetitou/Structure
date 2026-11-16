@@ -250,9 +250,16 @@ flowchart LR
 
 ## Classification rules
 
-Rules are TOML. The first matching rule wins; matchers inside a rule are ANDed.
+Rules are TOML. They declare the layers (matrix rows, sorted by `order`) and
+the rules that place each class in one. The first matching rule wins; matchers
+inside a rule are ANDed.
 
 ```toml
+[[layer]]
+id = "entry"
+label = "entry"
+order = 3
+
 [[rule]]
 layer = "entry"
 any_annotation = ["RestController", "Controller"]
@@ -272,7 +279,10 @@ Angular and NestJS ([rules/typescript.toml](rules/typescript.toml)), and
 Pharo package naming conventions such as `-Model`, `-UI`, `-Tests`
 ([rules/pharo.toml](rules/pharo.toml)). To
 override them for one project, add `<project>/.structure/rules.toml`: its rules
-take priority over the built-in ones.
+take priority over the built-in ones, and its `[[layer]]` entries add layers or
+change the label and order of a built-in one (same `id`). A rule on a layer that
+no file declares is an error. The format is described in
+[rules/README.md](rules/README.md).
 
 ## Repository layout
 

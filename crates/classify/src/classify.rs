@@ -1,6 +1,7 @@
 //! Declarative layer/domain classification of top-level symbols.
 //!
-//! Rules live in TOML files (`rules/*.toml`). A rule matches when ALL of its
+//! Rules live in TOML files (`rules/*.toml`), which also declare the layers
+//! (`[[layer]]`, see `rules/README.md`). A rule matches when ALL of its
 //! given matchers match; each matcher is "any of" its list. The first matching
 //! rule (file order) decides the layer. Without a match, a structural fallback
 //! applies (DTO-like class -> `model`, else `unknown`).
@@ -12,12 +13,12 @@ use rayon::prelude::*;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use structure_ir::ir::{EdgeKind, Graph, Symbol, SymbolKind};
-use structure_ir::model::{Classification, DomainNode, LayerId, Placement};
+use structure_ir::model::{Classification, DomainNode, LayerDef, LayerId, Placement};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rule {
-    /// Must be a known layer (see [`Layers`]).
+    /// Must be a declared layer (see [`RuleSet::layers`]).
     pub layer: LayerId,
     /// Annotation/decorator simple names.
     #[serde(default)]
@@ -113,34 +114,98 @@ impl Default for DomainSpec {
     }
 }
 
+/// A `[[layer]]` entry: a matrix row, sorted by `order` (top to bottom).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LayerDecl {
+    pub id: LayerId,
+    /// Text shown for the layer.
+    pub label: String,
+    pub order: u32,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleSet {
+    /// Declared layers; `unknown` is implicit and always last.
+    #[serde(default, rename = "layer")]
+    pub layers: Vec<LayerDecl>,
     #[serde(default, rename = "rule")]
     pub rules: Vec<Rule>,
     #[serde(default)]
     pub domain: Option<DomainSpec>,
 }
 
+/// Layer of a rule-less DTO-like class (structural fallback); must be declared.
+pub const DTO_LAYER: &str = "model";
+
 impl RuleSet {
-    /// Parses rules; a rule naming a layer outside [`Layers::builtin`] is an error.
+    /// Parses a complete rule set: every layer it uses must be declared in it.
     pub fn from_toml_str(s: &str) -> anyhow::Result<RuleSet> {
-        let rs: RuleSet = toml::from_str(s).context("invalid classification rules")?;
-        rs.check_layers(&Layers::builtin())?;
+        let rs = Self::parse(s)?;
+        rs.validate()?;
         Ok(rs)
     }
 
-    /// Fails on the first rule whose layer is not in `layers`.
-    pub fn check_layers(&self, layers: &Layers) -> anyhow::Result<()> {
+    /// Parses rules without checking layers (an overlay to [`RuleSet::merge`]
+    /// onto a complete set, then [`RuleSet::validate`]).
+    /// A layer declared twice in the same text is rejected here, before any
+    /// merge could hide it.
+    pub fn parse(s: &str) -> anyhow::Result<RuleSet> {
+        let rs: RuleSet = toml::from_str(s).context("invalid classification rules")?;
+        rs.check_unique_layers()?;
+        Ok(rs)
+    }
+
+    fn check_unique_layers(&self) -> anyhow::Result<()> {
+        let mut seen: HashSet<&LayerId> = HashSet::new();
+        for d in &self.layers {
+            if !seen.insert(&d.id) {
+                anyhow::bail!(
+                    "invalid classification rules: layer `{}` is declared twice",
+                    d.id
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Declared layers, sorted by order, `unknown` last.
+    pub fn layers(&self) -> Layers {
+        Layers::new(self.layers.iter().map(|d| LayerDef {
+            id: d.id.clone(),
+            label: d.label.clone(),
+            order: d.order,
+        }))
+    }
+
+    /// Fails on a layer declared twice or explicitly declaring `unknown`, on
+    /// the first rule whose layer is not declared, and when the DTO fallback
+    /// layer ([`DTO_LAYER`]) is not declared.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if let Some(d) = self.layers.iter().find(|d| d.id.is_unknown()) {
+            anyhow::bail!(
+                "invalid classification rules: layer `{}` is implicit and cannot be declared",
+                d.id
+            );
+        }
+        self.check_unique_layers()?;
+        let layers = self.layers();
         for (i, r) in self.rules.iter().enumerate() {
             if !layers.contains(&r.layer) {
                 anyhow::bail!(
-                    "invalid classification rules: rule {} uses unknown layer `{}` (known layers: {})",
+                    "invalid classification rules: rule {} uses undeclared layer `{}` (declared layers: {})",
                     i + 1,
                     r.layer,
                     layers.ids()
                 );
             }
+        }
+        if !layers.contains(&LayerId::from(DTO_LAYER)) {
+            anyhow::bail!(
+                "invalid classification rules: undeclared layer `{DTO_LAYER}` (used for DTO-like classes; declared layers: {})",
+                layers.ids()
+            );
         }
         Ok(())
     }
@@ -150,12 +215,20 @@ impl RuleSet {
         Self::from_toml_str(toml).context(name.to_string())
     }
 
-    /// `other` takes priority: its rules come first, and its domain spec
-    /// replaces ours when present.
+    /// `other` takes priority: its rules come first, its domain spec replaces
+    /// ours when present, and its layers replace ours by id (label and order)
+    /// or are added. The result is not validated.
     pub fn merge(mut self, other: RuleSet) -> RuleSet {
+        for d in other.layers {
+            match self.layers.iter_mut().find(|l| l.id == d.id) {
+                Some(l) => *l = d,
+                None => self.layers.push(d),
+            }
+        }
         let mut rules = other.rules;
         rules.append(&mut self.rules);
         RuleSet {
+            layers: self.layers,
             rules,
             domain: other.domain.or(self.domain),
         }
@@ -400,7 +473,7 @@ pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Class
         .map(|((f, hit), id)| {
             let layer = match hit {
                 Some(r) => r.layer.clone(),
-                None if is_dto(f) => LayerId::from("model"),
+                None if is_dto(f) => LayerId::from(DTO_LAYER),
                 None => LayerId::unknown(),
             };
             let spec = hit.and_then(|r| r.domain.as_ref()).unwrap_or(&default_spec);
@@ -709,6 +782,17 @@ mod tests {
         RuleSet::from_embedded(toml, name)
     }
 
+    /// `toml` over the layers declared by the default Java rules.
+    fn with_layers(toml: &str) -> anyhow::Result<RuleSet> {
+        let base = RuleSet {
+            layers: builtin(Language::Java)?.layers,
+            ..RuleSet::default()
+        };
+        let rs = base.merge(RuleSet::parse(toml)?);
+        rs.validate()?;
+        Ok(rs)
+    }
+
     fn classify(graph: &Graph, rules: &RuleSet) -> Classification {
         let sep = match graph.language {
             Language::Java => '.',
@@ -971,7 +1055,7 @@ mod tests {
         let mut s = java("FooService", SymbolKind::Class, "a.service");
         s.annotations = vec!["Service".into(), "Controller".into()];
         let g = graph(Language::Java, vec![s], vec![]);
-        let rs = RuleSet::from_toml_str(
+        let rs = with_layers(
             "[[rule]]\nlayer=\"entry\"\nany_annotation=[\"Controller\"]\n[[rule]]\nlayer=\"business\"\nany_annotation=[\"Service\"]\n",
         )
         .unwrap();
@@ -979,9 +1063,7 @@ mod tests {
             classify(&g, &rs).placements["a.service.FooService"].layer,
             LayerId::from("entry")
         );
-        let over =
-            RuleSet::from_toml_str("[[rule]]\nlayer=\"util\"\nany_annotation=[\"Service\"]\n")
-                .unwrap();
+        let over = with_layers("[[rule]]\nlayer=\"util\"\nany_annotation=[\"Service\"]\n").unwrap();
         let merged = rs.merge(over);
         assert_eq!(
             classify(&g, &merged).placements["a.service.FooService"].layer,
@@ -991,7 +1073,7 @@ mod tests {
 
     #[test]
     fn alias_and_strip_suffixes() {
-        let rs = RuleSet::from_toml_str(
+        let rs = with_layers(
             r#"
 [[rule]]
 layer = "persistence"
@@ -1031,24 +1113,127 @@ aliases = { order = ["LineItem"] }
         );
         let c = classify(&g, &builtin(Language::Java).unwrap());
         assert_eq!(c.placements["x.Dao"].layer, LayerId::from("persistence"));
-        assert!(RuleSet::from_toml_str("[[rule]]\nlayer=\"nope\"\n").is_err());
-        assert!(RuleSet::from_toml_str("[[rule]]\nlayer=\"ui\"\nbogus=1\n").is_err());
+        assert!(with_layers("[[rule]]\nlayer=\"nope\"\n").is_err());
+        assert!(with_layers("[[rule]]\nlayer=\"ui\"\nbogus=1\n").is_err());
     }
 
     #[test]
     fn rule_with_unknown_layer_is_rejected_clearly() {
         let toml = "[[rule]]\nlayer=\"ui\"\n[[rule]]\nlayer=\"service\"\n";
-        let err = format!("{:#}", RuleSet::from_toml_str(toml).unwrap_err());
-        assert!(err.contains("rule 2 uses unknown layer `service`"), "{err}");
-        assert!(err.contains("known layers: ui, state, api_client"), "{err}");
-        let ok = RuleSet::from_toml_str("[[rule]]\nlayer=\"unknown\"\n").unwrap();
+        let err = format!("{:#}", with_layers(toml).unwrap_err());
+        assert!(
+            err.contains("rule 2 uses undeclared layer `service`"),
+            "{err}"
+        );
+        assert!(
+            err.contains("declared layers: ui, state, api_client"),
+            "{err}"
+        );
+        let ok = with_layers("[[rule]]\nlayer=\"unknown\"\n").unwrap();
         assert_eq!(ok.rules[0].layer, LayerId::unknown());
+    }
+
+    #[test]
+    fn undeclared_layer_error_names_the_rules_file() {
+        let toml = "[[layer]]\nid=\"model\"\nlabel=\"Model\"\norder=0\n\
+                    [[rule]]\nlayer=\"model\"\n[[rule]]\nlayer=\"entry\"\n";
+        let err = format!(
+            "{:#}",
+            RuleSet::from_embedded(toml, "rules/x.toml").unwrap_err()
+        );
+        assert!(err.starts_with("rules/x.toml: "), "{err}");
+        assert!(
+            err.contains("rule 2 uses undeclared layer `entry`"),
+            "{err}"
+        );
+        // The DTO fallback layer must be declared too.
+        let err = format!(
+            "{:#}",
+            RuleSet::from_embedded("[[rule]]\nlayer=\"unknown\"\n", "rules/y.toml").unwrap_err()
+        );
+        assert!(err.starts_with("rules/y.toml: "), "{err}");
+        assert!(err.contains("undeclared layer `model`"), "{err}");
+    }
+
+    #[test]
+    fn layer_declarations_are_checked() {
+        let decl = |id: &str| format!("[[layer]]\nid=\"{id}\"\nlabel=\"L\"\norder=0\n");
+        let twice = format!("{}{}", decl("model"), decl("model"));
+        let err = format!("{:#}", RuleSet::from_toml_str(&twice).unwrap_err());
+        assert!(err.contains("layer `model` is declared twice"), "{err}");
+        let unknown = format!("{}{}", decl("model"), decl("unknown"));
+        let err = format!("{:#}", RuleSet::from_toml_str(&unknown).unwrap_err());
+        assert!(err.contains("`unknown` is implicit"), "{err}");
+        // Also in an overlay, before a merge could collapse the two.
+        let err = format!("{:#}", RuleSet::parse(&twice).unwrap_err());
+        assert!(err.contains("layer `model` is declared twice"), "{err}");
+        let typo = "[[layer]]\nid=\"model\"\nlabel=\"M\"\norder=0\nlabl=\"x\"\n";
+        assert!(RuleSet::from_toml_str(typo).is_err());
+        assert!(RuleSet::from_toml_str(&decl("model")).is_ok());
+    }
+
+    #[test]
+    fn merge_layers_by_id_later_wins() {
+        let base = RuleSet::from_toml_str(
+            "[[layer]]\nid=\"model\"\nlabel=\"model\"\norder=1\n\
+             [[layer]]\nid=\"util\"\nlabel=\"util\"\norder=2\n",
+        )
+        .unwrap();
+        let over = RuleSet::parse(
+            "[[layer]]\nid=\"util\"\nlabel=\"Utilities\"\norder=0\n\
+             [[layer]]\nid=\"web\"\nlabel=\"Web\"\norder=5\n\
+             [[rule]]\nlayer=\"web\"\nname_suffix=[\"Page\"]\n",
+        )
+        .unwrap();
+        let merged = base.merge(over);
+        merged.validate().unwrap();
+        let rows: Vec<(String, String, u32)> = merged
+            .layers()
+            .defs()
+            .iter()
+            .map(|d| (d.id.to_string(), d.label.clone(), d.order))
+            .collect();
+        let row = |id: &str, label: &str, order| (id.to_string(), label.to_string(), order);
+        assert_eq!(
+            rows,
+            [
+                row("util", "Utilities", 0),
+                row("model", "model", 1),
+                row("web", "Web", 5),
+                row("unknown", "unknown", 6)
+            ]
+        );
+        // An overlay using a layer nobody declares fails once merged.
+        let bad = RuleSet::parse("[[rule]]\nlayer=\"nope\"\n").unwrap();
+        assert!(merged.merge(bad).validate().is_err());
     }
 
     #[test]
     fn builtin_rules_parse() {
         assert!(!builtin(Language::Java).unwrap().rules.is_empty());
         assert!(!builtin(Language::TypeScript).unwrap().rules.is_empty());
+    }
+
+    #[test]
+    fn default_rules_declare_the_standard_layers() {
+        let expected = [
+            "ui",
+            "state",
+            "api_client",
+            "entry",
+            "business",
+            "persistence",
+            "model",
+            "util",
+            "unknown",
+        ];
+        for lang in [Language::Java, Language::TypeScript, Language::Pharo] {
+            let layers = builtin(lang).unwrap().layers();
+            let ids: Vec<&str> = layers.defs().iter().map(|d| d.id.as_str()).collect();
+            assert_eq!(ids, expected, "{lang:?}");
+            assert!(layers.defs().iter().zip(0..).all(|(d, i)| d.order == i));
+            assert!(layers.defs().iter().all(|d| d.label == d.id.as_str()));
+        }
     }
 
     fn ann(mut s: Symbol, anns: &[&str]) -> Symbol {
@@ -1059,7 +1244,7 @@ aliases = { order = ["LineItem"] }
     fn one(rules: &str, s: Symbol) -> Placement {
         let id = s.id.clone();
         let g = graph(Language::Java, vec![s], vec![]);
-        classify(&g, &RuleSet::from_toml_str(rules).unwrap()).placements[&id].clone()
+        classify(&g, &with_layers(rules).unwrap()).placements[&id].clone()
     }
 
     #[test]
@@ -1504,10 +1689,9 @@ aliases = { billing = ["invoices"] }
 
     #[test]
     fn user_domain_spec_without_new_fields_parses() {
-        let rs = RuleSet::from_toml_str(
-            "[domain]\nstrategy = \"name_root\"\nstrip_suffixes = [\"Service\"]\n",
-        )
-        .unwrap();
+        let rs =
+            with_layers("[domain]\nstrategy = \"name_root\"\nstrip_suffixes = [\"Service\"]\n")
+                .unwrap();
         let spec = rs.domain.unwrap();
         assert!(!spec.singularize);
         assert!(spec.strip_prefixes.is_empty());
@@ -1685,7 +1869,7 @@ aliases = { billing = ["invoices"] }
     /// symbol, whatever the rest.
     #[test]
     fn earliest_matching_rule_decides_per_symbol() {
-        let rs = RuleSet::from_toml_str(
+        let rs = with_layers(
             "[[rule]]\nlayer=\"entry\"\nname_suffix=[\"Api\"]\n\
              [[rule]]\nlayer=\"business\"\nname_contains=[\"Foo\"]\n\
              [[rule]]\nlayer=\"util\"\npath_contains=[\"/a/\"]\n",
