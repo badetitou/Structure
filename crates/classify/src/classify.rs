@@ -149,8 +149,25 @@ impl RuleSet {
 
     /// Parses rules without checking layers (an overlay to [`RuleSet::merge`]
     /// onto a complete set, then [`RuleSet::validate`]).
+    /// A layer declared twice in the same text is rejected here, before any
+    /// merge could hide it.
     pub fn parse(s: &str) -> anyhow::Result<RuleSet> {
-        toml::from_str(s).context("invalid classification rules")
+        let rs: RuleSet = toml::from_str(s).context("invalid classification rules")?;
+        rs.check_unique_layers()?;
+        Ok(rs)
+    }
+
+    fn check_unique_layers(&self) -> anyhow::Result<()> {
+        let mut seen: HashSet<&LayerId> = HashSet::new();
+        for d in &self.layers {
+            if !seen.insert(&d.id) {
+                anyhow::bail!(
+                    "invalid classification rules: layer `{}` is declared twice",
+                    d.id
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Declared layers, sorted by order, `unknown` last.
@@ -166,21 +183,13 @@ impl RuleSet {
     /// the first rule whose layer is not declared, and when the DTO fallback
     /// layer ([`DTO_LAYER`]) is not declared.
     pub fn validate(&self) -> anyhow::Result<()> {
-        let mut seen: HashSet<&LayerId> = HashSet::new();
-        for d in &self.layers {
-            if d.id.is_unknown() {
-                anyhow::bail!(
-                    "invalid classification rules: layer `{}` is implicit and cannot be declared",
-                    d.id
-                );
-            }
-            if !seen.insert(&d.id) {
-                anyhow::bail!(
-                    "invalid classification rules: layer `{}` is declared twice",
-                    d.id
-                );
-            }
+        if let Some(d) = self.layers.iter().find(|d| d.id.is_unknown()) {
+            anyhow::bail!(
+                "invalid classification rules: layer `{}` is implicit and cannot be declared",
+                d.id
+            );
         }
+        self.check_unique_layers()?;
         let layers = self.layers();
         for (i, r) in self.rules.iter().enumerate() {
             if !layers.contains(&r.layer) {
@@ -1155,6 +1164,9 @@ aliases = { order = ["LineItem"] }
         let unknown = format!("{}{}", decl("model"), decl("unknown"));
         let err = format!("{:#}", RuleSet::from_toml_str(&unknown).unwrap_err());
         assert!(err.contains("`unknown` is implicit"), "{err}");
+        // Also in an overlay, before a merge could collapse the two.
+        let err = format!("{:#}", RuleSet::parse(&twice).unwrap_err());
+        assert!(err.contains("layer `model` is declared twice"), "{err}");
         let typo = "[[layer]]\nid=\"model\"\nlabel=\"M\"\norder=0\nlabl=\"x\"\n";
         assert!(RuleSet::from_toml_str(typo).is_err());
         assert!(RuleSet::from_toml_str(&decl("model")).is_ok());
