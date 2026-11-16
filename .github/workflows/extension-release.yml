@@ -18,7 +18,7 @@ jobs:
       amo: ${{ steps.stores.outputs.amo }}
       cws: ${{ steps.stores.outputs.cws }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Version from tag
         id: version
@@ -90,7 +90,7 @@ jobs:
       - name: Build wasm
         run: scripts/build-wasm.sh
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -109,7 +109,7 @@ jobs:
           (cd app/ui/dist-extension && zip -r -X "$GITHUB_WORKSPACE/structure-extension-$VERSION.zip" .)
           unzip -l "structure-extension-$VERSION.zip"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: extension
           path: |
@@ -123,7 +123,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: extension
       - name: Attach zips to the release
@@ -143,10 +143,10 @@ jobs:
     if: needs.build.outputs.amo == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: extension
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Submit to addons.mozilla.org (listed)
@@ -169,10 +169,10 @@ jobs:
     if: needs.build.outputs.cws == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: extension
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Upload and publish to the Chrome Web Store
