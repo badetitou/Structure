@@ -43,12 +43,14 @@
   --both: oklch(0.6 0.22 305);
   --hover: oklch(0.86 0.17 95);
   --changed: oklch(0.55 0.22 27);
-  /* impact ramp: distance 1 (strongest) .. 5+ (faintest) */
-  --impact-1: oklch(0.62 0.17 50);
-  --impact-2: oklch(0.7 0.16 50);
-  --impact-3: oklch(0.77 0.14 55);
-  --impact-4: oklch(0.84 0.1 60);
-  --impact-5: oklch(0.9 0.06 65);
+  --changed-outline: oklch(0.21 0.02 260);
+  /* impact ramp: distance 1 (strongest) .. 5+ (faintest); amber, kept apart from the red of --changed */
+  --impact-1: oklch(0.8 0.15 85);
+  --impact-2: oklch(0.84 0.12 88);
+  --impact-3: oklch(0.88 0.09 90);
+  --impact-4: oklch(0.9 0.075 92);
+  --impact-5: oklch(0.93 0.05 95);
+  --edge-impact: oklch(0.6 0.13 75);
   /* history lanes */
   --lane-0: oklch(0.52 0.2 262);
   --lane-1: oklch(0.55 0.22 27);
@@ -104,11 +106,13 @@
   --both: oklch(0.74 0.17 305);
   --hover: oklch(0.86 0.17 95);
   --changed: oklch(0.7 0.19 22);
-  --impact-1: oklch(0.72 0.17 50);
-  --impact-2: oklch(0.64 0.15 50);
-  --impact-3: oklch(0.56 0.12 55);
-  --impact-4: oklch(0.48 0.09 60);
-  --impact-5: oklch(0.4 0.06 65);
+  --changed-outline: oklch(0.97 0 0);
+  --impact-1: oklch(0.8 0.15 85);
+  --impact-2: oklch(0.7 0.13 82);
+  --impact-3: oklch(0.61 0.11 80);
+  --impact-4: oklch(0.53 0.09 78);
+  --impact-5: oklch(0.46 0.07 75);
+  --edge-impact: oklch(0.78 0.13 80);
   --lane-0: oklch(0.72 0.15 255);
   --lane-1: oklch(0.7 0.19 22);
   --lane-2: oklch(0.78 0.18 150);

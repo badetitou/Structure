@@ -36,6 +36,21 @@
     <span class="truncate text-foreground">{selection}</span>
   {/if}
   <span class="ml-auto flex flex-none items-center gap-2.5">
+    {#if app.impact}
+      <span class="flex items-center gap-1"
+        ><span class="inline-block size-2 border border-(--changed-outline) bg-(--changed)"></span>changed</span
+      >
+      <span class="flex items-center gap-1" title="Impacted cells, by call distance from a change (1 to 5+)">
+        <span class="flex">
+          <span class="inline-block size-2 bg-(--impact-1)"></span>
+          <span class="inline-block size-2 bg-(--impact-2)"></span>
+          <span class="inline-block size-2 bg-(--impact-3)"></span>
+          <span class="inline-block size-2 bg-(--impact-4)"></span>
+          <span class="inline-block size-2 bg-(--impact-5)"></span>
+        </span>impacted (distance 1 → 5+)
+      </span>
+      {@render sep()}
+    {/if}
     <span class="flex items-center gap-1"><span class="inline-block size-2 bg-(--fwd)"></span>reaches</span>
     <span class="flex items-center gap-1"><span class="inline-block size-2 bg-(--bwd)"></span>reached by</span>
   </span>
