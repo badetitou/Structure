@@ -3,6 +3,7 @@ import type { Impact, Matrix } from "./api";
 import type { ViewCell } from "./domaintree";
 
 vi.mock("./api", () => ({
+  capabilities: vi.fn(),
   analyze: vi.fn(),
   reclassify: vi.fn(),
   rulesStamp: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock("./api", () => ({
 }));
 
 import * as api from "./api";
+import type { Capabilities } from "./api";
 import { AppState } from "./state.svelte";
 
 const mx = (project: string, warnings?: string[]): Matrix => ({
@@ -43,8 +45,12 @@ const cell = { id: "c1", layer: "service", label: "orders", size: 2, members: ["
 const mocked = vi.mocked(api);
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
+const allCaps: Capabilities = { history: true, diff: true, pickFolder: true, reclassify: true, highlightSources: ["git-diff"] };
+const viewerCaps: Capabilities = { history: false, diff: false, pickFolder: false, reclassify: false, highlightSources: ["git-diff"] };
+
 beforeEach(() => {
   vi.resetAllMocks();
+  mocked.capabilities.mockReturnValue(allCaps);
 });
 
 async function loaded(work = mx("work")) {
@@ -513,5 +519,45 @@ describe("AppState rules reload", () => {
     expect(s.selected).toBe(wider);
     s.syncSelection([]);
     expect(s.selected).toBeNull();
+  });
+});
+
+describe("AppState capabilities", () => {
+  it("offers history, diff and rules reload when the backend supports them", async () => {
+    const s = await loaded();
+    expect(s.historyAvailable).toBe(true);
+    expect(s.diffAvailable).toBe(true);
+    expect(s.rulesReloadable).toBe(true);
+  });
+
+  it("does not ask an unsupporting backend for history, diff or rules", async () => {
+    mocked.capabilities.mockReturnValue(viewerCaps);
+    const s = await loaded();
+    expect(s.phase).toBe("ready");
+    expect(mocked.history).not.toHaveBeenCalled();
+    expect(s.historyAvailable).toBe(false);
+    expect(s.diffAvailable).toBe(false);
+    expect(s.rulesReloadable).toBe(false);
+    await s.loadDiff(null, null);
+    expect(mocked.diff).not.toHaveBeenCalled();
+    expect(s.diff).toBeNull();
+    await s.reloadRules();
+    await s.checkRules();
+    expect(mocked.rulesStamp).not.toHaveBeenCalled();
+    expect(mocked.reclassify).not.toHaveBeenCalled();
+    const setInterval = vi.spyOn(globalThis, "setInterval");
+    try {
+      s.watchRules()();
+      expect(setInterval).not.toHaveBeenCalled();
+    } finally {
+      setInterval.mockRestore();
+    }
+  });
+
+  it("offers history without diff when only the history is supported", async () => {
+    mocked.capabilities.mockReturnValue({ ...allCaps, diff: false });
+    const s = await loaded();
+    expect(s.historyAvailable).toBe(true);
+    expect(s.diffAvailable).toBe(false);
   });
 });

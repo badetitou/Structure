@@ -56,15 +56,16 @@ invoke<CellSymbols>("cell_symbols", {
   before); the working-tree analysis stays fresh for `impact` when the rules
   files are the only change. Errors: no cached analysis (`no analysis to
   reclassify, run Analyze`), an invalid rules file (the message names it, see
-  `rules/README.md`); the cache is then unchanged. The browser-only samples do
-  not support it (`Backend.reclassify` rejects).
+  `rules/README.md`); the cache is then unchanged. The browser-only samples and
+  the viewer do not support it (`Backend.capabilities.reclassify` is false and
+  `Backend.reclassify` is absent).
 - `rules_stamp(paths)`: an opaque string that changes when a rules file of
   `paths` is created, edited or removed (the analysed roots, after the same
   sub-project expansion as `analyze`, taken from the cached analysis when
   there is one, with the size and mtime of each `.structure/rules.toml`).
   Cheap: the app polls it every 2 s while a project
   is open and calls `reclassify` when it changes. `Backend.rulesStamp`
-  resolves `null` (nothing to watch) outside Tauri.
+  is absent outside Tauri, where nothing is watched.
 - `impact(path, base, head)`: `base = null` means HEAD vs working tree;
   otherwise `base..head` (`head = null` means working tree). Impact cell ids
   and symbol ids refer to the ids in the `Matrix` from `analyze`.

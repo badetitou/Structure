@@ -43,11 +43,16 @@ describe("viewerBackend", () => {
     expect(cellSymbols).toHaveBeenCalledWith(["c"], 5, 10);
   });
 
-  it("has no history, diff or folder picker", async () => {
+  it("declares no history, diff, folder picker or rules reload, and leaves those methods out", () => {
     const b = viewerBackend({ impact: wireImpact, cellSymbols: async () => page });
-    await expect(b.history("x")).rejects.toThrow(/viewer/);
-    await expect(b.diff("x", null, null)).rejects.toThrow(/viewer/);
-    await expect(b.pickFolder()).rejects.toThrow(/viewer/);
+    expect(b.capabilities).toEqual({
+      history: false,
+      diff: false,
+      pickFolder: false,
+      reclassify: false,
+      highlightSources: ["git-diff"],
+    });
+    for (const m of ["history", "diff", "pickFolder", "reclassify", "rulesStamp"] as const) expect(b[m]).toBeUndefined();
   });
 
   it("refuses an impact without matrix", () => {
@@ -72,6 +77,7 @@ describe("api backend seam", () => {
 
   it("delegates the exported functions to the current backend", async () => {
     const fake: Backend = {
+      capabilities: { history: true, diff: true, pickFolder: true, reclassify: true, highlightSources: [] },
       pickFolder: vi.fn(async () => "f"),
       analyze: vi.fn(async () => ({}) as never),
       reclassify: vi.fn(async () => ({}) as never),
@@ -87,6 +93,28 @@ describe("api backend seam", () => {
     expect(fake.cellSymbols).toHaveBeenCalledWith(["p"], null, 1, ["c"], 0, 2);
     await api.history("p", 3);
     expect(fake.history).toHaveBeenCalledWith("p", 3);
+    expect(api.capabilities()).toBe(fake.capabilities);
+  });
+
+  it("rejects a call to a method the backend leaves out", async () => {
+    api.setBackend(viewerBackend({ impact: wireImpact, cellSymbols: async () => page }));
+    expect(api.capabilities().history).toBe(false);
+    await expect(api.history("p")).rejects.toThrow(/does not support history/);
+    await expect(api.reclassify(["p"])).rejects.toThrow(/does not support reclassify/);
+  });
+
+  it("declares what the samples support: everything but reloading the rules", () => {
+    const b = api.defaultBackend;
+    expect(b.capabilities).toEqual({
+      history: true,
+      diff: true,
+      pickFolder: true,
+      reclassify: false,
+      highlightSources: ["git-diff"],
+    });
+    expect(b.reclassify).toBeUndefined();
+    expect(b.rulesStamp).toBeUndefined();
+    for (const m of ["history", "diff", "pickFolder"] as const) expect(b[m]).toBeTypeOf("function");
   });
 
   it("uses the sample files by default (outside Tauri)", async () => {

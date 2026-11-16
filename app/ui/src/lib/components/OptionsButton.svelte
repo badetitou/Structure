@@ -4,7 +4,6 @@
   import { Button } from "$lib/components/ui/button";
   import * as ToggleGroup from "$lib/components/ui/toggle-group";
   import ThemeSwitch from "../../ThemeSwitch.svelte";
-  import { inTauri } from "../../api";
   import { app } from "../../state.svelte";
 
   // Gear button that opens the Options page: app preferences, persisted as they change.
@@ -35,7 +34,7 @@
           <ThemeSwitch />
         </div>
       </section>
-      {#if inTauri && app.phase === "ready"}
+      {#if app.rulesReloadable}
         <section class="flex flex-col gap-3">
           <h2 class="m-0 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Project</h2>
           <div class="flex items-center justify-between gap-4">

@@ -75,7 +75,7 @@ export type Matrix = Omit<WireMatrix, "edges" | "http_edges" | "rpc_edges"> & {
 /** Impact as the UI uses it: the snapshot matrix, when present, is expanded. */
 export type Impact = Omit<WireImpact, "matrix"> & { matrix?: Matrix };
 
-export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -127,16 +127,13 @@ async function default_analyze(
 }
 
 /** Re-applies the projects' rules to the cached analysis of `paths` (no re-parsing); the
- * matrix carries a new generation. Not supported by the browser-only samples. */
-async function default_reclassify(paths: string[]): Promise<Matrix> {
-  if (!inTauri) throw new Error("Reloading rules needs the desktop app");
+ * matrix carries a new generation. Tauri only. */
+async function tauri_reclassify(paths: string[]): Promise<Matrix> {
   return expandMatrix(await invoke<WireMatrix>("reclassify", { paths }));
 }
 
-/** Opaque stamp of the projects' rules files (changes when one is edited); null when
- * there is nothing to watch (browser-only samples). */
-async function default_rulesStamp(paths: string[]): Promise<string | null> {
-  if (!inTauri) return null;
+/** Opaque stamp of the projects' rules files (changes when one is edited). Tauri only. */
+async function tauri_rulesStamp(paths: string[]): Promise<string | null> {
   return invoke<string>("rules_stamp", { paths });
 }
 
@@ -202,14 +199,31 @@ async function default_diff(path: string, base: string | null, head: string | nu
   return invoke<Diff>("diff", { path, base, head });
 }
 
-/** Where the data comes from: Tauri or samples (default), or a host page (viewer). */
+/** What a backend supports; the UI derives its panels and controls from it. */
+export interface Capabilities {
+  /** `Backend.history`: the commit list (history panel). */
+  history: boolean;
+  /** `Backend.diff`: the textual diff of a range (diff panel). */
+  diff: boolean;
+  /** `Backend.pickFolder`: choosing a project folder (Home). */
+  pickFolder: boolean;
+  /** `Backend.reclassify` and `Backend.rulesStamp`: reloading and watching the rules. */
+  reclassify: boolean;
+  /** Sources of highlighted cells the backend computes ("git-diff": `Backend.impact` of a git range). */
+  highlightSources: string[];
+}
+
+/** Where the data comes from: Tauri or samples (default), or a host page (viewer). A method
+ * the backend does not support is absent, and its `capabilities` flag is false. */
 export interface Backend {
-  pickFolder(): Promise<string | null>;
+  capabilities: Capabilities;
+  pickFolder?(): Promise<string | null>;
   analyze(paths: string[], onProgress: (p: Progress) => void): Promise<Matrix>;
-  /** Re-applies the rules to the analysis of `paths` without re-parsing; rejects when unsupported. */
-  reclassify(paths: string[]): Promise<Matrix>;
-  /** Stamp of the rules files of `paths`, polled to reload on change; null: nothing to watch. */
-  rulesStamp(paths: string[]): Promise<string | null>;
+  /** Re-applies the rules to the analysis of `paths` without re-parsing (`capabilities.reclassify`). */
+  reclassify?(paths: string[]): Promise<Matrix>;
+  /** Stamp of the rules files of `paths`, polled to reload on change; null: nothing to watch
+   * (`capabilities.reclassify`). */
+  rulesStamp?(paths: string[]): Promise<string | null>;
   impact(
     path: string,
     base: string | null,
@@ -224,20 +238,35 @@ export interface Backend {
     offset: number,
     limit: number,
   ): Promise<CellSymbols>;
-  history(path: string, limit?: number): Promise<History>;
-  diff(path: string, base: string | null, head: string | null): Promise<Diff>;
+  history?(path: string, limit?: number): Promise<History>;
+  diff?(path: string, base: string | null, head: string | null): Promise<Diff>;
 }
 
-export const defaultBackend: Backend = {
+/** The desktop app: everything. */
+const tauriBackend: Backend = {
+  capabilities: { history: true, diff: true, pickFolder: true, reclassify: true, highlightSources: ["git-diff"] },
   pickFolder: default_pickFolder,
   analyze: default_analyze,
-  reclassify: default_reclassify,
-  rulesStamp: default_rulesStamp,
+  reclassify: tauri_reclassify,
+  rulesStamp: tauri_rulesStamp,
   impact: default_impact,
   cellSymbols: default_cellSymbols,
   history: default_history,
   diff: default_diff,
 };
+
+/** A plain browser: the sample files, no rules to reload. */
+const samplesBackend: Backend = {
+  capabilities: { history: true, diff: true, pickFolder: true, reclassify: false, highlightSources: ["git-diff"] },
+  pickFolder: default_pickFolder,
+  analyze: default_analyze,
+  impact: default_impact,
+  cellSymbols: default_cellSymbols,
+  history: default_history,
+  diff: default_diff,
+};
+
+export const defaultBackend: Backend = inTauri ? tauriBackend : samplesBackend;
 
 let current: Backend = defaultBackend;
 
@@ -246,11 +275,25 @@ export function setBackend(b: Backend): void {
   current = b;
 }
 
-export const pickFolder: Backend["pickFolder"] = (...a) => current.pickFolder(...a);
+/** What the current backend supports. */
+export function capabilities(): Capabilities {
+  return current.capabilities;
+}
+
+/** The current backend's `name` method; check `capabilities()` first, calling an absent one is a bug. */
+function supported<K extends keyof Backend>(name: K): NonNullable<Backend[K]> {
+  const f = current[name];
+  if (!f) throw new Error(`the backend does not support ${String(name)}`);
+  return f as NonNullable<Backend[K]>;
+}
+
+type Fn<K extends keyof Backend> = NonNullable<Backend[K]>;
+
+export const pickFolder: Fn<"pickFolder"> = async () => supported("pickFolder")();
 export const analyze: Backend["analyze"] = (...a) => current.analyze(...a);
-export const reclassify: Backend["reclassify"] = (...a) => current.reclassify(...a);
-export const rulesStamp: Backend["rulesStamp"] = (...a) => current.rulesStamp(...a);
+export const reclassify: Fn<"reclassify"> = async (...a) => supported("reclassify")(...a);
+export const rulesStamp: Fn<"rulesStamp"> = async (...a) => supported("rulesStamp")(...a);
 export const impact: Backend["impact"] = (...a) => current.impact(...a);
 export const cellSymbols: Backend["cellSymbols"] = (...a) => current.cellSymbols(...a);
-export const history: Backend["history"] = (...a) => current.history(...a);
-export const diff: Backend["diff"] = (...a) => current.diff(...a);
+export const history: Fn<"history"> = async (...a) => supported("history")(...a);
+export const diff: Fn<"diff"> = async (...a) => supported("diff")(...a);
