@@ -6,28 +6,31 @@
   import { hasMore } from "../../cellsymbols";
   import { initialCaps, moreLabel, showMore } from "../../symbolcap";
   import { symbolName } from "../../symbolname";
-  import { app } from "../../state.svelte";
+  import { impact } from "../../stores/impact.svelte";
+  import { options } from "../../stores/options.svelte";
+  import { selection } from "../../stores/selection.svelte";
+  import { shown } from "../../stores/shown";
 
   const impacted = $derived(
-    app.impact ? [...app.impact.impacted_symbols].sort((a, b) => a.distance - b.distance) : [],
+    impact.current ? [...impact.current.impacted_symbols].sort((a, b) => a.distance - b.distance) : [],
   );
-  let shown = $state.raw(initialCaps());
+  let caps = $state.raw(initialCaps());
   $effect(() => {
-    void app.impact;
-    shown = initialCaps();
+    void impact.current;
+    caps = initialCaps();
   });
   // Links between view cells (collapsed domains merged), only while the toolbar toggle is on.
   const http = $derived(
-    app.showHttp && app.selected && app.view ? remoteLinks(app.view.httpEdges, [app.selected.id]) : null,
+    options.showHttp && selection.selected && selection.view ? remoteLinks(selection.view.httpEdges, [selection.selected.id]) : null,
   );
   const rpc = $derived(
-    app.showRpc && app.selected && app.view ? remoteLinks(app.view.rpcEdges, [app.selected.id]) : null,
+    options.showRpc && selection.selected && selection.view ? remoteLinks(selection.view.rpcEdges, [selection.selected.id]) : null,
   );
   const viewName = (id: string) => {
-    const c = app.view?.cells.find((x) => x.id === id);
-    return c ? `${layerLabel(app.matrix?.layers, c.layer)} / ${c.label}` : id;
+    const c = selection.view?.cells.find((x) => x.id === id);
+    return c ? `${layerLabel(shown.matrix?.layers, c.layer)} / ${c.label}` : id;
   };
-  const list = $derived(app.selected && app.symbols?.cell === app.selected.id ? app.symbols : null);
+  const list = $derived(selection.selected && selection.symbols?.cell === selection.selected.id ? selection.symbols : null);
 </script>
 
 {#snippet items(rows: { name: string; sub: string }[], total: number, more?: () => void)}
@@ -52,23 +55,23 @@
 
 <ScrollArea class="h-full">
   <div class="px-3.5 py-2.5">
-    {#if app.impact}
-      {@render heading(`Changed symbols (${app.impact.changed_symbols.length})`)}
+    {#if impact.current}
+      {@render heading(`Changed symbols (${impact.current.changed_symbols.length})`)}
       {@render items(
-        app.impact.changed_symbols.slice(0, shown.changed).map((id) => ({ name: symbolName(id), sub: id })),
-        app.impact.changed_symbols.length,
-        () => (shown = showMore(shown, "changed")),
+        impact.current.changed_symbols.slice(0, caps.changed).map((id) => ({ name: symbolName(id), sub: id })),
+        impact.current.changed_symbols.length,
+        () => (caps = showMore(caps, "changed")),
       )}
-      {@render heading(`Impacted symbols (${app.impact.impacted_symbols.length})`)}
+      {@render heading(`Impacted symbols (${impact.current.impacted_symbols.length})`)}
       {@render items(
-        impacted.slice(0, shown.impacted).map((x) => ({ name: symbolName(x.id), sub: `distance ${x.distance} · ${x.id}` })),
+        impacted.slice(0, caps.impacted).map((x) => ({ name: symbolName(x.id), sub: `distance ${x.distance} · ${x.id}` })),
         impacted.length,
-        () => (shown = showMore(shown, "impacted")),
+        () => (caps = showMore(caps, "impacted")),
       )}
     {/if}
-    {#if app.selected}
-      {@const c = app.selected}
-      {@render heading(`${layerLabel(app.matrix?.layers, c.layer)}/${c.label} — ${c.size} symbols`)}
+    {#if selection.selected}
+      {@const c = selection.selected}
+      {@render heading(`${layerLabel(shown.matrix?.layers, c.layer)}/${c.label} — ${c.size} symbols`)}
       {#if http && (http.out.length > 0 || http.in.length > 0)}
         {@render heading("HTTP")}
         <ul class="m-0 list-disc pl-4">
@@ -102,11 +105,11 @@
       {:else if !list || list.loading}
         <div class="text-muted-foreground">Loading...</div>
       {:else if hasMore(list)}
-        <Button variant="outline" size="sm" onclick={() => void app.loadSymbols(true)}>
+        <Button variant="outline" size="sm" onclick={() => void selection.loadSymbols(true)}>
           Show more ({list.items.length} / {list.total})
         </Button>
       {/if}
-    {:else if !app.impact}
+    {:else if !impact.current}
       <div class="text-muted-foreground">Click a cell to list its symbols.</div>
     {/if}
   </div>

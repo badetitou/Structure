@@ -4,15 +4,16 @@ vi.mock("$lib/components/DetailsPanel.svelte", () => ({ default: {} }));
 vi.mock("$lib/components/DiffPanel.svelte", () => ({ default: {} }));
 vi.mock("$lib/components/HistorySidebar.svelte", () => ({ default: {} }));
 vi.mock("$lib/components/MatrixPanel.svelte", () => ({ default: {} }));
-vi.mock("../state.svelte", () => ({
-  app: { matrix: null as unknown, historyAvailable: false, diffAvailable: false },
-}));
+vi.mock("../stores/shown", () => ({ shown: { matrix: null as unknown } }));
+vi.mock("../stores/git.svelte", () => ({ git: { historyAvailable: false, diffAvailable: false } }));
 
-import { app } from "../state.svelte";
+import { git } from "../stores/git.svelte";
+import { shown } from "../stores/shown";
 import "./builtin";
 import { panels } from "./registry";
 
-const state = app as unknown as { matrix: unknown; historyAvailable: boolean; diffAvailable: boolean };
+const view = shown as unknown as { matrix: unknown };
+const state = git as unknown as { historyAvailable: boolean; diffAvailable: boolean };
 
 describe("built-in panels", () => {
   it("gate the history and diff panels on their own capability", () => {
@@ -27,10 +28,10 @@ describe("built-in panels", () => {
   });
 
   it("show the matrix once loaded and the details always", () => {
-    state.matrix = null;
+    view.matrix = null;
     expect(panels.isAvailable("matrix")).toBe(false);
     expect(panels.isAvailable("details")).toBe(true);
-    state.matrix = {};
+    view.matrix = {};
     expect(panels.isAvailable("matrix")).toBe(true);
   });
 });

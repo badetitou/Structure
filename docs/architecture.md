@@ -74,7 +74,9 @@ Cible :
   highlightSources[] }` dont dérivent les `available()` des panneaux, le
   bouton « Reload rules » et la surveillance des règles ; une méthode non
   supportée est absente au lieu de rejeter — fait (#71) ;
-  `AppState` découpé en stores : analyse, highlights, sélection, git.
+  `AppState` découpé en stores (`app/ui/src/stores/`) : analyse, impact (futur
+  overlay de highlight), sélection, git, options d'affichage ; la coordination
+  entre stores est dans `session.ts` — fait (#71).
 
 ## 4. Vues
 
@@ -82,7 +84,7 @@ Acquis : registre de panneaux + dockview.
 
 Cible :
 - contrat `ViewContext { lens, overlays, selection, actions }` passé à chaque
-  vue, au lieu de lire `app` ; sélection et overlays forment un bus partagé ;
+  vue, au lieu de lire les stores globaux ; sélection et overlays forment un bus partagé ;
 - séparer la *lens* (back : manière de quotienter — layer × domaine, arbre de
   packages, projet × couche) du *rendu* (front : matrice, dense, graphe de
   voisinage, liste) ;

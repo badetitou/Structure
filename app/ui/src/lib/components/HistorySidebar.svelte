@@ -5,9 +5,11 @@
   import { rowSvg } from "../../graphsvg";
   import { clickCommit, headIndex, isSelected, relativeDate } from "../../history";
   import { layoutLanes } from "../../lanes";
-  import { app } from "../../state.svelte";
+  import { git } from "../../stores/git.svelte";
+  import { impact } from "../../stores/impact.svelte";
+  import { pickHistory } from "../../stores/session";
 
-  const hist = $derived(app.history);
+  const hist = $derived(git.history);
   const lanes = $derived(hist ? layoutLanes(hist.commits) : null);
   const headColor = $derived(lanes?.rows[0]?.color);
 
@@ -18,10 +20,10 @@
   const rowClass =
     "flex h-10 cursor-pointer items-center gap-1.5 overflow-hidden px-2.5 pl-1.5 select-none enabled:hover:bg-muted disabled:cursor-wait";
   // Rows are locked while an impact runs; the selected (pending) rows get a spinner.
-  const busy = $derived(app.impactBusy);
+  const busy = $derived(impact.busy);
   const dim = $derived(busy ? "opacity-60" : "");
   // Only the range's head is analysed; the rest of the range is just the diff base.
-  const pending = $derived(busy ? headIndex(app.historySel) : null);
+  const pending = $derived(busy ? headIndex(git.historySel) : null);
 </script>
 
 {#if hist && lanes}
@@ -30,10 +32,10 @@
       {@const first = lanes.rows[0]}
       <button
         type="button"
-        class="{rowClass} w-full text-left {app.historySel?.kind === 'worktree' ? 'bg-accent' : dim}"
+        class="{rowClass} w-full text-left {git.historySel?.kind === 'worktree' ? 'bg-accent' : dim}"
         disabled={busy}
-        aria-busy={busy && app.historySel?.kind === "worktree"}
-        onclick={() => app.pickHistory({ kind: "worktree" })}
+        aria-busy={busy && git.historySel?.kind === "worktree"}
+        onclick={() => pickHistory({ kind: "worktree" })}
       >
         <span
           class="flex-none"
@@ -48,16 +50,16 @@
           <span class="block truncate">Working tree</span>
           <span class="mt-0.5 block truncate text-muted-foreground">uncommitted changes</span>
         </span>
-        {#if busy && app.historySel?.kind === "worktree"}<LoaderIcon class="size-3.5 flex-none animate-spin" />{/if}
+        {#if busy && git.historySel?.kind === "worktree"}<LoaderIcon class="size-3.5 flex-none animate-spin" />{/if}
       </button>
     {/if}
     {#each hist.commits as c, i (c.id)}
       <button
         type="button"
-        class="{rowClass} w-full text-left {isSelected(app.historySel, i) ? 'bg-accent' : dim}"
+        class="{rowClass} w-full text-left {isSelected(git.historySel, i) ? 'bg-accent' : dim}"
         disabled={busy}
         aria-busy={pending === i}
-        onclick={(ev) => app.pickHistory(clickCommit(app.historySel, i, ev.shiftKey))}
+        onclick={(ev) => pickHistory(clickCommit(git.historySel, i, ev.shiftKey))}
       >
         <span
           class="flex-none"

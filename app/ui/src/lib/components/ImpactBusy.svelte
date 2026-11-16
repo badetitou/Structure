@@ -1,13 +1,13 @@
 <script lang="ts">
   import LoaderIcon from "@lucide/svelte/icons/loader-circle";
   import { Progress } from "$lib/components/ui/progress";
-  import { app } from "../../state.svelte";
+  import { impact } from "../../stores/impact.svelte";
 
   // Covers the matrix while an impact runs (a commit snapshot may be analysed first).
-  const p = $derived(app.impactProgress);
+  const p = $derived(impact.progress);
 </script>
 
-{#if app.impactBusy && p}
+{#if impact.busy && p}
   <div class="absolute inset-0 z-20 flex items-center justify-center bg-background/70" role="status" aria-live="polite">
     <div class="flex w-[min(420px,90%)] flex-col gap-2 rounded-lg border bg-card p-4 shadow-lg">
       <div class="flex items-center gap-2 text-sm font-semibold">

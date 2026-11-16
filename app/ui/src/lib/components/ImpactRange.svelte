@@ -3,7 +3,8 @@
   import GitCompare from "@lucide/svelte/icons/git-compare";
   import { Button, buttonVariants } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
-  import { app } from "../../state.svelte";
+  import { impact } from "../../stores/impact.svelte";
+  import { runTypedImpact } from "../../stores/session";
 
   // Typed impact range (base..head) in a popover, out of the way of the dock.
   let open = $state(false);
@@ -12,8 +13,8 @@
 
   function run(e: SubmitEvent) {
     e.preventDefault();
-    if (app.impactBusy) return;
-    app.runTypedImpact(base.trim() || null, head.trim() || null);
+    if (impact.busy) return;
+    runTypedImpact(base.trim() || null, head.trim() || null);
     open = false;
   }
 </script>
@@ -31,7 +32,7 @@
       <form class="flex flex-col gap-2" onsubmit={run}>
         <Input class="h-7" placeholder="base (empty = HEAD)" aria-label="Base ref" bind:value={base} />
         <Input class="h-7" placeholder="head (empty = working tree)" aria-label="Head ref" bind:value={head} />
-        <Button type="submit" size="sm" disabled={app.impactBusy}>Show impact</Button>
+        <Button type="submit" size="sm" disabled={impact.busy}>Show impact</Button>
       </form>
     </Popover.Content>
   </Popover.Portal>

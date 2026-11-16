@@ -1,11 +1,14 @@
 <script lang="ts">
-  import { app } from "../../state.svelte";
+  import { analysis } from "../../stores/analysis.svelte";
+  import { impact } from "../../stores/impact.svelte";
+  import { selection } from "../../stores/selection.svelte";
+  import { shown } from "../../stores/shown";
   import { impactLabel, selectionLabel, snapshotLabel, statsLabel } from "../../statusbar";
 
   // Context of the analysis, one line at the bottom of the window.
-  const m = $derived(app.matrix);
-  const impact = $derived(impactLabel(app.impact, app.impactProgress));
-  const selection = $derived(selectionLabel(app.selected, app.matrix?.layers));
+  const m = $derived(shown.matrix);
+  const impactText = $derived(impactLabel(impact.current, impact.progress));
+  const selectionText = $derived(selectionLabel(selection.selected, shown.matrix?.layers));
 </script>
 
 {#snippet sep()}<span class="text-border" aria-hidden="true">|</span>{/snippet}
@@ -14,7 +17,7 @@
   class="flex h-6 flex-none items-center gap-2 overflow-hidden border-t bg-card px-3 text-xs whitespace-nowrap text-muted-foreground"
   aria-label="Status bar"
 >
-  <span class="min-w-16 truncate" title={app.paths.join("\n")}>{app.paths.join(" + ")}</span>
+  <span class="min-w-16 truncate" title={analysis.paths.join("\n")}>{analysis.paths.join(" + ")}</span>
   {#if m}
     {@render sep()}
     <span class="flex-none">{m.projects?.length ? `${m.projects.length} projects` : m.language}</span>
@@ -22,21 +25,21 @@
     <span class="flex-none">{statsLabel(m.stats)}</span>
   {/if}
   {@render sep()}
-  <span class="flex-none" class:text-foreground={!!app.impact?.matrix}>{snapshotLabel(app.impact)}</span>
-  {#if impact}
+  <span class="flex-none" class:text-foreground={!!impact.current?.matrix}>{snapshotLabel(impact.current)}</span>
+  {#if impactText}
     {@render sep()}
-    <span class="truncate">{impact}</span>
+    <span class="truncate">{impactText}</span>
   {/if}
-  {#if app.impactError}
+  {#if impact.error}
     {@render sep()}
-    <span class="max-w-[40%] flex-none truncate text-destructive" title={app.impactError}>{app.impactError}</span>
+    <span class="max-w-[40%] flex-none truncate text-destructive" title={impact.error}>{impact.error}</span>
   {/if}
-  {#if selection}
+  {#if selectionText}
     {@render sep()}
-    <span class="truncate text-foreground">{selection}</span>
+    <span class="truncate text-foreground">{selectionText}</span>
   {/if}
   <span class="ml-auto flex flex-none items-center gap-2.5">
-    {#if app.impact}
+    {#if impact.current}
       <span class="flex items-center gap-1"
         ><span class="inline-block size-2 border border-(--changed-outline) bg-(--changed)"></span>changed</span
       >

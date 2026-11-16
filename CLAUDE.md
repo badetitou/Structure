@@ -60,7 +60,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 - `crates/cli` — bin `structure` (`analyze`, `impact`). Keep `main` thin.
 - `app/` — Tauri 2 app: `src-tauri` (thin commands over a managed `Session`), `ui` (Vite + Svelte
   5 + TS, vitest): `src/api.ts` backend wrappers over the generated wire types
-  in `src/generated/` (never hand-edited), `src/*.ts` state/geometry helpers, `src/workspace/` panel registry +
+  in `src/generated/` (never hand-edited), `src/stores/` rune stores (analysis, impact, selection,
+  git, options; cross-store actions in `session.ts`), `src/*.ts` geometry helpers, `src/workspace/` panel registry +
   dockview glue, `src/lib/components` Svelte components (`matrix/`, `workspace/`, `ui/`). See `app/README.md`.
 - `docs/` — `plan.md`, `api.md` (Tauri API contract), `samples/*.json`.
 - `scripts/` — fetch and index fixtures; `tests/golden/` — expected classifications.

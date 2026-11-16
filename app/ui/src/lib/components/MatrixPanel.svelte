@@ -8,7 +8,7 @@
 <script lang="ts">
   import ImpactBusy from "./ImpactBusy.svelte";
   import MatrixView from "./MatrixView.svelte";
-  import { app } from "../../state.svelte";
+  import { shown } from "../../stores/shown";
 
   // The matrix as a workspace panel, covered by the impact progress while one runs.
   let view = $state<MatrixHandle | null>(null);
@@ -22,8 +22,8 @@
 </script>
 
 <div class="relative flex min-h-0 min-w-0 flex-1">
-  {#if app.matrix}
-    <MatrixView bind:this={view} matrix={app.matrix} />
+  {#if shown.matrix}
+    <MatrixView bind:this={view} matrix={shown.matrix} />
   {/if}
   <ImpactBusy />
 </div>
