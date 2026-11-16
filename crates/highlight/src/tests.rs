@@ -1,6 +1,6 @@
 use super::*;
 use structure_ir::ir::{Edge, EdgeKind, Language, Range, Symbol, SymbolKind};
-use structure_ir::model::{Layer, Placement};
+use structure_ir::model::{LayerId, Placement};
 
 fn sym(id: &str, container: Option<&str>, file: &str, s: u32, e: u32) -> Symbol {
     named_sym(id, id, container, file, s, e)
@@ -77,11 +77,11 @@ fn fixture() -> (Graph, Classification) {
     );
     let mut c = Classification::default();
     for (id, l, d) in [
-        ("Mapper", Layer::Persistence, "a"),
-        ("Service", Layer::Business, "a"),
-        ("Action", Layer::Entry, "a"),
-        ("Iface", Layer::Business, "b"),
-        ("Impl", Layer::Business, "b"),
+        ("Mapper", LayerId::from("persistence"), "a"),
+        ("Service", LayerId::from("business"), "a"),
+        ("Action", LayerId::from("entry"), "a"),
+        ("Iface", LayerId::from("business"), "b"),
+        ("Impl", LayerId::from("business"), "b"),
     ] {
         c.placements.insert(
             id.into(),

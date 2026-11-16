@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { layerName } from "../../../aligned";
+  import { layerLabel } from "../../../aligned";
+  import type { LayerDef } from "../../../api";
   import { DEFAULT_FILL, hoverCellPaint, impactCellPaint } from "../../../cellstate";
   import type { Hover } from "../../../cellstate";
   import type { ImpactView, ViewCell } from "../../../domaintree";
@@ -10,6 +11,7 @@
   // resulting fill or opacity differs; the element itself is never recreated.
   let {
     cell,
+    layers,
     tile,
     detailed,
     hover,
@@ -18,6 +20,8 @@
     onselect,
   }: {
     cell: ViewCell;
+    /** Layer definitions of the matrix, for the label. */
+    layers: readonly LayerDef[];
     tile: Tile;
     detailed: boolean;
     hover: Hover | null;
@@ -35,7 +39,7 @@
   );
   // Changed cells also get an outline, so they read apart from impacted ones by more than hue.
   const changed = $derived(!hover && !!impact?.changed.has(cell.id));
-  const label = $derived(`${layerName(cell.layer)}/${cell.label} (${cell.size})`);
+  const label = $derived(`${layerLabel(layers, cell.layer)}/${cell.label} (${cell.size})`);
   // Dense tiles touch: inset by half the stroke so neighbours do not overlap.
   const inset = $derived(detailed ? 0 : 0.5);
 </script>

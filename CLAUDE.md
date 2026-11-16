@@ -22,7 +22,7 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 - `crates/` — one-way deps `ir` <- `lang-java`/`lang-ts`/`lang-pharo`/`scip`/`classify`/`highlight` <- `git` <- `core` <- `cli`
   (`git` needs only `ir` and `highlight`; the others go straight to `core`):
   - `ir` (`structure-ir`): `ir` (Graph/Symbol/Edge), `model`
-    (Layer/Matrix/Impact/Progress), `highlight` (Anchor/Seed/HighlightRequest/
+    (LayerId/LayerDef/Matrix/Impact/Progress), `highlight` (Anchor/Seed/HighlightRequest/
     Highlight) — contracts, serde only; feature `ts`
     derives the TS declarations (ts-rs; module `ts`, test `generated_ts_types`).
   - `lang-pharo` (`structure-lang-pharo`): hand-written Tonel reader (classes,
@@ -34,7 +34,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     `metrics` (run stats).
   - `classify` (`structure-classify`): `classify` + `rules/*.toml` (embedded
     layer/domain rules, per-language default rules and module separator);
-    `matrix` — quotient graph.
+    `layers` (known layers: built-in `LayerDef` list, `unknown` implicit and
+    last); `matrix` — quotient graph.
   - `highlight` (`structure-highlight`): pure (wasm-safe) highlight model over a
     graph: `HighlightIndex`, `resolve` (anchors → top-level symbols),
     `propagate` (callers/callees BFS), `aggregate` (→ cells), `highlight`.

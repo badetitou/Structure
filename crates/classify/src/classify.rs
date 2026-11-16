@@ -5,18 +5,20 @@
 //! rule (file order) decides the layer. Without a match, a structural fallback
 //! applies (DTO-like class -> `model`, else `unknown`).
 
+use crate::layers::Layers;
 use crate::matrix::{id_index, top_level_indices};
 use anyhow::Context;
 use rayon::prelude::*;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use structure_ir::ir::{EdgeKind, Graph, Symbol, SymbolKind};
-use structure_ir::model::{Classification, DomainNode, Layer, Placement};
+use structure_ir::model::{Classification, DomainNode, LayerId, Placement};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rule {
-    pub layer: Layer,
+    /// Must be a known layer (see [`Layers`]).
+    pub layer: LayerId,
     /// Annotation/decorator simple names.
     #[serde(default)]
     pub any_annotation: Vec<String>,
@@ -121,8 +123,26 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
+    /// Parses rules; a rule naming a layer outside [`Layers::builtin`] is an error.
     pub fn from_toml_str(s: &str) -> anyhow::Result<RuleSet> {
-        toml::from_str(s).context("invalid classification rules")
+        let rs: RuleSet = toml::from_str(s).context("invalid classification rules")?;
+        rs.check_layers(&Layers::builtin())?;
+        Ok(rs)
+    }
+
+    /// Fails on the first rule whose layer is not in `layers`.
+    pub fn check_layers(&self, layers: &Layers) -> anyhow::Result<()> {
+        for (i, r) in self.rules.iter().enumerate() {
+            if !layers.contains(&r.layer) {
+                anyhow::bail!(
+                    "invalid classification rules: rule {} uses unknown layer `{}` (known layers: {})",
+                    i + 1,
+                    r.layer,
+                    layers.ids()
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Rules from embedded TOML text; `name` labels parse errors.
@@ -379,9 +399,9 @@ pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Class
         .zip(&fact_ids)
         .map(|((f, hit), id)| {
             let layer = match hit {
-                Some(r) => r.layer,
-                None if is_dto(f) => Layer::Model,
-                None => Layer::Unknown,
+                Some(r) => r.layer.clone(),
+                None if is_dto(f) => LayerId::from("model"),
+                None => LayerId::unknown(),
             };
             let spec = hit.and_then(|r| r.domain.as_ref()).unwrap_or(&default_spec);
             let domain = domain_of(spec, f.sym);
@@ -758,9 +778,9 @@ mod tests {
         }
     }
 
-    fn p(c: &Classification, id: &str) -> (Layer, String) {
+    fn p(c: &Classification, id: &str) -> (LayerId, String) {
         let x = &c.placements[id];
-        (x.layer, x.domain.clone())
+        (x.layer.clone(), x.domain.clone())
     }
 
     #[test]
@@ -808,45 +828,45 @@ mod tests {
         let id = |n: &str, sub: &str| format!("{base}.{sub}.{n}");
         assert_eq!(
             p(&c, &id("AccountActionBean", "web.actions")),
-            (Layer::Entry, "account".into())
+            (LayerId::from("entry"), "account".into())
         );
         assert_eq!(
             p(&c, &id("CartActionBean", "web.actions")),
-            (Layer::Entry, "cart".into())
+            (LayerId::from("entry"), "cart".into())
         );
         assert_eq!(
             p(&c, &id("CatalogActionBean", "web.actions")),
-            (Layer::Entry, "catalog".into())
+            (LayerId::from("entry"), "catalog".into())
         );
         assert_eq!(
             p(&c, &id("OrderService", "service")),
-            (Layer::Business, "order".into())
+            (LayerId::from("business"), "order".into())
         );
         assert_eq!(
             p(&c, &id("CatalogService", "service")),
-            (Layer::Business, "catalog".into())
+            (LayerId::from("business"), "catalog".into())
         );
         assert_eq!(
             p(&c, &id("LineItemMapper", "mapper")),
-            (Layer::Persistence, "order".into())
+            (LayerId::from("persistence"), "order".into())
         );
         assert_eq!(
             p(&c, &id("ItemMapper", "mapper")),
-            (Layer::Persistence, "catalog".into())
+            (LayerId::from("persistence"), "catalog".into())
         );
         assert_eq!(
             p(&c, &id("CartItem", "domain")),
-            (Layer::Model, "cart".into())
+            (LayerId::from("model"), "cart".into())
         );
         assert_eq!(
             p(&c, &id("Sequence", "domain")),
-            (Layer::Model, "order".into())
+            (LayerId::from("model"), "order".into())
         );
         assert_eq!(
             p(&c, &id("Category", "domain")),
-            (Layer::Model, "catalog".into())
+            (LayerId::from("model"), "catalog".into())
         );
-        assert_eq!(p(&c, &id("BaseBean", "web")).0, Layer::Entry);
+        assert_eq!(p(&c, &id("BaseBean", "web")).0, LayerId::from("entry"));
         // methods are not placed
         assert_eq!(c.placements.len(), 4 + 3 + 7 + 9 + 1);
     }
@@ -911,12 +931,15 @@ mod tests {
             edges,
         );
         let c = classify(&g, &builtin(Language::TypeScript).unwrap());
-        assert_eq!(p(&c, &ids[0]), (Layer::Ui, "cart".into()));
-        assert_eq!(p(&c, &ids[1]), (Layer::ApiClient, "cart".into()));
-        assert_eq!(p(&c, &ids[2]), (Layer::State, "cart".into()));
-        assert_eq!(p(&c, &ids[3]), (Layer::Business, "pricing".into()));
-        assert_eq!(p(&c, &ids[4]), (Layer::Model, "catalog".into()));
-        assert_eq!(p(&c, &ids[5]).0, Layer::Util);
+        assert_eq!(p(&c, &ids[0]), (LayerId::from("ui"), "cart".into()));
+        assert_eq!(p(&c, &ids[1]), (LayerId::from("api_client"), "cart".into()));
+        assert_eq!(p(&c, &ids[2]), (LayerId::from("state"), "cart".into()));
+        assert_eq!(
+            p(&c, &ids[3]),
+            (LayerId::from("business"), "pricing".into())
+        );
+        assert_eq!(p(&c, &ids[4]), (LayerId::from("model"), "catalog".into()));
+        assert_eq!(p(&c, &ids[5]).0, LayerId::from("util"));
     }
 
     #[test]
@@ -938,9 +961,9 @@ mod tests {
         let mut syms = vec![dto, worker, wm, caller, cm];
         syms.extend(ms);
         let c = classify(&graph(Language::Java, syms, edges), &RuleSet::default());
-        assert_eq!(p(&c, &d), (Layer::Model, "thing".into()));
-        assert_eq!(p(&c, &w).0, Layer::Unknown);
-        assert_eq!(p(&c, &k).0, Layer::Unknown);
+        assert_eq!(p(&c, &d), (LayerId::from("model"), "thing".into()));
+        assert_eq!(p(&c, &w).0, LayerId::from("unknown"));
+        assert_eq!(p(&c, &k).0, LayerId::from("unknown"));
     }
 
     #[test]
@@ -954,7 +977,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             classify(&g, &rs).placements["a.service.FooService"].layer,
-            Layer::Entry
+            LayerId::from("entry")
         );
         let over =
             RuleSet::from_toml_str("[[rule]]\nlayer=\"util\"\nany_annotation=[\"Service\"]\n")
@@ -962,7 +985,7 @@ mod tests {
         let merged = rs.merge(over);
         assert_eq!(
             classify(&g, &merged).placements["a.service.FooService"].layer,
-            Layer::Util
+            LayerId::from("util")
         );
     }
 
@@ -990,7 +1013,7 @@ aliases = { order = ["LineItem"] }
         let c = classify(&g, &rs);
         assert_eq!(
             p(&c, "x.LineItemMapper"),
-            (Layer::Persistence, "order".into())
+            (LayerId::from("persistence"), "order".into())
         );
         // suffix equal to whole name is not stripped
         assert_eq!(p(&c, "x.Mapper").1, "mapper");
@@ -1007,9 +1030,19 @@ aliases = { order = ["LineItem"] }
             vec![edge("x.Dao", "y.SqlSession", EdgeKind::Uses)],
         );
         let c = classify(&g, &builtin(Language::Java).unwrap());
-        assert_eq!(c.placements["x.Dao"].layer, Layer::Persistence);
+        assert_eq!(c.placements["x.Dao"].layer, LayerId::from("persistence"));
         assert!(RuleSet::from_toml_str("[[rule]]\nlayer=\"nope\"\n").is_err());
         assert!(RuleSet::from_toml_str("[[rule]]\nlayer=\"ui\"\nbogus=1\n").is_err());
+    }
+
+    #[test]
+    fn rule_with_unknown_layer_is_rejected_clearly() {
+        let toml = "[[rule]]\nlayer=\"ui\"\n[[rule]]\nlayer=\"service\"\n";
+        let err = format!("{:#}", RuleSet::from_toml_str(toml).unwrap_err());
+        assert!(err.contains("rule 2 uses unknown layer `service`"), "{err}");
+        assert!(err.contains("known layers: ui, state, api_client"), "{err}");
+        let ok = RuleSet::from_toml_str("[[rule]]\nlayer=\"unknown\"\n").unwrap();
+        assert_eq!(ok.rules[0].layer, LayerId::unknown());
     }
 
     #[test]
@@ -1091,40 +1124,40 @@ aliases = { order = ["LineItem"] }
         ] {
             assert_eq!(
                 p(&c, &id("web.controllers", &format!("{n}Controller"))),
-                (Layer::Entry, d.into())
+                (LayerId::from("entry"), d.into())
             );
         }
         assert_eq!(
             p(&c, &id("web.controllers", "RootController")).0,
-            Layer::Entry
+            LayerId::from("entry")
         );
         assert_eq!(
             p(&c, &id("service", "OrderService")),
-            (Layer::Business, "order".into())
+            (LayerId::from("business"), "order".into())
         );
         assert_eq!(
             p(&c, &id("service", "AccountService")),
-            (Layer::Business, "account".into())
+            (LayerId::from("business"), "account".into())
         );
         assert_eq!(
             p(&c, &id("mapper", "SequenceMapper")),
-            (Layer::Persistence, "order".into())
+            (LayerId::from("persistence"), "order".into())
         );
         assert_eq!(
             p(&c, &id("mapper", "ProductMapper")),
-            (Layer::Persistence, "catalog".into())
+            (LayerId::from("persistence"), "catalog".into())
         );
         assert_eq!(
             p(&c, &id("domain", "CartItem")),
-            (Layer::Model, "cart".into())
+            (LayerId::from("model"), "cart".into())
         );
         assert_eq!(
             p(&c, &id("domain", "LineItem")),
-            (Layer::Model, "order".into())
+            (LayerId::from("model"), "order".into())
         );
         assert_eq!(
             p(&c, &id("domain", "Item")),
-            (Layer::Model, "catalog".into())
+            (LayerId::from("model"), "catalog".into())
         );
         assert_eq!(
             p(
@@ -1132,7 +1165,7 @@ aliases = { order = ["LineItem"] }
                 &id("web.configuration", "StaxFactoryInitializationListener")
             )
             .0,
-            Layer::Util
+            LayerId::from("util")
         );
     }
 
@@ -1153,10 +1186,16 @@ aliases = { order = ["LineItem"] }
             vec![],
         );
         let c = classify(&g, &rs);
-        assert_eq!(c.placements["x.AMapper"].layer, Layer::Persistence);
-        assert_eq!(c.placements["x.Convert"].layer, Layer::Util);
-        assert_eq!(c.placements["x.service.Helper"].layer, Layer::Business);
-        assert_eq!(c.placements["x.Helper2"].layer, Layer::Util);
+        assert_eq!(
+            c.placements["x.AMapper"].layer,
+            LayerId::from("persistence")
+        );
+        assert_eq!(c.placements["x.Convert"].layer, LayerId::from("util"));
+        assert_eq!(
+            c.placements["x.service.Helper"].layer,
+            LayerId::from("business")
+        );
+        assert_eq!(c.placements["x.Helper2"].layer, LayerId::from("util"));
     }
 
     #[test]
@@ -1211,17 +1250,17 @@ aliases = { order = ["LineItem"] }
         let ids: Vec<String> = syms.iter().map(|s| s.id.clone()).collect();
         let g = graph(Language::TypeScript, syms, vec![]);
         let c = classify(&g, &builtin(Language::TypeScript).unwrap());
-        let layers: Vec<Layer> = ids.iter().map(|i| c.placements[i].layer).collect();
+        let layers: Vec<LayerId> = ids.iter().map(|i| c.placements[i].layer.clone()).collect();
         assert_eq!(
             layers,
             [
-                Layer::Business,
-                Layer::Business,
-                Layer::State,
-                Layer::Entry,
-                Layer::Model,
-                Layer::Util,
-                Layer::Util
+                LayerId::from("business"),
+                LayerId::from("business"),
+                LayerId::from("state"),
+                LayerId::from("entry"),
+                LayerId::from("model"),
+                LayerId::from("util"),
+                LayerId::from("util")
             ]
         );
         // no `src/app/` in path: name_root fallback
@@ -1245,24 +1284,24 @@ name_suffix = ["Impl"]
 "#;
         assert_eq!(
             one(rs, java("PreThing", SymbolKind::Class, "x")).layer,
-            Layer::Ui
+            LayerId::from("ui")
         );
         assert_eq!(
             one(rs, java("AMidB", SymbolKind::Enum, "x")).layer,
-            Layer::State
+            LayerId::from("state")
         );
         // kind mismatch: no match -> unknown (enum with no methods would be Enum, not DTO)
         assert_eq!(
             one(rs, java("AMidB", SymbolKind::Class, "x")).layer,
-            Layer::Model
+            LayerId::from("model")
         );
         let mut q = java("FooImpl", SymbolKind::Class, "x");
         q.supertypes = vec!["com.acme.Base".into()];
-        assert_eq!(one(rs, q).layer, Layer::Util);
+        assert_eq!(one(rs, q).layer, LayerId::from("util"));
         // AND: supertype ok, suffix missing
         let mut q = java("Foo", SymbolKind::Interface, "x");
         q.supertypes = vec!["Base".into()];
-        assert_eq!(one(rs, q).layer, Layer::Unknown);
+        assert_eq!(one(rs, q).layer, LayerId::from("unknown"));
     }
 
     #[test]
@@ -1362,20 +1401,26 @@ aliases = { billing = ["invoices"] }
             ),
         ];
         let c = classify(&graph(Language::Java, syms, vec![]), &rs);
-        let l = |id: &str| c.placements[id].layer;
-        assert_eq!(l("io.acme.core.article.Article"), Layer::Model);
+        let l = |id: &str| c.placements[id].layer.clone();
+        assert_eq!(l("io.acme.core.article.Article"), LayerId::from("model"));
         assert_eq!(
             l("io.acme.core.article.ArticleRepository"),
-            Layer::Persistence
+            LayerId::from("persistence")
         );
         // interface named *Repository wins over the `.domain.` model package
-        assert_eq!(l("x.domain.OrderRepository"), Layer::Persistence);
-        assert_eq!(l("io.acme.graphql.ArticleDatafetcher"), Layer::Entry);
+        assert_eq!(l("x.domain.OrderRepository"), LayerId::from("persistence"));
+        assert_eq!(
+            l("io.acme.graphql.ArticleDatafetcher"),
+            LayerId::from("entry")
+        );
         // `core.service` stays business; the core rule only takes classes
-        assert_eq!(l("io.acme.core.service.JwtService"), Layer::Business);
-        assert_eq!(l("io.acme.core.service.Clock"), Layer::Business);
-        assert_eq!(l("io.acme.core.Encoder"), Layer::Model);
-        assert_eq!(l("io.acme.core.user.Score"), Layer::Unknown);
+        assert_eq!(
+            l("io.acme.core.service.JwtService"),
+            LayerId::from("business")
+        );
+        assert_eq!(l("io.acme.core.service.Clock"), LayerId::from("business"));
+        assert_eq!(l("io.acme.core.Encoder"), LayerId::from("model"));
+        assert_eq!(l("io.acme.core.user.Score"), LayerId::from("unknown"));
         for n in [
             "exception.FooException",
             "util.StringUtils",
@@ -1383,9 +1428,13 @@ aliases = { billing = ["invoices"] }
             "CoreConfig",
             "CoreConfiguration",
         ] {
-            assert_eq!(l(&format!("io.acme.core.{n}")), Layer::Util, "{n}");
+            assert_eq!(
+                l(&format!("io.acme.core.{n}")),
+                LayerId::from("util"),
+                "{n}"
+            );
         }
-        assert_eq!(l("io.spring.graphql.UserMutation"), Layer::Entry);
+        assert_eq!(l("io.spring.graphql.UserMutation"), LayerId::from("entry"));
     }
 
     #[test]
@@ -1475,15 +1524,23 @@ aliases = { billing = ["invoices"] }
             let c = java("T", kind, "x");
             let mut v: Vec<Symbol> = methods.iter().map(|m| method(&c, m)).collect();
             v.push(c);
-            classify(&graph(Language::Java, v, vec![]), &rs).placements["x.T"].layer
+            classify(&graph(Language::Java, v, vec![]), &rs).placements["x.T"]
+                .layer
+                .clone()
         };
-        assert_eq!(g(SymbolKind::Class, &["getA", "setA", "isB"]), Layer::Model);
-        assert_eq!(g(SymbolKind::Interface, &[]), Layer::Unknown);
-        assert_eq!(g(SymbolKind::Enum, &[]), Layer::Unknown);
-        assert_eq!(g(SymbolKind::Class, &["getA", "settle"]), Layer::Unknown);
-        assert_eq!(g(SymbolKind::Class, &["issue"]), Layer::Unknown);
-        assert_eq!(g(SymbolKind::Class, &["setup"]), Layer::Unknown);
-        assert_eq!(g(SymbolKind::Class, &["compute"]), Layer::Unknown);
+        assert_eq!(
+            g(SymbolKind::Class, &["getA", "setA", "isB"]),
+            LayerId::from("model")
+        );
+        assert_eq!(g(SymbolKind::Interface, &[]), LayerId::from("unknown"));
+        assert_eq!(g(SymbolKind::Enum, &[]), LayerId::from("unknown"));
+        assert_eq!(
+            g(SymbolKind::Class, &["getA", "settle"]),
+            LayerId::from("unknown")
+        );
+        assert_eq!(g(SymbolKind::Class, &["issue"]), LayerId::from("unknown"));
+        assert_eq!(g(SymbolKind::Class, &["setup"]), LayerId::from("unknown"));
+        assert_eq!(g(SymbolKind::Class, &["compute"]), LayerId::from("unknown"));
     }
 
     fn module_graph() -> Graph {
@@ -1641,10 +1698,10 @@ aliases = { billing = ["invoices"] }
             java("Other2", SymbolKind::Class, "z"),
         ];
         let c = classify(&graph(Language::Java, syms, vec![]), &rs);
-        assert_eq!(p(&c, "a.FooApi").0, Layer::Entry);
-        assert_eq!(p(&c, "a.FooBar").0, Layer::Business);
-        assert_eq!(p(&c, "a.Other").0, Layer::Util);
-        assert_ne!(p(&c, "z.Other2").0, Layer::Util);
+        assert_eq!(p(&c, "a.FooApi").0, LayerId::from("entry"));
+        assert_eq!(p(&c, "a.FooBar").0, LayerId::from("business"));
+        assert_eq!(p(&c, "a.Other").0, LayerId::from("util"));
+        assert_ne!(p(&c, "z.Other2").0, LayerId::from("util"));
     }
 
     fn mods(paths: &[&[&str]]) -> Vec<(&'static str, Vec<String>)> {

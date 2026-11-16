@@ -14,14 +14,46 @@
     }
   ],
   "layers": [
-    "ui",
-    "api_client",
-    "entry",
-    "business",
-    "persistence",
-    "model",
-    "util",
-    "unknown"
+    {
+      "id": "ui",
+      "label": "ui",
+      "order": 0
+    },
+    {
+      "id": "api_client",
+      "label": "api_client",
+      "order": 2
+    },
+    {
+      "id": "entry",
+      "label": "entry",
+      "order": 3
+    },
+    {
+      "id": "business",
+      "label": "business",
+      "order": 4
+    },
+    {
+      "id": "persistence",
+      "label": "persistence",
+      "order": 5
+    },
+    {
+      "id": "model",
+      "label": "model",
+      "order": 6
+    },
+    {
+      "id": "util",
+      "label": "util",
+      "order": 7
+    },
+    {
+      "id": "unknown",
+      "label": "unknown",
+      "order": 8
+    }
   ],
   "domains": [
     "angular-realworld/app",

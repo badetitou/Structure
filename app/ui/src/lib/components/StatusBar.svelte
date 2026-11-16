@@ -5,7 +5,7 @@
   // Context of the analysis, one line at the bottom of the window.
   const m = $derived(app.matrix);
   const impact = $derived(impactLabel(app.impact, app.impactProgress));
-  const selection = $derived(selectionLabel(app.selected));
+  const selection = $derived(selectionLabel(app.selected, app.matrix?.layers));
 </script>
 
 {#snippet sep()}<span class="text-border" aria-hidden="true">|</span>{/snippet}

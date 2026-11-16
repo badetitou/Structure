@@ -45,7 +45,10 @@ const cell = (layer: Cell["layer"], domain: string, size: number): Cell => ({
 const m: Matrix = {
   project: "p",
   language: "java",
-  layers: ["ui", "model"],
+  layers: [
+    { id: "ui", label: "ui", order: 0 },
+    { id: "model", label: "model", order: 6 },
+  ],
   domains: ["a1", "a2", "a3", "a4", "b"],
   cells: [
     cell("ui", "a1", 2),

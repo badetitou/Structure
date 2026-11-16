@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { align, canAlign, layerName } from "./aligned";
-import type { CellEdge, Layer } from "./api";
+import { align, canAlign, layerLabel, layerName } from "./aligned";
+import type { CellEdge, LayerDef, LayerId } from "./api";
 import { aggregate, flatColumns } from "./domaintree";
 import type { Matrix } from "./api";
 
-const cell = (layer: Layer, domain: string, size = 1) => ({ id: `${layer}:${domain}`, layer, domain, size });
+const defs = (...ids: LayerId[]): LayerDef[] => ids.map((id, order) => ({ id, label: id, order }));
+const ids = (m: Matrix) => m.layers.map((l) => l.id);
+const cell = (layer: LayerId, domain: string, size = 1) => ({ id: `${layer}:${domain}`, layer, domain, size });
 const edge = (from: string, to: string, weight = 1): CellEdge => ({ from, to, weight });
 
 // Front "f" (ui, api_client, model) calls back "b" (entry, business, model).
@@ -17,7 +19,7 @@ function build(http: CellEdge[], rpc: CellEdge[] = []) {
       { name: "f", root: "f", language: "typescript" },
       { name: "b", root: "b", language: "java" },
     ],
-    layers: ["ui", "api_client", "entry", "business", "model"],
+    layers: defs("ui", "api_client", "entry", "business", "model"),
     domains,
     cells: [
       cell("ui", "f/orders"),
@@ -36,7 +38,7 @@ function build(http: CellEdge[], rpc: CellEdge[] = []) {
   } as Matrix;
   const cols = flatColumns(domains);
   const vm = aggregate(m, cols);
-  return { m, cols, vm, run: () => align(vm, cols, m.layers, ["f", "b"], [...vm.httpEdges, ...vm.rpcEdges]) };
+  return { m, cols, vm, run: () => align(vm, cols, ids(m), ["f", "b"], [...vm.httpEdges, ...vm.rpcEdges]) };
 }
 
 describe("align rows", () => {
@@ -63,7 +65,7 @@ describe("align rows", () => {
   it("makes the caller project primary and puts its rows first", () => {
     const { m, vm } = build([]);
     const back = [edge("entry:b/order", "api_client:f/orders", 3)];
-    const a = align(vm, flatColumns(domains), m.layers, ["f", "b"], back.map((e) => ({ ...e, from: e.from, to: e.to })));
+    const a = align(vm, flatColumns(domains), ids(m), ["f", "b"], back.map((e) => ({ ...e, from: e.from, to: e.to })));
     expect(a.primary).toBe("b");
     expect(a.rows.map((r) => r.key)).toEqual(["b/order~f/orders", "b/user", "b/audit", "f/users", "f/misc"]);
     expect(a.layers[0]?.project).toBe("b");
@@ -73,7 +75,7 @@ describe("align rows", () => {
     const m = {
       project: "x",
       language: "java",
-      layers: ["ui", "entry"],
+      layers: defs("ui", "entry"),
       domains: ds,
       cells: [cell("ui", "f/a"), cell("entry", "b/a"), cell("entry", "s/a"), cell("entry", "b/x")],
       edges: [],
@@ -82,7 +84,7 @@ describe("align rows", () => {
     } as unknown as Matrix;
     const cols = flatColumns(ds);
     const vm = aggregate(m, cols);
-    const a = align(vm, cols, m.layers, ["f", "b", "s"], vm.httpEdges);
+    const a = align(vm, cols, ids(m), ["f", "b", "s"], vm.httpEdges);
     expect(a.rows.map((r) => r.key)).toEqual(["f/a~b/a~s/a", "b/x"]);
   });
 });
@@ -109,6 +111,13 @@ describe("align layers and cells", () => {
   it("shows the plain layer name", () => {
     expect(layerName("f|api_client")).toBe("api_client");
     expect(layerName("ui")).toBe("ui");
+  });
+  it("labels a layer from the matrix definitions, aligned or plain", () => {
+    const d: LayerDef[] = [{ id: "api_client", label: "API client", order: 2 }];
+    expect(layerLabel(d, "f|api_client")).toBe("API client");
+    expect(layerLabel(d, "api_client")).toBe("API client");
+    expect(layerLabel(d, "ui")).toBe("ui");
+    expect(layerLabel(undefined, "f|ui")).toBe("ui");
   });
 });
 

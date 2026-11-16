@@ -231,7 +231,7 @@ pub fn aggregate(cls: &Classification, symbols: &[HighlightedSymbol]) -> Vec<Hig
     for s in symbols {
         if let Some(p) = cls.placements.get(&s.id) {
             let e = cells
-                .entry(Cell::id_for(p.layer, &p.domain))
+                .entry(Cell::id_for(&p.layer, &p.domain))
                 .or_insert((s.role, s.distance));
             *e = (e.0.min(s.role), e.1.min(s.distance));
         }

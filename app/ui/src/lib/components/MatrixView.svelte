@@ -10,7 +10,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import type { CellEdge, DomainNode, Matrix } from "../../api";
-  import { align, canAlign, projectOf } from "../../aligned";
+  import { align, canAlign, layerLabel, projectOf } from "../../aligned";
   import { defaultEdgeOpacity } from "../../cellstate";
   import { FLAME_MAX_COLUMNS, MAX_COLUMNS, aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded, remapExpanded } from "../../domaintree";
   import { adjacency, reach, visibleEdges, type RemoteKind } from "../../graph";
@@ -63,21 +63,22 @@
   });
   const cols = $derived(tree ? columns(tree, expanded) : flatColumns(matrix.domains));
   const vm0 = $derived(aggregate(matrix, cols));
+  const layerIds = $derived(matrix.layers.map((l) => l.id));
   const projectNames = $derived((matrix.projects ?? []).map((p) => p.name));
   const al = $derived(
-    alignedOn ? align(vm0, cols, matrix.layers, projectNames, [...vm0.httpEdges, ...vm0.rpcEdges]) : null,
+    alignedOn ? align(vm0, cols, layerIds, projectNames, [...vm0.httpEdges, ...vm0.rpcEdges]) : null,
   );
   const vm = $derived(al ? al.vm : vm0);
   const heads = $derived(al ? al.rows : cols.map((c) => ({ key: c.key, members: [c] })));
   const lay = $derived(
     layout(
       mode,
-      al ? al.layers.map((l) => l.key) : matrix.layers,
+      al ? al.layers.map((l) => l.key) : layerIds,
       heads.map((h) => h.key),
       vm.cells,
       heads.map((h) => h.members.map((c) => (c.group ? `▸ ${c.label}` : c.label)).join(" ⇄ ")),
       transposed,
-      al ? al.layers.map((l) => l.layer) : undefined,
+      al ? al.layers.map((l) => layerLabel(matrix.layers, l.layer)) : matrix.layers.map((l) => l.label),
       al?.segments,
       app.angledLabels,
     ),
@@ -336,6 +337,7 @@
         {#each cellTiles as c (c.cell.id)}
           <MatrixCell
             cell={c.cell}
+            layers={matrix.layers}
             tile={c.tile}
             detailed={lay.detailed}
             {hover}

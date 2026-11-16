@@ -157,9 +157,9 @@ fn print_table(m: &Matrix) {
     }
     eprintln!();
     for l in &m.layers {
-        eprint!("{:<w$}", l.as_str());
+        eprint!("{:<w$}", l.label);
         for d in &m.domains {
-            let id = Cell::id_for(*l, d);
+            let id = Cell::id_for(&l.id, d);
             let n = m.cells.iter().find(|c| c.id == id).map_or(0, |c| c.size);
             if n == 0 {
                 eprint!(" {:>w$}", ".");

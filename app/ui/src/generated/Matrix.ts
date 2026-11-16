@@ -3,7 +3,7 @@ import type { Cell } from "./Cell";
 import type { DomainNode } from "./DomainNode";
 import type { EdgeGroup } from "./EdgeGroup";
 import type { Language } from "./Language";
-import type { Layer } from "./Layer";
+import type { LayerDef } from "./LayerDef";
 import type { Project } from "./Project";
 import type { Stats } from "./Stats";
 
@@ -20,7 +20,11 @@ language: Language,
  * Analysed roots when there are at least two (ids and domains are then
  * prefixed by the project name); omitted for a single root.
  */
-projects?: Array<Project>, layers: Array<Layer>, domains: Array<string>, cells: Array<Cell>, 
+projects?: Array<Project>, 
+/**
+ * Definitions of the layers present, sorted by `order`.
+ */
+layers: Array<LayerDef>, domains: Array<string>, cells: Array<Cell>, 
 /**
  * Grouped by source cell, indices into `cells` (see docs/api.md).
  */

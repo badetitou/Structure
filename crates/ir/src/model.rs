@@ -5,42 +5,60 @@ use crate::ir::Language;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Declaration order = matrix rows, top to bottom.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+/// Layer identifier, the snake_case name used in rules, cells and cell ids
+/// (e.g. `business`). The known layers and their order are [`LayerDef`]s.
+/// A newtype: serde reads and writes it as the bare string.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[serde(rename_all = "snake_case")]
-pub enum Layer {
-    Ui,
-    State,
-    ApiClient,
-    Entry,
-    Business,
-    Persistence,
-    Model,
-    Util,
-    Unknown,
+pub struct LayerId(pub String);
+
+impl LayerId {
+    /// Id of the implicit layer of unclassified symbols, always last.
+    pub const UNKNOWN: &'static str = "unknown";
+
+    pub fn new(id: impl Into<String>) -> LayerId {
+        LayerId(id.into())
+    }
+
+    /// The implicit `unknown` layer.
+    pub fn unknown() -> LayerId {
+        LayerId::new(Self::UNKNOWN)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn is_unknown(&self) -> bool {
+        self.0 == Self::UNKNOWN
+    }
 }
 
-impl Layer {
-    /// snake_case name, as used in serde and cell ids.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Layer::Ui => "ui",
-            Layer::State => "state",
-            Layer::ApiClient => "api_client",
-            Layer::Entry => "entry",
-            Layer::Business => "business",
-            Layer::Persistence => "persistence",
-            Layer::Model => "model",
-            Layer::Util => "util",
-            Layer::Unknown => "unknown",
-        }
+impl From<&str> for LayerId {
+    fn from(s: &str) -> LayerId {
+        LayerId::new(s)
     }
+}
+
+impl std::fmt::Display for LayerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Definition of a layer: matrix rows are sorted by `order`, top to bottom.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LayerDef {
+    pub id: LayerId,
+    /// Text shown for the layer.
+    pub label: String,
+    pub order: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Placement {
-    pub layer: Layer,
+    pub layer: LayerId,
     pub domain: String,
 }
 
@@ -87,7 +105,8 @@ pub struct Matrix {
     /// prefixed by the project name); omitted for a single root.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub projects: Vec<Project>,
-    pub layers: Vec<Layer>,
+    /// Definitions of the layers present, sorted by `order`.
+    pub layers: Vec<LayerDef>,
     pub domains: Vec<String>,
     pub cells: Vec<Cell>,
     /// Grouped by source cell, indices into `cells` (see docs/api.md).
@@ -124,14 +143,14 @@ fn is_zero(n: &u64) -> bool {
 pub struct Cell {
     /// "<layer>:<domain>", e.g. "business:account".
     pub id: String,
-    pub layer: Layer,
+    pub layer: LayerId,
     pub domain: String,
     /// Number of top-level symbols; the list is `matrix::cell_symbols`.
     pub size: usize,
 }
 
 impl Cell {
-    pub fn id_for(layer: Layer, domain: &str) -> String {
+    pub fn id_for(layer: &LayerId, domain: &str) -> String {
         format!("{}:{}", layer.as_str(), domain)
     }
 }
@@ -413,40 +432,35 @@ mod tests {
     }
 
     #[test]
-    fn layer_as_str_matches_serde() {
-        use Layer::*;
-        for l in [
-            Ui,
-            State,
-            ApiClient,
-            Entry,
-            Business,
-            Persistence,
-            Model,
-            Util,
-            Unknown,
-        ] {
-            assert_eq!(serde_json::to_value(l).unwrap(), l.as_str());
-        }
+    fn layer_id_is_a_plain_string() {
+        let l = LayerId::new("api_client");
+        assert_eq!(serde_json::to_string(&l).unwrap(), "\"api_client\"");
+        assert_eq!(
+            serde_json::from_str::<LayerId>("\"ui\"").unwrap(),
+            "ui".into()
+        );
+        assert_eq!(l.as_str(), "api_client");
+        assert!(LayerId::unknown().is_unknown());
+        assert_eq!(
+            Cell::id_for(&"business".into(), "account"),
+            "business:account"
+        );
     }
 
     #[test]
-    fn layer_order_and_serde() {
-        assert!(Layer::Ui < Layer::State);
-        assert!(Layer::Entry < Layer::Business);
-        assert!(Layer::Model < Layer::Util && Layer::Util < Layer::Unknown);
-        assert_eq!(
-            serde_json::to_string(&Layer::ApiClient).unwrap(),
-            "\"api_client\""
-        );
-        assert_eq!(Cell::id_for(Layer::Business, "account"), "business:account");
+    fn layer_defs_carry_label_and_order() {
+        let m: Matrix = serde_json::from_str(MATRIX).unwrap();
+        let ids: Vec<&str> = m.layers.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, ["entry", "business", "persistence", "model", "util"]);
+        assert!(m.layers.windows(2).all(|w| w[0].order < w[1].order));
+        assert!(m.layers.iter().all(|d| d.label == d.id.as_str()));
     }
 
     #[test]
     fn sample_cell_ids_match() {
         let m: Matrix = serde_json::from_str(MATRIX).unwrap();
         for c in &m.cells {
-            assert_eq!(c.id, Cell::id_for(c.layer, &c.domain));
+            assert_eq!(c.id, Cell::id_for(&c.layer, &c.domain));
         }
     }
 
