@@ -48,7 +48,9 @@ Cible :
 - section `[[layer]]` dans les règles TOML ; les règles par défaut déclarent
   les couches standard ;
 - fichier de projet optionnel (`.structure/rules.toml`) qui ajoute, renomme ou
-  réordonne ; en multi-projet, fusion par `id` ;
+  réordonne ; en multi-projet, fusion par `id` : la première racine
+  l'emporte (libellé, ordre), les couches propres aux suivantes sont
+  ajoutées après les siennes (`rules/README.md`) ;
 - dynamique : `reclassify(rules)` recalcule la matrice depuis le graphe en
   cache, sans réindexer ni reparser. Édition depuis l'UI plus tard.
 

@@ -14,6 +14,12 @@ browser extension and attaches it to the GitHub release.
   built-in ones. A rule on an undeclared layer is an error naming the file and
   the layer.
 
+### Changed
+
+- A multi-project analysis merges the roots' layers by id: the first root's
+  labels and order win, and layers only a later root declares are appended
+  after them (before `unknown`), so a later root no longer overrides a label.
+
 ## [0.1.3] - 2026-11-16
 
 ### Fixed

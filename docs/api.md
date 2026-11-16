@@ -119,7 +119,10 @@ interface Matrix {
   // symbol ids are `<name>::<id>` and domains `<name>/<domain>`.
   // `link_stats` of a merged analysis are the first root's.
   projects?: { name: string; root: string; language: Language }[];
-  layers: LayerDef[]; // definitions of the layers present, sorted by order
+  // Definitions of the layers present, sorted by order. Several roots: a
+  // shared id takes the first root's label/order; layers only declared by
+  // later roots follow the first root's (see rules/README.md).
+  layers: LayerDef[];
   domains: string[];
   cells: Cell[];     // non-empty cells only, sorted by (layer, domain)
   edges: EdgeGroup[]; // cell-to-cell calls/uses, grouped by source cell

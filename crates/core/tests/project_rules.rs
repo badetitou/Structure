@@ -1,6 +1,6 @@
 //! `<project>/.structure/rules.toml`: layers merged by id over the default
-//! rules (and across roots), undeclared or duplicated layers rejected
-//! (tree-sitter only).
+//! rules (and across roots, the first root winning), invalid files rejected
+//! with their path (tree-sitter only).
 
 use std::path::{Path, PathBuf};
 
@@ -112,7 +112,51 @@ fn project_layer_declared_twice_is_rejected() {
 }
 
 #[test]
-fn layers_merge_by_id_across_roots_later_root_wins() {
+fn unparsable_project_rules_name_the_file() {
+    let dir = project("syntax", "[[layer]\nid = \"view\"\n");
+    let err = format!(
+        "{:#}",
+        pipeline::analyze(&dir, &offline(), &|_| {}).unwrap_err()
+    );
+    assert!(err.contains(".structure/rules.toml"), "{err}");
+    assert!(err.contains("invalid classification rules"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn unknown_field_in_project_rules_is_rejected() {
+    let dir = project(
+        "field",
+        "[[rule]]\nlayer = \"entry\"\nname_sufix = [\"View\"]\n",
+    );
+    let err = format!(
+        "{:#}",
+        pipeline::analyze(&dir, &offline(), &|_| {}).unwrap_err()
+    );
+    assert!(err.contains(".structure/rules.toml"), "{err}");
+    assert!(err.contains("unknown field `name_sufix`"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn invalid_rules_of_a_later_root_fail_the_multi_root_analysis() {
+    let good = project("multi_good", "");
+    let bad = project("multi_bad", "[[rule]]\nlayer = \"view\"\n");
+    let err = format!(
+        "{:#}",
+        pipeline::analyze_many(&[good.clone(), bad.clone()], &offline(), &|_| {}).unwrap_err()
+    );
+    assert!(err.contains("multi_bad"), "{err}");
+    assert!(err.contains(".structure/rules.toml"), "{err}");
+    assert!(err.contains("undeclared layer `view`"), "{err}");
+    let _ = std::fs::remove_dir_all(&good);
+    let _ = std::fs::remove_dir_all(&bad);
+}
+
+/// Shared ids take the first root's label and order; layers only declared
+/// by a later root come after the first root's, before `unknown`.
+#[test]
+fn layers_merge_by_id_across_roots_first_root_wins() {
     let first = project(
         "multi_a",
         "[[layer]]\nid = \"entry\"\nlabel = \"First\"\norder = 3\n",
@@ -125,10 +169,26 @@ fn layers_merge_by_id_across_roots_later_root_wins() {
     );
     let a = pipeline::analyze_many(&[first.clone(), second.clone()], &offline(), &|_| {})
         .expect("analyze");
-    let rows = layer_rows(&a);
-    assert!(rows.contains(&row("entry", "Second", 1)), "{rows:?}");
-    assert!(rows.contains(&row("view", "Views", 0)), "{rows:?}");
-    assert!(!rows.iter().any(|r| r.1 == "First"), "{rows:?}");
+    // The default layers end at `util` (order 7): `view` is appended after it.
+    assert_eq!(
+        layer_rows(&a),
+        [
+            row("entry", "First", 3),
+            row("view", "Views", 8),
+            row("unknown", "unknown", 9)
+        ]
+    );
+    // Swapped roots: the other project is now primary.
+    let b = pipeline::analyze_many(&[second.clone(), first.clone()], &offline(), &|_| {})
+        .expect("analyze");
+    assert_eq!(
+        layer_rows(&b),
+        [
+            row("view", "Views", 0),
+            row("entry", "Second", 1),
+            row("unknown", "unknown", 8)
+        ]
+    );
     let _ = std::fs::remove_dir_all(&first);
     let _ = std::fs::remove_dir_all(&second);
 }

@@ -47,7 +47,9 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     module names (`ir`, `model`, `java`, `ts`, `scip`, `link`, `metrics`, `classify`,
     `layers`, `matrix`, `impact`, `highlight`). Own code: `lang/` (`LanguageFrontend` trait, registry
     `all()`/`frontend()`, Java/TS indexer + detection) and `pipeline/` (`mod`
-    analyze/detect, `indexer`, `process`, `progress`, `snapshot`, `history`) and
+    analyze/detect + `<root>/.structure/rules.toml` merged over the defaults,
+    `multi` several roots — first root's layers win, `indexer`, `process`,
+    `progress`, `snapshot`, `history`) and
     `http_link` (matches TS `http_calls` to Java `http` endpoints → `Http` edges,
     multi-root only) and `rpc_link` (matches GWT `rpc_calls` to the classes
     implementing the sync service → `Rpc` edges, one or several roots) and

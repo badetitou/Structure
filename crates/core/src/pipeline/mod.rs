@@ -28,6 +28,7 @@ use anyhow::{Context, bail};
 use crate::classify::{RuleSet, classify};
 use crate::impact::ImpactIndex;
 use crate::ir::{Graph, Language};
+use crate::layers::Layers;
 use crate::link::{LinkStats, link};
 use crate::matrix;
 use crate::metrics::Metrics;
@@ -83,6 +84,9 @@ pub struct Analysis {
     pub rpc_stats: Option<crate::rpc_link::RpcLinkStats>,
     pub metrics: Metrics,
     pub warnings: Vec<String>,
+    /// Declared layers of the rules used (merged across roots, see
+    /// [`analyze_many`]); the matrix only lists the ones it places symbols in.
+    pub layers: Layers,
     /// Built from `graph` on the first impact (see [`Analysis::impact_index`]).
     impact_index: OnceLock<ImpactIndex>,
 }
@@ -264,21 +268,7 @@ pub(super) fn analyze_in(
 
     step("classifying", 80);
     let t = Instant::now();
-    let mut rules = {
-        let (toml, name) = crate::lang::frontend(lang).default_rules();
-        RuleSet::from_embedded(toml, name)?
-    };
-    let custom = root.join(".structure/rules.toml");
-    if custom.is_file() {
-        let text = std::fs::read_to_string(&custom)
-            .with_context(|| format!("reading {}", custom.display()))?;
-        let user =
-            RuleSet::parse(&text).with_context(|| format!("parsing {}", custom.display()))?;
-        rules = rules.merge(user);
-        rules
-            .validate()
-            .with_context(|| format!("parsing {}", custom.display()))?;
-    }
+    let rules = rules_for(root, lang)?;
     let classification = classify(
         &graph,
         &rules,
@@ -287,12 +277,13 @@ pub(super) fn analyze_in(
     metrics.phase("classify", t, None);
 
     step("building matrix", 95);
+    let layers = rules.layers();
     let t = Instant::now();
     let elapsed = started.elapsed().as_millis() as u64;
     let mut matrix = matrix::build(
         &graph,
         &classification,
-        &rules.layers(),
+        &layers,
         &project_name(root),
         elapsed,
     );
@@ -309,8 +300,35 @@ pub(super) fn analyze_in(
         rpc_stats: (rpc_stats.calls + rpc_stats.maybe_rpc > 0).then_some(rpc_stats),
         metrics,
         warnings,
+        layers,
         impact_index: OnceLock::new(),
     })
+}
+
+/// Path of a project's own rules, relative to its root.
+pub const PROJECT_RULES: &str = ".structure/rules.toml";
+
+/// The language's default rules, with the project's [`PROJECT_RULES`] merged
+/// on top when present ([`RuleSet::merge`]: its rules first, its layers
+/// replacing or added by id). An unreadable, unparsable or invalid project
+/// file is an error naming its path.
+fn rules_for(root: &Path, lang: Language) -> anyhow::Result<RuleSet> {
+    let rules = {
+        let (toml, name) = crate::lang::frontend(lang).default_rules();
+        RuleSet::from_embedded(toml, name)?
+    };
+    let custom = root.join(PROJECT_RULES);
+    if !custom.is_file() {
+        return Ok(rules);
+    }
+    let text = std::fs::read_to_string(&custom)
+        .with_context(|| format!("reading {}", custom.display()))?;
+    let user = RuleSet::parse(&text).with_context(|| format!("invalid {}", custom.display()))?;
+    let rules = rules.merge(user);
+    rules
+        .validate()
+        .with_context(|| format!("invalid {}", custom.display()))?;
+    Ok(rules)
 }
 
 #[cfg(test)]
