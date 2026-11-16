@@ -1,4 +1,4 @@
-//! Diff impact analysis: changed lines from git, changed/impacted classes and cells.
+//! Diff impact analysis: changed lines from git, turned into a `git-diff` highlight and its `Impact`.
 
 use anyhow::{Context, bail};
 use std::path::Path;
@@ -7,7 +7,7 @@ use structure_highlight::{
     Anchor, Direction, HighlightRequest, Propagation, Role, Seed, SourceInfo, highlight,
 };
 use structure_ir::ir::Graph;
-use structure_ir::model::{Classification, Impact, ImpactedCell, ImpactedSymbol};
+use structure_ir::model::{Classification, Impact};
 
 /// Changed line ranges of one file: 0-based, end-exclusive, NEW side.
 /// An empty `lines` means the whole file is considered changed (deleted/renamed/binary).
@@ -380,17 +380,6 @@ fn parse_hunk(line: &str) -> Option<(u32, u32)> {
     }
 }
 
-pub fn analyze(
-    project: &Path,
-    graph: &Graph,
-    cls: &Classification,
-    base: Option<&str>,
-    head: Option<&str>,
-) -> anyhow::Result<Impact> {
-    let changes = changed_lines(project, base, head)?;
-    Ok(compute(graph, cls, &changes, base.unwrap_or("HEAD"), head))
-}
-
 /// What [`compute`] needs from a graph, independent of the diff: built once per
 /// analysis and reused by every impact on it.
 pub use structure_highlight::HighlightIndex as ImpactIndex;
@@ -406,24 +395,13 @@ pub fn compute(
     compute_with(graph, cls, &ImpactIndex::new(graph), changes, base, head)
 }
 
-/// Impact of `changes` on `graph`; `index` must have been built from `graph`.
-/// The highlight of the changed locations (role `Changed`), propagated to
-/// their callers (role `Reached`).
-pub fn compute_with(
-    graph: &Graph,
-    cls: &Classification,
-    index: &ImpactIndex,
-    changes: &[FileChange],
-    base: &str,
-    head: Option<&str>,
-) -> Impact {
-    let mut changed_files: Vec<String> = changes.iter().map(|c| c.file.clone()).collect();
-    changed_files.sort();
-    changed_files.dedup();
-
-    let request = HighlightRequest {
+/// The highlight request of a git diff: one `Location` seed of role
+/// `Changed` per changed file, propagated to callers without depth limit.
+/// Labelled `base..head`, or `base..working tree` when `head` is `None`.
+pub fn diff_request(changes: &[FileChange], base: &str, head: Option<&str>) -> HighlightRequest {
+    HighlightRequest {
         source: SourceInfo {
-            kind: "git-diff".into(),
+            kind: GIT_DIFF.into(),
             label: format!("{base}..{}", head.unwrap_or("working tree")),
         },
         seeds: changes
@@ -440,47 +418,26 @@ pub fn compute_with(
             direction: Direction::Callers,
             max_depth: None,
         },
-    };
-    let h = highlight(graph, cls, index, &request);
+    }
+}
 
-    let mut changed_symbols: Vec<String> = Vec::new();
-    let mut impacted_symbols: Vec<ImpactedSymbol> = Vec::new();
-    for s in h.symbols {
-        match s.role {
-            Role::Changed => changed_symbols.push(s.id),
-            Role::Reached => impacted_symbols.push(ImpactedSymbol {
-                id: s.id,
-                distance: s.distance,
-            }),
-        }
-    }
-    changed_symbols.sort();
-    impacted_symbols.sort_by(|a, b| (a.distance, &a.id).cmp(&(b.distance, &b.id)));
-    let mut changed_cells: Vec<String> = Vec::new();
-    let mut impacted_cells: Vec<ImpactedCell> = Vec::new();
-    for c in h.cells {
-        match c.role {
-            Role::Changed => changed_cells.push(c.id),
-            Role::Reached => impacted_cells.push(ImpactedCell {
-                id: c.id,
-                distance: c.distance,
-            }),
-        }
-    }
-    changed_cells.sort();
-    impacted_cells.sort_by(|a, b| (a.distance, &a.id).cmp(&(b.distance, &b.id)));
+/// [`SourceInfo::kind`] of the highlights built by [`diff_request`].
+pub const GIT_DIFF: &str = "git-diff";
 
-    Impact {
-        base: base.to_string(),
-        head: head.map(str::to_string),
-        changed_files,
-        changed_symbols,
-        changed_cells,
-        impacted_cells,
-        impacted_symbols,
-        warnings: vec![],
-        matrix: None,
-    }
+/// Impact of `changes` on `graph`; `index` must have been built from `graph`.
+/// The [`diff_request`] highlight, turned into an `Impact` by
+/// [`Impact::from_highlight`] (changed = role `Changed`, impacted = the rest).
+pub fn compute_with(
+    graph: &Graph,
+    cls: &Classification,
+    index: &ImpactIndex,
+    changes: &[FileChange],
+    base: &str,
+    head: Option<&str>,
+) -> Impact {
+    let h = highlight(graph, cls, index, &diff_request(changes, base, head));
+    let changed_files = changes.iter().map(|c| c.file.clone()).collect();
+    Impact::from_highlight(base.to_string(), head.map(str::to_string), changed_files, h)
 }
 
 #[cfg(test)]
@@ -686,6 +643,62 @@ diff --git a/M b/M\n--- a/M\n+++ b/M\n@@ -1,2 +1,2 @@\n-a\n\\ No newline at end 
             .map(|s| (s.id.as_str(), s.distance))
             .collect();
         assert_eq!(cells, [("business:a", 1), ("entry:a", 2)]);
+    }
+
+    #[test]
+    fn impact_is_the_git_diff_highlight() {
+        let (g, c) = fixture();
+        let ch = [
+            FileChange {
+                file: "Mapper.java".into(),
+                lines: vec![(6, 7)],
+            },
+            FileChange {
+                file: "MapperTest.java".into(),
+                lines: vec![],
+            },
+        ];
+        let req = diff_request(&ch, "main", Some("topic"));
+        assert_eq!(req.source.kind, GIT_DIFF);
+        assert_eq!(req.source.label, "main..topic");
+        assert_eq!(req.propagate.direction, Direction::Callers);
+        assert_eq!(req.propagate.max_depth, None);
+        assert!(req.seeds.iter().all(|s| s.role == Role::Changed));
+        assert_eq!(
+            req.seeds[0].anchor,
+            Anchor::Location {
+                file: "Mapper.java".into(),
+                lines: vec![(6, 7)]
+            }
+        );
+        assert_eq!(
+            diff_request(&ch, "HEAD", None).source.label,
+            "HEAD..working tree"
+        );
+
+        let h = highlight(&g, &c, &ImpactIndex::new(&g), &req);
+        // The file the graph does not know is an unresolved seed, not an error.
+        assert_eq!(h.unresolved, [req.seeds[1].anchor.clone()]);
+        let roles: Vec<_> = h
+            .symbols
+            .iter()
+            .map(|s| (s.id.as_str(), s.role, s.distance))
+            .collect();
+        assert_eq!(
+            roles,
+            [
+                ("Mapper", Role::Changed, 0),
+                ("Service", Role::Reached, 1),
+                ("Action", Role::Reached, 2)
+            ]
+        );
+        let files = ch.iter().map(|c| c.file.clone()).collect();
+        let via_adapter = Impact::from_highlight("main".into(), Some("topic".into()), files, h);
+        assert_eq!(via_adapter, compute(&g, &c, &ch, "main", Some("topic")));
+        assert_eq!(
+            via_adapter.changed_files,
+            ["Mapper.java", "MapperTest.java"]
+        );
     }
 
     #[test]

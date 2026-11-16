@@ -1,5 +1,6 @@
 //! Matrix, classification and impact output contracts.
 
+use crate::highlight::{Highlight, Role};
 use crate::ir::Language;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -213,6 +214,61 @@ pub struct Impact {
     pub matrix: Option<Matrix>,
 }
 
+impl Impact {
+    /// The single adapter from a git-diff [`Highlight`] to the `Impact` wire
+    /// shape: symbols and cells of role [`Role::Changed`] become
+    /// `changed_symbols` / `changed_cells` (sorted by id); every other role
+    /// becomes `impacted_symbols` / `impacted_cells` with its distance (sorted
+    /// by distance, then id). The highlight's warnings are kept; `matrix` is
+    /// left unset for the caller.
+    pub fn from_highlight(
+        base: String,
+        head: Option<String>,
+        mut changed_files: Vec<String>,
+        highlight: Highlight,
+    ) -> Impact {
+        changed_files.sort();
+        changed_files.dedup();
+        let mut changed_symbols = Vec::new();
+        let mut impacted_symbols = Vec::new();
+        for s in highlight.symbols {
+            match s.role {
+                Role::Changed => changed_symbols.push(s.id),
+                Role::Reached => impacted_symbols.push(ImpactedSymbol {
+                    id: s.id,
+                    distance: s.distance,
+                }),
+            }
+        }
+        let mut changed_cells = Vec::new();
+        let mut impacted_cells = Vec::new();
+        for c in highlight.cells {
+            match c.role {
+                Role::Changed => changed_cells.push(c.id),
+                Role::Reached => impacted_cells.push(ImpactedCell {
+                    id: c.id,
+                    distance: c.distance,
+                }),
+            }
+        }
+        changed_symbols.sort();
+        changed_cells.sort();
+        impacted_symbols.sort_by(|a, b| (a.distance, &a.id).cmp(&(b.distance, &b.id)));
+        impacted_cells.sort_by(|a, b| (a.distance, &a.id).cmp(&(b.distance, &b.id)));
+        Impact {
+            base,
+            head,
+            changed_files,
+            changed_symbols,
+            changed_cells,
+            impacted_cells,
+            impacted_symbols,
+            warnings: highlight.warnings,
+            matrix: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ImpactedCell {
@@ -392,5 +448,61 @@ mod tests {
         for c in &m.cells {
             assert_eq!(c.id, Cell::id_for(c.layer, &c.domain));
         }
+    }
+
+    #[test]
+    fn impact_from_highlight_splits_by_role() {
+        use crate::highlight::{HighlightedCell, HighlightedSymbol, SourceInfo};
+        let sym = |id: &str, role, distance| HighlightedSymbol {
+            id: id.into(),
+            role,
+            distance,
+        };
+        let cell = |id: &str, role, distance| HighlightedCell {
+            id: id.into(),
+            role,
+            distance,
+        };
+        let h = Highlight {
+            source: SourceInfo {
+                kind: "git-diff".into(),
+                label: "HEAD..working tree".into(),
+            },
+            symbols: vec![
+                sym("B", Role::Changed, 0),
+                sym("A", Role::Changed, 0),
+                sym("Z", Role::Reached, 1),
+                sym("Y", Role::Reached, 2),
+                sym("X", Role::Reached, 1),
+            ],
+            cells: vec![
+                cell("entry:a", Role::Reached, 2),
+                cell("model:a", Role::Changed, 0),
+                cell("business:a", Role::Reached, 1),
+            ],
+            unresolved: vec![],
+            warnings: vec!["w".into()],
+        };
+        let files = vec!["b.java".into(), "a.java".into(), "b.java".into()];
+        let i = Impact::from_highlight("HEAD".into(), None, files, h);
+        assert_eq!(i.base, "HEAD");
+        assert_eq!(i.head, None);
+        assert_eq!(i.changed_files, ["a.java", "b.java"]);
+        assert_eq!(i.changed_symbols, ["A", "B"]);
+        assert_eq!(i.changed_cells, ["model:a"]);
+        let syms: Vec<_> = i
+            .impacted_symbols
+            .iter()
+            .map(|s| (s.id.as_str(), s.distance))
+            .collect();
+        assert_eq!(syms, [("X", 1), ("Z", 1), ("Y", 2)]);
+        let cells: Vec<_> = i
+            .impacted_cells
+            .iter()
+            .map(|c| (c.id.as_str(), c.distance))
+            .collect();
+        assert_eq!(cells, [("business:a", 1), ("entry:a", 2)]);
+        assert_eq!(i.warnings, ["w"]);
+        assert!(i.matrix.is_none());
     }
 }
