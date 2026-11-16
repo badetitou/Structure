@@ -238,6 +238,132 @@ pub(crate) fn clean_path(p: &str) -> &str {
         .unwrap_or(p)
 }
 
+/// Changed lines of a unified diff TEXT (any number of context lines, e.g. the
+/// 3 of a GitHub `.diff`), without running git. Walks hunk bodies, so context
+/// lines are never reported. Same convention as [`FileChange`]: 0-based,
+/// end-exclusive, NEW side; adjacent changed lines form one range; a block of
+/// deletions with no added line maps to `(k, k + 1)`, `k` being the new-side
+/// index of the line following it (what `-U0` parsing yields). Deleted files
+/// have no lines; binary files and pure renames have empty `lines` (whole file).
+/// Quoted (escaped) paths are not supported beyond surrounding quotes.
+pub fn changes_from_diff(diff: &str) -> Vec<FileChange> {
+    let mut out: Vec<FileChange> = Vec::new();
+    let mut cur: Option<FileChange> = None;
+    let mut old_path: Option<String> = None;
+    let mut deleted = false;
+    // Hunk state: remaining old/new body lines, next new-side index, current
+    // change block (start of its added run, position of its deletions).
+    let (mut rem_old, mut rem_new) = (0u32, 0u32);
+    let mut n = 0u32;
+    let mut run: Option<u32> = None;
+    let mut del_at: Option<u32> = None;
+    fn flush(
+        cur: &mut Option<FileChange>,
+        deleted: bool,
+        n: u32,
+        run: &mut Option<u32>,
+        del_at: &mut Option<u32>,
+    ) {
+        if let Some(c) = cur.as_mut().filter(|_| !deleted) {
+            if let Some(s) = run.take() {
+                c.lines.push((s, n));
+            } else if let Some(k) = del_at.take() {
+                c.lines.push((k, k + 1));
+            }
+        }
+        *run = None;
+        *del_at = None;
+    }
+    for line in diff.lines() {
+        if rem_old > 0 || rem_new > 0 {
+            match line.as_bytes().first() {
+                Some(b'+') => {
+                    run.get_or_insert(n);
+                    n += 1;
+                    rem_new = rem_new.saturating_sub(1);
+                }
+                Some(b'-') => {
+                    del_at.get_or_insert(n);
+                    rem_old = rem_old.saturating_sub(1);
+                }
+                Some(b'\\') => {}
+                _ => {
+                    flush(&mut cur, deleted, n, &mut run, &mut del_at);
+                    n += 1;
+                    rem_old = rem_old.saturating_sub(1);
+                    rem_new = rem_new.saturating_sub(1);
+                }
+            }
+            if rem_old == 0 && rem_new == 0 {
+                flush(&mut cur, deleted, n, &mut run, &mut del_at);
+            }
+            continue;
+        }
+        if line.starts_with("diff --git ") {
+            out.extend(cur.take());
+            old_path = None;
+            deleted = false;
+            cur = Some(FileChange {
+                file: String::new(),
+                lines: vec![],
+            });
+        } else if let Some(p) = line.strip_prefix("rename to ") {
+            if let Some(c) = cur.as_mut() {
+                c.file = clean_path(p).to_string();
+            }
+        } else if let Some(p) = line.strip_prefix("--- ") {
+            old_path = clean_path(p).strip_prefix("a/").map(str::to_string);
+        } else if let Some(p) = line.strip_prefix("+++ ") {
+            if let Some(c) = cur.as_mut() {
+                c.file = match clean_path(p).strip_prefix("b/") {
+                    Some(f) => f.to_string(),
+                    None => {
+                        deleted = true;
+                        old_path.clone().unwrap_or_default()
+                    }
+                };
+            }
+        } else if let Some(rest) = line
+            .strip_prefix("Binary files ")
+            .and_then(|r| r.strip_suffix(" differ"))
+        {
+            // "a/X and b/Y" (or /dev/null on one side): name the new path.
+            if let Some(c) = cur.as_mut().filter(|c| c.file.is_empty())
+                && let Some((a, b)) = rest.split_once(" and ")
+            {
+                let f = clean_path(b)
+                    .strip_prefix("b/")
+                    .or_else(|| clean_path(a).strip_prefix("a/"));
+                c.file = f.unwrap_or_default().to_string();
+            }
+        } else if line.starts_with("@@ ")
+            && let Some(((_, oc), (ns, nc))) = hunk_header(line)
+        {
+            rem_old = oc;
+            rem_new = nc;
+            n = if nc == 0 { ns } else { ns.saturating_sub(1) };
+        }
+    }
+    flush(&mut cur, deleted, n, &mut run, &mut del_at);
+    out.extend(cur);
+    out.retain(|c| !c.file.is_empty());
+    out
+}
+
+/// `@@ -os[,oc] +ns[,nc] @@` -> ((os, oc), (ns, nc)); a missing count is 1.
+fn hunk_header(line: &str) -> Option<((u32, u32), (u32, u32))> {
+    fn side(t: &str) -> Option<(u32, u32)> {
+        match t.split_once(',') {
+            Some((s, c)) => Some((s.parse().ok()?, c.parse().ok()?)),
+            None => Some((t.parse().ok()?, 1)),
+        }
+    }
+    let mut it = line.split_whitespace().skip(1);
+    let old = side(it.next()?.strip_prefix('-')?)?;
+    let new = side(it.next()?.strip_prefix('+')?)?;
+    Some((old, new))
+}
+
 fn parse_hunk(line: &str) -> Option<(u32, u32)> {
     let new = line.split_whitespace().find(|t| t.starts_with('+'))?;
     let new = &new[1..];
@@ -515,6 +641,51 @@ diff --git a/D b/D\ndeleted file mode 100644\n--- a/D\n+++ /dev/null\n@@ -1,3 +0
         );
         assert_eq!(v[4].file, "D");
         assert!(v[4].lines.is_empty());
+    }
+
+    #[test]
+    fn diff_text_u3_equals_u0() {
+        let u3 = "diff --git a/A b/A\n--- a/A\n+++ b/A\n@@ -2,7 +2,8 @@\n c1\n c2\n c3\n-old\n+new\n+new2\n c4\n c5\n c6\n@@ -20,7 +21,6 @@\n d1\n d2\n d3\n-gone\n d4\n d5\n d6\n";
+        let u0 = "diff --git a/A b/A\n--- a/A\n+++ b/A\n@@ -5 +5,2 @@\n-old\n+new\n+new2\n@@ -23 +23,0 @@\n-gone\n";
+        let expect = vec![FileChange {
+            file: "A".into(),
+            lines: vec![(4, 6), (23, 24)],
+        }];
+        assert_eq!(changes_from_diff(u3), expect);
+        assert_eq!(changes_from_diff(u0), expect);
+        assert_eq!(parse_diff(u0), expect);
+    }
+
+    #[test]
+    fn diff_text_added_deleted_renamed_binary_multi() {
+        let d = "diff --git a/N b/N\nnew file mode 100644\n--- /dev/null\n+++ b/N\n@@ -0,0 +1,2 @@\n+a\n+b\n\\ No newline at end of file\n\
+diff --git a/D b/D\ndeleted file mode 100644\n--- a/D\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-a\n-b\n\
+diff --git a/Old b/New\nsimilarity index 100%\nrename from Old\nrename to New\n\
+diff --git a/Old2 b/New2\nsimilarity index 80%\nrename from Old2\nrename to New2\n--- a/Old2\n+++ b/New2\n@@ -1,3 +1,3 @@\n x\n-y\n+z\n w\n\
+diff --git a/i.png b/i.png\nindex 1..2 100644\nBinary files a/i.png and b/i.png differ\n\
+diff --git a/M b/M\n--- a/M\n+++ b/M\n@@ -1,2 +1,2 @@\n-a\n\\ No newline at end of file\n+b\n\\ No newline at end of file\n c\n";
+        let v = changes_from_diff(d);
+        let got: Vec<(&str, Vec<(u32, u32)>)> = v
+            .iter()
+            .map(|c| (c.file.as_str(), c.lines.clone()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("N", vec![(0, 2)]),
+                ("D", vec![]),
+                ("New", vec![]),
+                ("New2", vec![(1, 2)]),
+                ("i.png", vec![]),
+                ("M", vec![(0, 1)]),
+            ]
+        );
+    }
+
+    #[test]
+    fn diff_text_context_not_changed_and_adjacent_merge() {
+        let d = "diff --git a/A b/A\n--- a/A\n+++ b/A\n@@ -1,4 +1,7 @@\n a\n+b\n+c\n-d\n+e\n f\n+g\n h\n";
+        assert_eq!(changes_from_diff(d)[0].lines, vec![(1, 4), (5, 6)]);
     }
 
     fn sym(id: &str, container: Option<&str>, file: &str, s: u32, e: u32) -> Symbol {

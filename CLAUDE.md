@@ -67,6 +67,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 ## Workflow
 
 - Team and retro history: `.claude/team.md`.
-- Start a task with the `task-prep` skill. No remote yet: skip GitHub issues
-  and the project board; one task → one local branch `<slug>`.
+- Start a task with the `task-prep` skill. Issues live on GitHub
+  (`badetitou/Structure`, `github-flow` skill): English issues, branch
+  `<issue>-<slug>`, PR with `Closes #N`. `.claude/issues/*.md` is the archived
+  local tracker (its `remote:` field = GitHub issue number); don't add to it.
 - Commit only when asked. No Claude attribution in commits.
