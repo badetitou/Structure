@@ -1,11 +1,13 @@
 //! Diff impact analysis: changed lines from git, changed/impacted classes and cells.
 
 use anyhow::{Context, bail};
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::Path;
 use std::process::Command;
+use structure_highlight::{
+    Anchor, Direction, HighlightRequest, Propagation, Role, Seed, SourceInfo, highlight,
+};
 use structure_ir::ir::Graph;
-use structure_ir::model::{Cell, Classification, Impact, ImpactedCell, ImpactedSymbol};
+use structure_ir::model::{Classification, Impact, ImpactedCell, ImpactedSymbol};
 
 /// Changed line ranges of one file: 0-based, end-exclusive, NEW side.
 /// An empty `lines` means the whole file is considered changed (deleted/renamed/binary).
@@ -390,91 +392,8 @@ pub fn analyze(
 }
 
 /// What [`compute`] needs from a graph, independent of the diff: built once per
-/// analysis and reused by every impact on it. Symbols are indices into
-/// `Graph::symbols`; on duplicate ids the last symbol stands for the id.
-#[derive(Debug, Clone, Default)]
-pub struct ImpactIndex {
-    /// Top-level ancestor of each symbol's id; `None` on a container cycle.
-    top: Vec<Option<u32>>,
-    /// Symbols of each file, in graph order.
-    by_file: HashMap<String, Vec<u32>>,
-    /// `callers[caller_start[t]..caller_start[t + 1]]`: top-level symbols with
-    /// an edge to top-level symbol `t` (deduplicated, never `t` itself).
-    caller_start: Vec<u32>,
-    callers: Vec<u32>,
-}
-
-impl ImpactIndex {
-    pub fn new(graph: &Graph) -> ImpactIndex {
-        let n = graph.symbols.len();
-        let by_id: HashMap<&str, u32> = graph
-            .symbols
-            .iter()
-            .enumerate()
-            .map(|(i, s)| (s.id.as_str(), i as u32))
-            .collect();
-        let lift = |id: &str| -> Option<u32> {
-            let mut cur = *by_id.get(id)?;
-            for _ in 0..=n {
-                match graph.symbols[cur as usize]
-                    .container
-                    .as_deref()
-                    .and_then(|c| by_id.get(c))
-                {
-                    Some(&p) => cur = p,
-                    None => return Some(cur),
-                }
-            }
-            None
-        };
-        let top: Vec<Option<u32>> = graph.symbols.iter().map(|s| lift(&s.id)).collect();
-        let top_of = |id: &str| by_id.get(id).and_then(|&i| top[i as usize]);
-
-        let mut by_file: HashMap<String, Vec<u32>> = HashMap::new();
-        for (i, s) in graph.symbols.iter().enumerate() {
-            match by_file.get_mut(s.file.as_str()) {
-                Some(v) => v.push(i as u32),
-                None => {
-                    by_file.insert(s.file.clone(), vec![i as u32]);
-                }
-            }
-        }
-
-        // (callee, caller) pairs, sorted and deduplicated, then laid out per callee.
-        let mut pairs: Vec<(u32, u32)> = graph
-            .edges
-            .iter()
-            .filter_map(|e| match (top_of(&e.from), top_of(&e.to)) {
-                (Some(f), Some(t)) if f != t => Some((t, f)),
-                _ => None,
-            })
-            .collect();
-        pairs.sort_unstable();
-        pairs.dedup();
-        let mut caller_start = vec![0u32; n + 1];
-        for &(t, _) in &pairs {
-            caller_start[t as usize + 1] += 1;
-        }
-        for i in 0..n {
-            caller_start[i + 1] += caller_start[i];
-        }
-        let callers = pairs.into_iter().map(|(_, f)| f).collect();
-        ImpactIndex {
-            top,
-            by_file,
-            caller_start,
-            callers,
-        }
-    }
-
-    fn callers_of(&self, t: u32) -> &[u32] {
-        let (a, b) = (
-            self.caller_start[t as usize],
-            self.caller_start[t as usize + 1],
-        );
-        &self.callers[a as usize..b as usize]
-    }
-}
+/// analysis and reused by every impact on it.
+pub use structure_highlight::HighlightIndex as ImpactIndex;
 
 /// [`compute_with`] on an index built for this call only.
 pub fn compute(
@@ -488,7 +407,8 @@ pub fn compute(
 }
 
 /// Impact of `changes` on `graph`; `index` must have been built from `graph`.
-/// The composition of `resolve`, `propagate` and `aggregate`.
+/// The highlight of the changed locations (role `Changed`), propagated to
+/// their callers (role `Reached`).
 pub fn compute_with(
     graph: &Graph,
     cls: &Classification,
@@ -497,28 +417,58 @@ pub fn compute_with(
     base: &str,
     head: Option<&str>,
 ) -> Impact {
-    let id = |i: u32| graph.symbols[i as usize].id.as_str();
-
     let mut changed_files: Vec<String> = changes.iter().map(|c| c.file.clone()).collect();
     changed_files.sort();
     changed_files.dedup();
 
-    let changed = resolve(graph, index, changes);
-    let mut impacted_symbols: Vec<ImpactedSymbol> = propagate(index, &changed)
-        .into_iter()
-        .map(|(i, distance)| ImpactedSymbol {
-            id: id(i).to_string(),
-            distance,
-        })
-        .collect();
-    impacted_symbols.sort_by(|a, b| (a.distance, &a.id).cmp(&(b.distance, &b.id)));
-    let mut changed_symbols: Vec<String> = changed.iter().map(|&i| id(i).to_string()).collect();
-    changed_symbols.sort();
+    let request = HighlightRequest {
+        source: SourceInfo {
+            kind: "git-diff".into(),
+            label: format!("{base}..{}", head.unwrap_or("working tree")),
+        },
+        seeds: changes
+            .iter()
+            .map(|c| Seed {
+                anchor: Anchor::Location {
+                    file: c.file.clone(),
+                    lines: c.lines.clone(),
+                },
+                role: Role::Changed,
+            })
+            .collect(),
+        propagate: Propagation {
+            direction: Direction::Callers,
+            max_depth: None,
+        },
+    };
+    let h = highlight(graph, cls, index, &request);
 
-    let CellImpact {
-        changed: changed_cells,
-        impacted: impacted_cells,
-    } = aggregate(cls, &changed_symbols, &impacted_symbols);
+    let mut changed_symbols: Vec<String> = Vec::new();
+    let mut impacted_symbols: Vec<ImpactedSymbol> = Vec::new();
+    for s in h.symbols {
+        match s.role {
+            Role::Changed => changed_symbols.push(s.id),
+            Role::Reached => impacted_symbols.push(ImpactedSymbol {
+                id: s.id,
+                distance: s.distance,
+            }),
+        }
+    }
+    changed_symbols.sort();
+    impacted_symbols.sort_by(|a, b| (a.distance, &a.id).cmp(&(b.distance, &b.id)));
+    let mut changed_cells: Vec<String> = Vec::new();
+    let mut impacted_cells: Vec<ImpactedCell> = Vec::new();
+    for c in h.cells {
+        match c.role {
+            Role::Changed => changed_cells.push(c.id),
+            Role::Reached => impacted_cells.push(ImpactedCell {
+                id: c.id,
+                distance: c.distance,
+            }),
+        }
+    }
+    changed_cells.sort();
+    impacted_cells.sort_by(|a, b| (a.distance, &a.id).cmp(&(b.distance, &b.id)));
 
     Impact {
         base: base.to_string(),
@@ -530,100 +480,6 @@ pub fn compute_with(
         impacted_symbols,
         warnings: vec![],
         matrix: None,
-    }
-}
-
-/// Resolve step: the top-level symbols (indices into `graph.symbols`) whose
-/// range overlaps a changed line range. A change with no lines, or a range
-/// outside every symbol of its file (package, imports, file comments), marks
-/// every symbol of the file. Files the graph does not know mark nothing.
-fn resolve(graph: &Graph, index: &ImpactIndex, changes: &[FileChange]) -> BTreeSet<u32> {
-    let mut changed: BTreeSet<u32> = BTreeSet::new();
-    for ch in changes {
-        let spans: Vec<(u32, u32, u32)> = index
-            .by_file
-            .get(ch.file.as_str())
-            .into_iter()
-            .flatten()
-            .map(|&i| {
-                let r = &graph.symbols[i as usize].range;
-                let st = r.start_line;
-                let en = (r.end_line + u32::from(r.end_col > 0)).max(st + 1);
-                (i, st, en)
-            })
-            .collect();
-        let whole = ch.lines.is_empty()
-            || ch
-                .lines
-                .iter()
-                .any(|&(a, b)| !spans.iter().any(|&(_, st, en)| st < b && a < en));
-        for &(i, st, en) in &spans {
-            if whole || ch.lines.iter().any(|&(a, b)| st < b && a < en) {
-                changed.extend(index.top[i as usize]);
-            }
-        }
-    }
-    changed
-}
-
-/// Propagate step: breadth-first over callers of the top-level `seeds`. Returns
-/// every reached top-level symbol that is not a seed, with its shortest
-/// distance (>= 1) from any seed.
-fn propagate(index: &ImpactIndex, seeds: &BTreeSet<u32>) -> HashMap<u32, u32> {
-    let mut dist: HashMap<u32, u32> = seeds.iter().map(|&c| (c, 0)).collect();
-    let mut queue: VecDeque<(u32, u32)> = seeds.iter().map(|&c| (c, 0)).collect();
-    while let Some((t, d)) = queue.pop_front() {
-        for &caller in index.callers_of(t) {
-            if let std::collections::hash_map::Entry::Vacant(e) = dist.entry(caller) {
-                e.insert(d + 1);
-                queue.push_back((caller, d + 1));
-            }
-        }
-    }
-    dist.retain(|i, _| !seeds.contains(i));
-    dist
-}
-
-/// Cells touched by an impact, as [`aggregate`] computes them.
-#[derive(Debug, Clone, PartialEq)]
-struct CellImpact {
-    /// Cells of the changed symbols, sorted.
-    changed: Vec<String>,
-    /// Other cells of impacted symbols, with the smallest distance of their
-    /// symbols, sorted by (distance, id).
-    impacted: Vec<ImpactedCell>,
-}
-
-/// Aggregate step: symbols to `layer:domain` cells through the classification.
-/// Unplaced symbols have no cell; a changed cell is never also impacted.
-fn aggregate(
-    cls: &Classification,
-    changed_symbols: &[String],
-    impacted_symbols: &[ImpactedSymbol],
-) -> CellImpact {
-    let cell_of = |id: &str| {
-        cls.placements
-            .get(id)
-            .map(|p| Cell::id_for(p.layer, &p.domain))
-    };
-    let changed: BTreeSet<String> = changed_symbols.iter().filter_map(|s| cell_of(s)).collect();
-    let mut cell_dist: BTreeMap<String, u32> = BTreeMap::new();
-    for s in impacted_symbols {
-        if let Some(c) = cell_of(&s.id)
-            && !changed.contains(&c)
-        {
-            let e = cell_dist.entry(c).or_insert(s.distance);
-            *e = (*e).min(s.distance);
-        }
-    }
-    let mut impacted: Vec<ImpactedCell> = cell_dist
-        .into_iter()
-        .map(|(id, distance)| ImpactedCell { id, distance })
-        .collect();
-    impacted.sort_by(|a, b| (a.distance, &a.id).cmp(&(b.distance, &b.id)));
-    CellImpact {
-        changed: changed.into_iter().collect(),
-        impacted,
     }
 }
 
@@ -965,105 +821,6 @@ diff --git a/M b/M\n--- a/M\n+++ b/M\n@@ -1,2 +1,2 @@\n-a\n\\ No newline at end 
             compute_with(&g, &c, &index, &ch("X.java"), "HEAD", None)
                 .changed_symbols
                 .is_empty()
-        );
-    }
-
-    /// Indices of `ids` in `g.symbols` (first match).
-    fn idx(g: &Graph, ids: &[&str]) -> BTreeSet<u32> {
-        ids.iter()
-            .filter_map(|id| g.symbols.iter().position(|s| s.id == *id))
-            .map(|i| i as u32)
-            .collect()
-    }
-
-    #[test]
-    fn resolve_lifts_overlaps_to_top_level() {
-        let (g, _) = fixture();
-        let index = ImpactIndex::new(&g);
-        let fc = |file: &str, lines: Vec<(u32, u32)>| FileChange {
-            file: file.into(),
-            lines,
-        };
-        // A method body: its class only.
-        assert_eq!(
-            resolve(&g, &index, &[fc("Mapper.java", vec![(6, 7)])]),
-            idx(&g, &["Mapper"])
-        );
-        // Several files at once; an unknown file marks nothing.
-        assert_eq!(
-            resolve(
-                &g,
-                &index,
-                &[
-                    fc("Service.java", vec![(4, 5)]),
-                    fc("Iface.java", vec![]),
-                    fc("Nope.java", vec![(0, 1)]),
-                ]
-            ),
-            idx(&g, &["Service", "Iface"])
-        );
-        // A range past every symbol marks the whole file.
-        assert_eq!(
-            resolve(&g, &index, &[fc("Action.java", vec![(40, 41)])]),
-            idx(&g, &["Action"])
-        );
-        assert!(resolve(&g, &index, &[]).is_empty());
-    }
-
-    #[test]
-    fn propagate_returns_non_seed_distances() {
-        let (g, _) = fixture();
-        let index = ImpactIndex::new(&g);
-        let by_id = |m: HashMap<u32, u32>| -> BTreeMap<String, u32> {
-            m.into_iter()
-                .map(|(i, d)| (g.symbols[i as usize].id.clone(), d))
-                .collect()
-        };
-        let got = by_id(propagate(&index, &idx(&g, &["Mapper"])));
-        assert_eq!(
-            got,
-            BTreeMap::from([("Service".into(), 1), ("Action".into(), 2)])
-        );
-        // A seed reached from another seed stays out; distances are shortest.
-        let got = by_id(propagate(&index, &idx(&g, &["Mapper", "Service"])));
-        assert_eq!(got, BTreeMap::from([("Action".into(), 1)]));
-        // No callers, no seeds: nothing.
-        assert!(propagate(&index, &idx(&g, &["Lonely"])).is_empty());
-        assert!(propagate(&index, &BTreeSet::new()).is_empty());
-    }
-
-    #[test]
-    fn aggregate_maps_symbols_to_cells() {
-        let (_, c) = fixture();
-        let imp = |id: &str, distance: u32| ImpactedSymbol {
-            id: id.into(),
-            distance,
-        };
-        let got = aggregate(
-            &c,
-            &["Mapper".into(), "Iface".into(), "Lonely".into()],
-            &[
-                imp("Action", 3),
-                imp("Service", 2),
-                imp("Impl", 1),
-                imp("User", 1),
-                imp("Service", 1),
-            ],
-        );
-        assert_eq!(got.changed, ["business:b", "persistence:a"]);
-        // Impl shares a changed cell; User is unplaced; the min distance wins.
-        let cells: Vec<_> = got
-            .impacted
-            .iter()
-            .map(|s| (s.id.as_str(), s.distance))
-            .collect();
-        assert_eq!(cells, [("business:a", 1), ("entry:a", 3)]);
-        assert_eq!(
-            aggregate(&c, &[], &[]),
-            CellImpact {
-                changed: vec![],
-                impacted: vec![],
-            }
         );
     }
 }

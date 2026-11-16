@@ -15,6 +15,8 @@ test, without the variable, fails in `cargo test` when the files are stale).
 `app/ui/src/api.ts` re-exports them under the names the UI uses
 (`Project` as `ProjectInfo`, wire `Matrix`/`Impact` as `WireMatrix`/`WireImpact`)
 and derives the UI-only `Matrix`/`Impact` (edges expanded to `CellEdge`s).
+The highlight model (`crates/ir/src/highlight.rs`: `HighlightRequest`,
+`Highlight`) is generated too; no command returns it yet.
 
 ## Commands
 

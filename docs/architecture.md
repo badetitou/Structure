@@ -84,9 +84,11 @@ Cible :
 
 ## 5. Highlights (overlays)
 
-`compute_with` (`crates/git/src/impact.rs`) enchaîne déjà trois étapes :
-résoudre (fichier + lignes → symboles), propager (BFS des appelants), agréger
-(symboles → cellules).
+Les trois étapes de l'impact — résoudre (ancres → symboles), propager (BFS
+des appelants ou appelés), agréger (symboles → cellules) — sont dans la crate
+pure `structure-highlight` (contrats dans `crates/ir/src/highlight.rs`) ;
+`compute_with` (`crates/git/src/impact.rs`) n'y ajoute que git. En JSON,
+`Anchor` est étiqueté par `kind` (`Symbol { id }` plutôt que `Symbol(String)`).
 
 Cible, dans le code pur :
 

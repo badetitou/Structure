@@ -8,6 +8,7 @@ pub mod rpc_link;
 
 pub use structure_classify::{classify, matrix};
 pub use structure_git::{diff, impact};
+pub use structure_highlight as highlight;
 pub use structure_ir::{ir, model};
 pub use structure_lang_java as java;
 pub use structure_lang_pharo as pharo;

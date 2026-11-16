@@ -7,6 +7,7 @@ members = [
     "crates/lang-pharo",
     "crates/scip",
     "crates/classify",
+    "crates/highlight",
     "crates/git",
     "crates/core",
     "crates/cli",

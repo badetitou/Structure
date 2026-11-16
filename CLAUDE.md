@@ -19,9 +19,11 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 ## Map
 
 - `Cargo.toml` — virtual workspace (edition 2024); `app/` (Tauri) is excluded.
-- `crates/` — one-way deps `ir` <- `lang-java`/`lang-ts`/`lang-pharo`/`scip`/`classify`/`git` <- `core` <- `cli`:
+- `crates/` — one-way deps `ir` <- `lang-java`/`lang-ts`/`lang-pharo`/`scip`/`classify`/`highlight` <- `git` <- `core` <- `cli`
+  (`git` needs only `ir` and `highlight`; the others go straight to `core`):
   - `ir` (`structure-ir`): `ir` (Graph/Symbol/Edge), `model`
-    (Layer/Matrix/Impact/Progress) — contracts, serde only; feature `ts`
+    (Layer/Matrix/Impact/Progress), `highlight` (Anchor/Seed/HighlightRequest/
+    Highlight) — contracts, serde only; feature `ts`
     derives the TS declarations (ts-rs; module `ts`, test `generated_ts_types`).
   - `lang-pharo` (`structure-lang-pharo`): hand-written Tonel reader (classes,
     methods, superclass and `Uses` edges; no `Call` edges yet).
@@ -33,11 +35,15 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
   - `classify` (`structure-classify`): `classify` + `rules/*.toml` (embedded
     layer/domain rules, per-language default rules and module separator);
     `matrix` — quotient graph.
-  - `git` (`structure-git`): `impact` (git diff → changed/impacted cells) and
+  - `highlight` (`structure-highlight`): pure (wasm-safe) highlight model over a
+    graph: `HighlightIndex`, `resolve` (anchors → top-level symbols),
+    `propagate` (callers/callees BFS), `aggregate` (→ cells), `highlight`.
+  - `git` (`structure-git`): `impact` (git diff → changed/impacted cells, a
+    `git-diff` highlight; `ImpactIndex` = `HighlightIndex`) and
     ref/fingerprint helpers (`resolve_base`, `resolve_commit`, `worktree_fingerprint`).
   - `core` (`structure-core`): facade, re-exports the crates above under their old
     module names (`ir`, `model`, `java`, `ts`, `scip`, `link`, `metrics`, `classify`,
-    `matrix`, `impact`). Own code: `lang/` (`LanguageFrontend` trait, registry
+    `matrix`, `impact`, `highlight`). Own code: `lang/` (`LanguageFrontend` trait, registry
     `all()`/`frontend()`, Java/TS indexer + detection) and `pipeline/` (`mod`
     analyze/detect, `indexer`, `process`, `progress`, `snapshot`, `history`) and
     `http_link` (matches TS `http_calls` to Java `http` endpoints → `Http` edges,
