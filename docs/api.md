@@ -2,8 +2,19 @@
 
 The UI talks to the Rust side through five commands and one event. JSON field
 names are snake_case; enums are snake_case strings. Rust definitions live in
-`crates/core/src/model.rs` and `ir.rs`. Samples: `docs/samples/matrix.json`,
+`crates/ir/src/model.rs` and `ir.rs`. Samples: `docs/samples/matrix.json`,
 `docs/samples/impact.json`.
+
+The TypeScript declarations of these types are generated from the Rust ones
+(ts-rs, feature `ts` of `structure-ir`) into `app/ui/src/generated/`, one file
+per type; do not edit them. A field the backend omits when empty or `None`
+(`skip_serializing_if`) is optional (`field?: T`), never `null`; `u64` is a
+`number`. Regenerate after changing a wire type:
+`UPDATE_TS_TYPES=1 cargo test -p structure-ir generated_ts_types` (the same
+test, without the variable, fails in `cargo test` when the files are stale).
+`app/ui/src/api.ts` re-exports them under the names the UI uses
+(`Project` as `ProjectInfo`, wire `Matrix`/`Impact` as `WireMatrix`/`WireImpact`)
+and derives the UI-only `Matrix`/`Impact` (edges expanded to `CellEdge`s).
 
 ## Commands
 

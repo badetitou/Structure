@@ -39,7 +39,8 @@ Cible :
 ## 2. Couches configurables
 
 Les règles nomment déjà les couches par chaîne ; seuls la liste et l'ordre
-sont figés (enum `Layer` dans `model.rs`, type `Layer` dans `api.ts`).
+sont figés (enum `Layer` dans `model.rs`, type `Layer` généré dans
+`app/ui/src/generated/`).
 
 Cible :
 - `Layer` devient `LayerId(String)` ; `Matrix.layers` porte les définitions
@@ -61,8 +62,9 @@ Cible :
 - engine Rust `Session` : possède le cache, expose `open(paths)`, `matrix`,
   `cell_symbols`, `highlight(request)`, `reclassify`, `history`, `diff` ;
   commandes Tauri, CLI et (sous-ensemble) wasm passent par elle ;
-- types TS générés depuis Rust (`ts-rs` ou `specta`) — nouvelle dépendance,
-  justifiée par la dérive entre `model.rs` et `api.ts` ;
+- types TS générés depuis Rust — fait (#83) : `ts-rs`, derive derrière la
+  feature `ts` de `structure-ir`, fichiers commités dans
+  `app/ui/src/generated/`, un test échoue s'ils sont périmés ;
 - `Backend` TS avec `capabilities { history, diff, pickFolder,
   highlightSources[] }` dont dérivent les `available()` des panneaux ;
   `AppState` découpé en stores : analyse, highlights, sélection, git.
