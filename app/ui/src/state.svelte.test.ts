@@ -559,5 +559,8 @@ describe("AppState capabilities", () => {
     const s = await loaded();
     expect(s.historyAvailable).toBe(true);
     expect(s.diffAvailable).toBe(false);
+    await s.loadDiff(null, null);
+    expect(mocked.diff).not.toHaveBeenCalled();
+    expect(s.diff).toBeNull();
   });
 });
