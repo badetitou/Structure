@@ -9,7 +9,7 @@ mod progress;
 pub mod scip_cache;
 mod snapshot;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 
 pub use crate::lang::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts_index_args};
 pub use crate::lang::{SCIP_JAVA_VERSION, SCIP_TS_VERSION};

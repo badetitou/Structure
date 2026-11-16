@@ -6,8 +6,7 @@ mod commands;
 fn main() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(commands::AnalysisCache::default())
-        .manage(commands::SnapshotLock::default())
+        .manage(structure_core::session::Session::new())
         .invoke_handler(tauri::generate_handler![
             commands::analyze,
             commands::impact,

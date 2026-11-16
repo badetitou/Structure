@@ -4,7 +4,7 @@ use crate::impact;
 
 use super::Options;
 
-pub(super) fn git_ok(dir: &Path, args: &[&str]) -> String {
+pub(crate) fn git_ok(dir: &Path, args: &[&str]) -> String {
     let cfg = [
         "-c",
         "user.name=t",
@@ -19,7 +19,7 @@ pub(super) fn git_ok(dir: &Path, args: &[&str]) -> String {
 
 /// Repo with a Java project in `app/`. c0: class A (line 1); c1 adds class B
 /// (line 2); c2 prepends a comment line, so B moves to line 3.
-pub(super) fn temp_repo(tag: &str) -> (PathBuf, String, String) {
+pub(crate) fn temp_repo(tag: &str) -> (PathBuf, String, String) {
     let dir = std::env::temp_dir().join(format!("structure-snap-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("app/src")).unwrap();
@@ -42,7 +42,7 @@ pub(super) fn temp_repo(tag: &str) -> (PathBuf, String, String) {
     (dir, c1, c2)
 }
 
-pub(super) fn no_scip() -> Options {
+pub(crate) fn no_scip() -> Options {
     Options {
         use_scip: false,
         ..Options::default()
