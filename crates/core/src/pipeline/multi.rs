@@ -401,6 +401,26 @@ mod tests {
     }
 
     #[test]
+    fn later_root_unknown_does_not_leak_in() {
+        let first = layers(&[("ui", "ui", 0), ("model", "model", 6)]);
+        // A later root declaring `unknown` (custom label, early order) next to
+        // a layer already known: nothing of it reaches the merged layers.
+        let later = layers(&[("unknown", "Misc", 0), ("ui", "Screens", 3)]);
+        assert_eq!(merge_layers([&first, &later]), first);
+    }
+
+    #[test]
+    fn single_root_layers_are_kept() {
+        let only = layers(&[("view", "Views", 2), ("entry", "Entry", 0)]);
+        assert_eq!(merge_layers([&only]), only);
+    }
+
+    #[test]
+    fn no_root_gives_only_unknown() {
+        assert_eq!(merge_layers([]), Layers::new([]));
+    }
+
+    #[test]
     fn names_are_deduplicated() {
         let roots: Vec<PathBuf> = ["/a/app", "/b/app", "/c/web", "/d/app"]
             .iter()

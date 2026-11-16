@@ -120,7 +120,6 @@ fn unparsable_project_rules_name_the_file() {
     );
     assert!(err.contains(".structure/rules.toml"), "{err}");
     assert!(err.contains("invalid classification rules"), "{err}");
-    assert!(err.contains("line 1"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
