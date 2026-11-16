@@ -101,8 +101,13 @@ struct Highlight { source, symbols: [{id, role, distance}], cells: [{id, role, d
                    unresolved: Vec<Anchor>, warnings }
 ```
 
-- `Impact` devient un `Highlight` de source `git-diff` (+ base/head, matrice du
-  snapshot) ; « modifié / impacté » devient `role`.
+- `Impact` est un `Highlight` de source `git-diff` (+ base/head, matrice du
+  snapshot) ; « modifié / impacté » est le `role`. `diff_request`
+  (`structure-git`) construit la requête (ancres `Location` de rôle `changed`,
+  propagation `Callers`) et l'adaptateur unique `Impact::from_highlight`
+  (`structure-ir`) en tire le JSON `Impact` inchangé (`changed_*` = rôle
+  `changed`, `impacted_*` = le reste avec sa distance). Le `Highlight` lui-même
+  ne passe pas encore sur le fil : #70 l'y ajoutera avec son consommateur.
 - UI : `app.highlights[]`, overlays nommés.
 - Sélecteur d'overlays : visible seulement quand au moins deux overlays sont
   chargés ; clic = un seul (celui par défaut), cmd/ctrl-clic = ajoute ou

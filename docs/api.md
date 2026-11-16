@@ -16,7 +16,10 @@ test, without the variable, fails in `cargo test` when the files are stale).
 (`Project` as `ProjectInfo`, wire `Matrix`/`Impact` as `WireMatrix`/`WireImpact`)
 and derives the UI-only `Matrix`/`Impact` (edges expanded to `CellEdge`s).
 The highlight model (`crates/ir/src/highlight.rs`: `HighlightRequest`,
-`Highlight`) is generated too; no command returns it yet.
+`Highlight`) is generated too; no command returns it yet. `Impact` is the
+`git-diff` highlight seen through `Impact::from_highlight`: `changed_*` are
+the symbols/cells of role `changed`, `impacted_*` the others with their
+distance.
 
 ## Commands
 

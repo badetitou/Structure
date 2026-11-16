@@ -38,8 +38,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
   - `highlight` (`structure-highlight`): pure (wasm-safe) highlight model over a
     graph: `HighlightIndex`, `resolve` (anchors → top-level symbols),
     `propagate` (callers/callees BFS), `aggregate` (→ cells), `highlight`.
-  - `git` (`structure-git`): `impact` (git diff → changed/impacted cells, a
-    `git-diff` highlight; `ImpactIndex` = `HighlightIndex`) and
+  - `git` (`structure-git`): `impact` (git diff → `diff_request`, a `git-diff`
+    highlight → `Impact::from_highlight`; `ImpactIndex` = `HighlightIndex`) and
     ref/fingerprint helpers (`resolve_base`, `resolve_commit`, `worktree_fingerprint`).
   - `core` (`structure-core`): facade, re-exports the crates above under their old
     module names (`ir`, `model`, `java`, `ts`, `scip`, `link`, `metrics`, `classify`,
