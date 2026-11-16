@@ -4,6 +4,7 @@
   import { Button } from "$lib/components/ui/button";
   import * as ToggleGroup from "$lib/components/ui/toggle-group";
   import ThemeSwitch from "../../ThemeSwitch.svelte";
+  import { inTauri } from "../../api";
   import { app } from "../../state.svelte";
 
   // Gear button that opens the Options page: app preferences, persisted as they change.
@@ -34,6 +35,23 @@
           <ThemeSwitch />
         </div>
       </section>
+      {#if inTauri && app.phase === "ready"}
+        <section class="flex flex-col gap-3">
+          <h2 class="m-0 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Project</h2>
+          <div class="flex items-center justify-between gap-4">
+            <span class="flex flex-col">
+              <span>Classification rules</span>
+              <span class="text-xs text-muted-foreground"
+                >Apply <code>.structure/rules.toml</code> again without re-analysing (done automatically when it changes).</span
+              >
+            </span>
+            <Button variant="outline" size="sm" disabled={app.rulesBusy} onclick={() => void app.reloadRules()}
+              >{app.rulesBusy ? "Reloading…" : "Reload rules"}</Button
+            >
+          </div>
+          {#if app.rulesError}<p class="m-0 text-xs text-destructive">{app.rulesError}</p>{/if}
+        </section>
+      {/if}
       <section class="flex flex-col gap-3">
         <h2 class="m-0 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Matrix</h2>
         <div class="flex items-center justify-between gap-4">

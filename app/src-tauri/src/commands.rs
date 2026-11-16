@@ -32,6 +32,20 @@ pub async fn analyze(app: AppHandle, paths: Vec<String>) -> Result<Matrix, Strin
     .await
 }
 
+/// Re-apply the projects' rules to the cached analysis of `paths` (no
+/// re-indexing, no re-parsing); the matrix carries a new generation.
+#[tauri::command]
+pub async fn reclassify(app: AppHandle, paths: Vec<String>) -> Result<Matrix, String> {
+    with_session(app, move |_, s| s.reclassify(&paths)).await
+}
+
+/// Opaque stamp of the projects' rules files: the UI polls it and calls
+/// `reclassify` when it changes.
+#[tauri::command]
+pub async fn rules_stamp(app: AppHandle, paths: Vec<String>) -> Result<String, String> {
+    with_session(app, move |_, s| s.rules_stamp(&paths)).await
+}
+
 #[tauri::command]
 pub async fn impact(
     app: AppHandle,

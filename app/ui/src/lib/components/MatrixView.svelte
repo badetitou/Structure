@@ -146,12 +146,11 @@
     };
   });
 
-  // A mode switch can change the expansion (flame opens deeper): drop a selection whose cell left the view.
+  // A mode switch can change the expansion (flame opens deeper): drop a selection whose cell left the view;
+  // after a rules reload, take the view's cell of the same id (its members may have changed).
   $effect(() => {
-    const ids = new Set(vm.cells.map((c) => c.id));
-    untrack(() => {
-      if (app.selected && !ids.has(app.selected.id)) app.selectCell(null);
-    });
+    const cells = vm.cells;
+    untrack(() => app.syncSelection(cells));
   });
 
   function setExpanded(key: string, on: boolean) {

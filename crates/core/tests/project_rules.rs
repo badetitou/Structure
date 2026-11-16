@@ -192,3 +192,47 @@ fn layers_merge_by_id_across_roots_first_root_wins() {
     let _ = std::fs::remove_dir_all(&first);
     let _ = std::fs::remove_dir_all(&second);
 }
+
+/// Reclassifying with unchanged rules gives what the analysis gave, also for
+/// several roots (each root's part of the merged graph classified with its
+/// own rules); a later edit of a root's rules shows up without re-parsing.
+#[test]
+fn reclassify_matches_the_analysis_then_follows_rule_edits() {
+    let first = project("reclass_a", "");
+    let second = project("reclass_b", "");
+    for roots in [vec![first.clone()], vec![first.clone(), second.clone()]] {
+        let a = pipeline::analyze_many(&roots, &offline(), &|_| {}).expect("analyze");
+        let r = pipeline::reclassify(&a).expect("reclassify");
+        assert_eq!(r.classification, a.classification);
+        assert_eq!(r.matrix, a.matrix);
+        assert_eq!(r.layers, a.layers);
+        assert!(std::sync::Arc::ptr_eq(&r.graph, &a.graph), "graph shared");
+    }
+    let a = pipeline::analyze_many(&[first.clone(), second.clone()], &offline(), &|_| {})
+        .expect("analyze");
+    // Sources gone: only the cached graph is left to classify.
+    for d in [&first, &second] {
+        std::fs::remove_dir_all(d.join("src")).unwrap();
+    }
+    write(
+        &second,
+        ".structure/rules.toml",
+        "[[layer]]\nid = \"view\"\nlabel = \"Views\"\norder = 0\n\
+         [[rule]]\nlayer = \"view\"\nname_suffix = [\"View\"]\n",
+    );
+    let r = pipeline::reclassify(&a).expect("reclassify");
+    let view = r
+        .classification
+        .placements
+        .iter()
+        .filter(|(_, p)| p.layer.as_str() == "view")
+        .map(|(id, _)| id.as_str())
+        .collect::<Vec<_>>();
+    // Ids are `<project>::<id>`, the project being the second root's dir name.
+    let name = second.file_name().unwrap().to_string_lossy();
+    assert_eq!(view, [format!("{name}::a.LoginView")]);
+    assert!(layer_rows(&r).iter().any(|(id, ..)| id == "view"));
+    assert_eq!(r.matrix.stats, a.matrix.stats);
+    let _ = std::fs::remove_dir_all(&first);
+    let _ = std::fs::remove_dir_all(&second);
+}

@@ -19,6 +19,8 @@ export function viewerBackend(data: ViewerData): Backend {
   return {
     pickFolder: unavailable("Picking a folder"),
     analyze: async () => matrix,
+    reclassify: unavailable("Reloading rules"),
+    rulesStamp: async () => null,
     impact: async () => impact,
     cellSymbols: (_paths, _head, _generation, cells, offset, limit) => data.cellSymbols(cells, offset, limit),
     // Rejecting leaves `app.history` null, which makes the history and diff panels unavailable.

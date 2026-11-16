@@ -1,11 +1,12 @@
 //! End-to-end pipeline: detect language, index (SCIP), parse, link,
-//! classify, build the matrix, compute impact.
+//! classify, build the matrix, compute impact; reclassify an analysis.
 
 mod history;
 mod indexer;
 mod multi;
 mod process;
 mod progress;
+mod reclassify;
 pub mod scip_cache;
 mod snapshot;
 #[cfg(test)]
@@ -16,6 +17,7 @@ pub use crate::lang::{SCIP_JAVA_VERSION, SCIP_TS_VERSION};
 pub use history::{history, impact};
 pub use indexer::{ensure_index, ensure_index_with_progress};
 pub use multi::{analyze_many, expand_roots};
+pub use reclassify::{reclassify, rules_stamp, rules_stamp_of};
 pub use snapshot::{MAX_SNAPSHOTS, analyze_snapshot, impact_at, impact_in_snapshot, snapshot};
 pub use structure_git::{resolve_base, resolve_commit, worktree_fingerprint};
 
@@ -74,8 +76,7 @@ impl Default for Options {
 
 #[derive(Debug, Clone)]
 pub struct Analysis {
-    /// Shared so that analyses differing only in classification can hold the
-    /// same graph without copying it.
+    /// Shared with the analyses [`reclassify`] makes from this one.
     pub graph: Arc<Graph>,
     /// The analysed roots, in matrix order: the project itself, or each root
     /// of a multi-root analysis after [`expand_roots`] (named as in
@@ -94,7 +95,7 @@ pub struct Analysis {
     /// [`analyze_many`]); the matrix only lists the ones it places symbols in.
     pub layers: Layers,
     /// Built from `graph` on the first impact (see [`Analysis::impact_index`]);
-    /// shared with every analysis holding the same `graph`.
+    /// shared with every analysis holding the same `graph` ([`reclassify`]).
     impact_index: Arc<OnceLock<ImpactIndex>>,
 }
 

@@ -51,8 +51,11 @@ Cible :
   réordonne ; en multi-projet, fusion par `id` : la première racine
   l'emporte (libellé, ordre), les couches propres aux suivantes sont
   ajoutées après les siennes (`rules/README.md`) ;
-- dynamique : `reclassify(rules)` recalcule la matrice depuis le graphe en
-  cache, sans réindexer ni reparser. Édition depuis l'UI plus tard.
+- dynamique : `reclassify(paths)` relit les règles et recalcule la matrice
+  depuis le graphe en cache, sans réindexer ni reparser (nouvelle génération ;
+  les snapshots de commit en cache sont abandonnés) ; l'app sonde
+  `rules_stamp(paths)` et recharge quand le fichier de règles change. Édition
+  depuis l'UI plus tard.
 
 ## 3. Séparation front/back
 

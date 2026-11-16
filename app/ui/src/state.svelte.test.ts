@@ -4,6 +4,8 @@ import type { ViewCell } from "./domaintree";
 
 vi.mock("./api", () => ({
   analyze: vi.fn(),
+  reclassify: vi.fn(),
+  rulesStamp: vi.fn(),
   impact: vi.fn(),
   cellSymbols: vi.fn(),
   history: vi.fn(),
@@ -385,5 +387,131 @@ describe("AppState", () => {
     s.selectCell(cell);
     await flush();
     expect(mocked.cellSymbols).toHaveBeenLastCalledWith(["/p"], "h1", 7, ["m1"], 0, expect.any(Number));
+  });
+});
+
+describe("AppState rules reload", () => {
+  const withCells = (generation: number, ...ids: [string, number][]): Matrix => ({
+    ...mx("p"),
+    generation,
+    cells: ids.map(([id, size]) => ({ id, layer: "service", domain: id, size })),
+  });
+  const page = { total: 0, offset: 0, symbols: [] };
+
+  it("keeps the selection whose cell still exists and lists it against the new matrix", async () => {
+    const s = await loaded(withCells(7, ["m1", 2]));
+    mocked.cellSymbols.mockResolvedValue(page);
+    s.selectCell(cell);
+    const next = withCells(8, ["m1", 5], ["m2", 1]);
+    mocked.reclassify.mockResolvedValue(next);
+    await s.reloadRules();
+    expect(mocked.reclassify).toHaveBeenCalledWith(["/p"]);
+    expect(s.matrix).toBe(next);
+    expect(s.selected?.id).toBe("c1");
+    expect(s.selected?.size).toBe(5);
+    expect(mocked.cellSymbols).toHaveBeenLastCalledWith(["/p"], null, 8, ["m1"], 0, expect.any(Number));
+    expect(s.rulesBusy).toBe(false);
+  });
+
+  it("drops the selection whose cell is gone", async () => {
+    const s = await loaded(withCells(7, ["m1", 2]));
+    mocked.cellSymbols.mockResolvedValue(page);
+    s.selectCell(cell);
+    mocked.reclassify.mockResolvedValue(withCells(8, ["m2", 2]));
+    await s.reloadRules();
+    expect(s.selected).toBeNull();
+  });
+
+  it("keeps the matrix and the selection when the rules are invalid", async () => {
+    const work = withCells(7, ["m1", 2]);
+    const s = await loaded(work);
+    mocked.cellSymbols.mockResolvedValue(page);
+    s.selectCell(cell);
+    mocked.reclassify.mockRejectedValue(new Error("invalid .structure/rules.toml"));
+    await s.reloadRules();
+    expect(s.matrix).toBe(work);
+    expect(s.selected).toBe(cell);
+    expect(s.phase).toBe("ready");
+    expect(s.rulesError).toBe("Rules reload failed: Error: invalid .structure/rules.toml");
+    expect(s.rulesBusy).toBe(false);
+    // The next successful reload clears it.
+    mocked.reclassify.mockResolvedValue(withCells(8, ["m1", 2]));
+    await s.reloadRules();
+    expect(s.rulesError).toBe("");
+  });
+
+  it("runs the impact shown again, keeping a selection that exists in the new snapshot", async () => {
+    const s = await loaded(withCells(7, ["m1", 2]));
+    mocked.cellSymbols.mockResolvedValue(page);
+    mocked.impact.mockResolvedValue(imp({ head: "h", matrix: withCells(9, ["m1", 1]) }));
+    await s.runImpact("a", "h");
+    s.selectCell(cell);
+    const snap = withCells(11, ["m1", 3]);
+    mocked.impact.mockResolvedValue(imp({ head: "h", matrix: snap }));
+    mocked.reclassify.mockResolvedValue(withCells(10, ["m1", 2]));
+    await s.reloadRules();
+    await flush();
+    expect(mocked.impact).toHaveBeenLastCalledWith("/p", "a", "h", expect.any(Function));
+    expect(s.matrix).toBe(snap);
+    expect(s.selected?.size).toBe(3);
+    expect(mocked.cellSymbols).toHaveBeenLastCalledWith(["/p"], "h", 11, ["m1"], 0, expect.any(Number));
+  });
+
+  it("does not run a cleared impact again", async () => {
+    const s = await loaded();
+    mocked.impact.mockResolvedValue(imp());
+    await s.runImpact(null, null);
+    s.clearImpact();
+    mocked.impact.mockClear();
+    mocked.reclassify.mockResolvedValue(mx("p"));
+    await s.reloadRules();
+    await flush();
+    expect(mocked.impact).not.toHaveBeenCalled();
+  });
+
+  it("reloads when the rules stamp changes, not before", async () => {
+    mocked.rulesStamp.mockResolvedValue("s1");
+    const s = await loaded();
+    await flush();
+    mocked.reclassify.mockResolvedValue(mx("p"));
+    await s.checkRules();
+    expect(mocked.reclassify).not.toHaveBeenCalled();
+    mocked.rulesStamp.mockResolvedValue("s2");
+    await s.checkRules();
+    expect(mocked.reclassify).toHaveBeenCalledTimes(1);
+    await s.checkRules();
+    expect(mocked.reclassify).toHaveBeenCalledTimes(1);
+    // Nothing to watch (samples, viewer) or a failing stamp: no reload.
+    mocked.rulesStamp.mockResolvedValue(null);
+    await s.checkRules();
+    mocked.rulesStamp.mockRejectedValue(new Error("gone"));
+    await s.checkRules();
+    expect(mocked.reclassify).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reload again on the next poll after a manual reload", async () => {
+    mocked.rulesStamp.mockResolvedValue("s1");
+    const s = await loaded();
+    await flush();
+    mocked.reclassify.mockResolvedValue(mx("p"));
+    await s.checkRules();
+    mocked.rulesStamp.mockResolvedValue("s2");
+    await s.reloadRules();
+    expect(mocked.reclassify).toHaveBeenCalledTimes(1);
+    await s.checkRules();
+    expect(mocked.reclassify).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows the view's cell of the same id, or drops a selection that left the view", async () => {
+    const s = await loaded();
+    mocked.cellSymbols.mockResolvedValue(page);
+    s.selectCell(cell);
+    s.syncSelection([cell]);
+    expect(s.selected).toBe(cell);
+    const wider = { ...cell, size: 3, members: ["m1", "m2"] } as ViewCell;
+    s.syncSelection([wider]);
+    expect(s.selected).toBe(wider);
+    s.syncSelection([]);
+    expect(s.selected).toBeNull();
   });
 });
