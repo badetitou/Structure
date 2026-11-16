@@ -22,6 +22,8 @@ pub struct Metrics {
     pub edges_by_kind: BTreeMap<&'static str, usize>,
     /// Final edges whose target is `ext:*`, by kind name.
     pub ext_edges_by_kind: BTreeMap<&'static str, usize>,
+    /// Pharo only: message sends (resolved to a `Call` edge, unresolved).
+    pub sends: Option<(usize, usize)>,
 }
 
 fn kind_name(k: EdgeKind) -> &'static str {

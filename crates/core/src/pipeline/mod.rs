@@ -218,9 +218,16 @@ pub(super) fn analyze_in(
 
     step("parsing", 35);
     let t = Instant::now();
-    let graph = crate::lang::frontend(lang)
-        .parse_project_warned(root, &mut warnings)
-        .with_context(|| format!("parsing {}", root.display()))?;
+    let graph = if lang == Language::Pharo {
+        let p = crate::pharo::parse_project_full(root, &mut warnings)
+            .with_context(|| format!("parsing {}", root.display()))?;
+        metrics.sends = Some((p.stats.resolved, p.stats.unresolved));
+        p.graph
+    } else {
+        crate::lang::frontend(lang)
+            .parse_project_warned(root, &mut warnings)
+            .with_context(|| format!("parsing {}", root.display()))?
+    };
     metrics.phase("parse", t, None);
 
     step("linking", 60);
