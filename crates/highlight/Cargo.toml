@@ -1,0 +1,10 @@
+[package]
+name = "structure-highlight"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+structure-ir = { path = "../ir" }
+
+[dev-dependencies]
+serde_json.workspace = true

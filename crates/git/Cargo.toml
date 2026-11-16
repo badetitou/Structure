@@ -5,4 +5,5 @@ edition.workspace = true
 
 [dependencies]
 structure-ir = { path = "../ir" }
+structure-highlight = { path = "../highlight" }
 anyhow.workspace = true

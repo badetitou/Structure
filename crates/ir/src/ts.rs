@@ -4,6 +4,7 @@
 //! Regenerate with:
 //! `UPDATE_TS_TYPES=1 cargo test -p structure-ir generated_ts_types`
 
+use crate::highlight::{Highlight, HighlightRequest};
 use crate::model::{CellSymbols, Diff, History, Impact, Matrix, Progress};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -13,7 +14,8 @@ use ts_rs::{Config, TS};
 /// Committed declarations, relative to this crate.
 const GENERATED: &str = "../../app/ui/src/generated";
 
-/// Exports the types returned by the Tauri commands, and everything they use.
+/// Exports the types returned by the Tauri commands and the highlight model,
+/// and everything they use.
 fn export(dir: &Path) -> Result<(), ts_rs::ExportError> {
     // JSON numbers, not bigint: the values stay far below 2^53.
     let cfg = Config::new().with_large_int("number").with_out_dir(dir);
@@ -23,6 +25,8 @@ fn export(dir: &Path) -> Result<(), ts_rs::ExportError> {
     Diff::export_all(&cfg)?;
     CellSymbols::export_all(&cfg)?;
     Progress::export_all(&cfg)?;
+    HighlightRequest::export_all(&cfg)?;
+    Highlight::export_all(&cfg)?;
     Ok(())
 }
 
