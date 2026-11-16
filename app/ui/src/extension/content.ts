@@ -2,6 +2,7 @@
 import { ext } from "./browser";
 import { watchFrame } from "./frame";
 import { parsePrPath, prParam } from "./github";
+import { ensureStructureTab, findTabBar, selectStructureTab } from "./tab";
 
 const TAB_ID = "structure-pr-tab";
 const BUTTON_ID = "structure-pr-button";
@@ -11,12 +12,18 @@ const MIN_HEIGHT_ATTR = "data-structure-min-height";
 
 interface PanelState {
   key: string;
+  /** `/<owner>/<repo>/pull/<number>`: the PR's own tab links start with it. */
+  prPath: string;
   panel: HTMLElement;
   iframe: HTMLIFrameElement | null;
   open: boolean;
 }
 
 let state: PanelState | null = null;
+
+function tabBar(): HTMLElement | null {
+  return state ? findTabBar(document, state.prPath, NAV_SELECTOR) : null;
+}
 
 function viewerUrl(key: string): string {
   return `${ext().runtime.getURL("viewer.html")}?pr=${key}`;
@@ -100,7 +107,7 @@ function showContent() {
 }
 
 function applyOpen(s: PanelState) {
-  const nav = document.querySelector<HTMLElement>(NAV_SELECTOR);
+  const nav = tabBar();
   const content = nav ? prContent(nav) : null;
   if (content) {
     for (const e of content.following) {
@@ -133,40 +140,31 @@ function setOpen(open: boolean) {
   if (open) {
     applyOpen(state);
     // Tab bar at the top of the viewport, the panel filling the rest.
-    (document.querySelector(NAV_SELECTOR) ?? state.panel).scrollIntoView({ block: "start" });
+    (tabBar() ?? state.panel).scrollIntoView({ block: "start" });
   } else {
     showContent();
     state.panel.style.display = "none";
   }
+  const nav = tabBar();
   const tab = document.getElementById(TAB_ID);
-  if (tab) {
-    if (open) tab.setAttribute("aria-current", "page");
-    else tab.removeAttribute("aria-current");
-  }
+  if (nav && tab) selectStructureTab(nav, tab, open);
 }
 
 function toggle() {
   setOpen(!(state?.open ?? false));
 }
 
-function ensureTab(nav: HTMLElement) {
-  if (nav.querySelector(`#${TAB_ID}`)) return;
-  const files = nav.querySelector<HTMLAnchorElement>("a#prs-files-anchor-tab") ?? nav.querySelector("a");
-  const tab = document.createElement("a");
-  tab.id = TAB_ID;
-  tab.href = "#structure";
-  tab.textContent = "Structure";
-  if (files) {
-    tab.className = files.className;
-    files.after(tab);
-  } else {
-    nav.append(tab);
+function ensureTab(nav: HTMLElement, prPath: string) {
+  const known = document.getElementById(TAB_ID);
+  const tab = ensureStructureTab(nav, prPath, TAB_ID);
+  if (tab !== known) {
+    tab.addEventListener("click", (e) => {
+      e.preventDefault();
+      toggle();
+    });
   }
-  tab.addEventListener("click", (e) => {
-    e.preventDefault();
-    toggle();
-  });
-  if (state?.open) tab.setAttribute("aria-current", "page");
+  // GitHub re-renders its tabs (and their selection) on its own: keep ours selected while open.
+  if (state?.open) selectStructureTab(nav, tab, true);
 }
 
 function ensureButton() {
@@ -199,11 +197,11 @@ function sync() {
   }
   const key = prParam(ref);
   if (state && state.key !== key) dropAll();
-  if (!state) state = { key, panel: makePanel(key), iframe: null, open: false };
-  const nav = document.querySelector<HTMLElement>(NAV_SELECTOR);
+  if (!state) state = { key, prPath: `/${ref.owner}/${ref.repo}/pull/${ref.number}`, panel: makePanel(key), iframe: null, open: false };
+  const nav = tabBar();
   if (nav) {
     document.getElementById(BUTTON_ID)?.remove();
-    ensureTab(nav);
+    ensureTab(nav, state.prPath);
     if (!navGuard.has(nav)) {
       navGuard.add(nav);
       // Clicking another PR tab restores the PR's own content.
@@ -211,7 +209,11 @@ function sync() {
         "click",
         (e) => {
           const a = (e.target as Element).closest("a");
-          if (a && a.id !== TAB_ID && state?.open) setOpen(false);
+          if (a && a.id !== TAB_ID && state?.open) {
+            setOpen(false);
+            // GitHub's router may skip the tab that looks current again: follow its link.
+            if (a.getAttribute("href")?.split("#")[0] === location.pathname) e.preventDefault();
+          }
         },
         true,
       );
