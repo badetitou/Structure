@@ -33,7 +33,7 @@ function makePanel(key: string): HTMLElement {
   const panel = document.createElement("div");
   panel.style.cssText = "display:flex;flex-direction:column;width:100%;box-sizing:border-box;";
   const bar = document.createElement("div");
-  bar.style.cssText = "padding:4px 8px;font-size:12px;text-align:right;";
+  bar.style.cssText = "padding:0 0 8px;font-size:12px;text-align:right;";
   const link = document.createElement("a");
   link.href = viewerUrl(key);
   link.target = "_blank";
@@ -106,6 +106,13 @@ function showContent() {
   }
 }
 
+/** Horizontal padding of GitHub's own PR panels (Primer `px-3 px-md-4 px-lg-5`). */
+function sidePadding(width: number): number {
+  if (width >= 1012) return 32;
+  if (width >= 768) return 24;
+  return 16;
+}
+
 function applyOpen(s: PanelState) {
   const nav = tabBar();
   const content = nav ? prContent(nav) : null;
@@ -124,7 +131,8 @@ function applyOpen(s: PanelState) {
     // Last child of the container: with the PR content hidden it sits right under the tab bar.
     if (s.panel.parentElement !== content.container || s.panel.nextElementSibling) content.container.append(s.panel);
     s.panel.style.cssText =
-      `display:flex;flex-direction:column;width:100%;box-sizing:border-box;height:${Math.max(400, window.innerHeight - nav.offsetHeight - 8)}px;`;
+      `display:flex;flex-direction:column;width:100%;box-sizing:border-box;padding:16px ${sidePadding(window.innerWidth)}px;` +
+      `height:${Math.max(400, window.innerHeight - nav.offsetHeight - 8)}px;`;
   } else {
     // No tab bar: cover the page.
     s.panel.style.cssText =
