@@ -1,7 +1,7 @@
 import * as api from "../api";
 import type { Impact, Progress } from "../api";
 import { RequestGuard } from "../matrixsel";
-import { START } from "./analysis.svelte";
+import { START } from "./progress";
 
 /** A git range; null stands for HEAD / the working tree. */
 export interface Range {

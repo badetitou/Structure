@@ -1,9 +1,7 @@
 import * as api from "../api";
 import type { Matrix, Progress } from "../api";
 import { analyzeAndRecord } from "../recent";
-
-/** Progress shown before the first report. */
-export const START: Progress = { step: "starting…", pct: 0 };
+import { START } from "./progress";
 
 /** How often the project's rules files are checked for changes while a project is open. */
 export const RULES_POLL_MS = 2000;
