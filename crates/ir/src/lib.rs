@@ -2,3 +2,6 @@
 
 pub mod ir;
 pub mod model;
+
+#[cfg(all(test, feature = "ts"))]
+mod ts;

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 /// Declaration order = matrix rows, top to bottom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Layer {
     Ui,
@@ -53,10 +54,12 @@ pub struct Classification {
 
 /// Node of the module tree: a leaf is one matrix domain.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DomainNode {
     pub label: String,
     /// Matrix domain, on leaves only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub domain: Option<String>,
     /// Number of classes below this node.
     pub size: usize,
@@ -65,6 +68,7 @@ pub struct DomainNode {
 
 /// One analysed root of a multi-root matrix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Project {
     pub name: String,
     pub root: String,
@@ -72,6 +76,7 @@ pub struct Project {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Matrix {
     /// With several roots: the first root's name (see `projects`).
     pub project: String,
@@ -105,6 +110,7 @@ pub struct Matrix {
     pub generation: u64,
     /// Module tree whose leaves are `domains`; omitted when domains are name roots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub domain_tree: Option<Vec<DomainNode>>,
 }
 
@@ -113,6 +119,7 @@ fn is_zero(n: &u64) -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Cell {
     /// "<layer>:<domain>", e.g. "business:account".
     pub id: String,
@@ -129,6 +136,7 @@ impl Cell {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CellSymbol {
     pub id: String,
     pub name: String,
@@ -137,6 +145,7 @@ pub struct CellSymbol {
 
 /// One page of the symbols of some cells.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CellSymbols {
     pub total: usize,
     pub offset: usize,
@@ -145,6 +154,7 @@ pub struct CellSymbols {
 
 /// Edges leaving one cell; indices refer to `Matrix::cells`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct EdgeGroup {
     pub from: usize,
     /// `[cell index, weight]`, sorted by index.
@@ -152,6 +162,7 @@ pub struct EdgeGroup {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Stats {
     pub files: usize,
     pub symbols: usize,
@@ -161,6 +172,7 @@ pub struct Stats {
 
 /// One commit of the project history (`pipeline::history`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Commit {
     pub id: String,
     pub short: String,
@@ -175,6 +187,7 @@ pub struct Commit {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct History {
     /// Uncommitted changes present in the working tree.
     pub dirty: bool,
@@ -182,6 +195,7 @@ pub struct History {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Impact {
     pub base: String,
     pub head: Option<String>,
@@ -195,16 +209,19 @@ pub struct Impact {
     /// Matrix of the analysed snapshot; set only when `head` was analysed in
     /// its own checkout, so the UI can show the cells that exist at that commit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub matrix: Option<Matrix>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ImpactedCell {
     pub id: String,
     pub distance: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ImpactedSymbol {
     pub id: String,
     pub distance: u32,
@@ -212,6 +229,7 @@ pub struct ImpactedSymbol {
 
 /// Textual diff of `base..head` (or the working tree), file by file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Diff {
     pub base: String,
     pub head: Option<String>,
@@ -221,6 +239,7 @@ pub struct Diff {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum FileStatus {
     Added,
@@ -230,11 +249,13 @@ pub enum FileStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FileDiff {
     /// Path on the new side (the old path for a deleted file), relative to the project.
     pub path: String,
     /// Set only for a rename.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub old_path: Option<String>,
     pub status: FileStatus,
     pub binary: bool,
@@ -246,6 +267,7 @@ pub struct FileDiff {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Hunk {
     /// The `@@ -a,b +c,d @@ context` line.
     pub header: String,
@@ -253,6 +275,7 @@ pub struct Hunk {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum LineKind {
     Context,
@@ -261,23 +284,28 @@ pub enum LineKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DiffLine {
     pub kind: LineKind,
     /// 1-based line number on the old side (absent for an added line).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub old: Option<u32>,
     /// 1-based line number on the new side (absent for a removed line).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub new: Option<u32>,
     /// Line content without the leading marker.
     pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Progress {
     pub step: String,
     pub pct: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub detail: Option<String>,
 }
 

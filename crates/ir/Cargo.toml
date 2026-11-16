@@ -3,8 +3,15 @@ name = "structure-ir"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# TypeScript declarations of the wire types (app/ui/src/generated), via ts-rs.
+ts = ["dep:ts-rs"]
+
 [dependencies]
 serde.workspace = true
+ts-rs = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true
+# Enables `ts` for this crate's own tests, so `cargo test` checks the generated files.
+structure-ir = { path = ".", features = ["ts"] }

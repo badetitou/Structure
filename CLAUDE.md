@@ -11,6 +11,9 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 - `cargo clippy --workspace --all-targets -- -D warnings` — lints, must be clean
 - `cargo test --workspace` — all tests; `cargo test <name>` for one
 - `cargo run -p structure-cli -- analyze <path>` / `cargo build --release`
+- `UPDATE_TS_TYPES=1 cargo test -p structure-ir generated_ts_types` — regenerate
+  `app/ui/src/generated/` (TS wire types) after changing a type in `crates/ir`;
+  `cargo test` fails while they are stale.
 - CI: `.github/workflows/ci.yml` (fmt, clippy, tests, vitest, svelte-check; no Tauri app, no wasm build)
 
 ## Map
@@ -18,7 +21,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 - `Cargo.toml` — virtual workspace (edition 2024); `app/` (Tauri) is excluded.
 - `crates/` — one-way deps `ir` <- `lang-java`/`lang-ts`/`lang-pharo`/`scip`/`classify`/`git` <- `core` <- `cli`:
   - `ir` (`structure-ir`): `ir` (Graph/Symbol/Edge), `model`
-    (Layer/Matrix/Impact/Progress) — contracts, serde only.
+    (Layer/Matrix/Impact/Progress) — contracts, serde only; feature `ts`
+    derives the TS declarations (ts-rs; module `ts`, test `generated_ts_types`).
   - `lang-pharo` (`structure-lang-pharo`): hand-written Tonel reader (classes,
     methods, superclass and `Uses` edges; no `Call` edges yet).
   - `lang-java`, `lang-ts` (`structure-lang-*`): tree-sitter frontends (symbols,
@@ -41,7 +45,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     implementing the sync service → `Rpc` edges, one or several roots).
 - `crates/cli` — bin `structure` (`analyze`, `impact`). Keep `main` thin.
 - `app/` — Tauri 2 app: `src-tauri` (commands over `pipeline`), `ui` (Vite + Svelte
-  5 + TS, vitest): `src/*.ts` state/geometry helpers, `src/workspace/` panel registry +
+  5 + TS, vitest): `src/api.ts` backend wrappers over the generated wire types
+  in `src/generated/` (never hand-edited), `src/*.ts` state/geometry helpers, `src/workspace/` panel registry +
   dockview glue, `src/lib/components` Svelte components (`matrix/`, `workspace/`, `ui/`). See `app/README.md`.
 - `docs/` — `plan.md`, `api.md` (Tauri API contract), `samples/*.json`.
 - `scripts/` — fetch and index fixtures; `tests/golden/` — expected classifications.
