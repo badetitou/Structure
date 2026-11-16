@@ -1,9 +1,11 @@
 # Structure desktop app (Tauri 2)
 
-Commands `analyze` / `impact` call `structure_core::pipeline` (see
-`src-tauri/src/commands.rs`); analyses are cached per canonical path in managed
-state. Pipeline warnings are emitted as `analysis-progress` steps prefixed
-`warning: `. In a plain browser the UI falls back to `docs/samples/*.json`.
+The commands in `src-tauri/src/commands.rs` are thin wrappers over a managed
+`structure_core::session::Session`, which owns the cached analyses (per
+canonical path, and per commit for snapshots); they run it on a blocking
+thread, emit its progress as `analysis-progress` events and return its errors
+as strings. Pipeline warnings travel in the `warnings` field of `Matrix` and
+`Impact`. In a plain browser the UI falls back to `docs/samples/*.json`.
 
 Prerequisites: Rust toolchain, `cargo install tauri-cli --version "^2"`, Node 20+,
 platform webview deps (macOS: none extra).

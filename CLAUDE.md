@@ -48,9 +48,12 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     analyze/detect, `indexer`, `process`, `progress`, `snapshot`, `history`) and
     `http_link` (matches TS `http_calls` to Java `http` endpoints → `Http` edges,
     multi-root only) and `rpc_link` (matches GWT `rpc_calls` to the classes
-    implementing the sync service → `Rpc` edges, one or several roots).
+    implementing the sync service → `Rpc` edges, one or several roots) and
+    `session` (`Session`: owns cached analyses — working trees by canonical
+    path + fingerprint, commit snapshots — generations and paging; API mirrors
+    the Tauri commands).
 - `crates/cli` — bin `structure` (`analyze`, `impact`). Keep `main` thin.
-- `app/` — Tauri 2 app: `src-tauri` (commands over `pipeline`), `ui` (Vite + Svelte
+- `app/` — Tauri 2 app: `src-tauri` (thin commands over a managed `Session`), `ui` (Vite + Svelte
   5 + TS, vitest): `src/api.ts` backend wrappers over the generated wire types
   in `src/generated/` (never hand-edited), `src/*.ts` state/geometry helpers, `src/workspace/` panel registry +
   dockview glue, `src/lib/components` Svelte components (`matrix/`, `workspace/`, `ui/`). See `app/README.md`.

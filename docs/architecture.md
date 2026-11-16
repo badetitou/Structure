@@ -54,8 +54,8 @@ Cible :
 
 ## 3. Séparation front/back
 
-Constat : cache et orchestration vivent dans `app/src-tauri/src/commands.rs` ;
-les types sont écrits deux fois (`model.rs`, `api.ts`) ; le `Backend` TS
+Constat : cache et orchestration vivaient dans `app/src-tauri/src/commands.rs`
+(déplacés dans `structure_core::session` par #71) ; les types sont écrits deux fois (`model.rs`, `api.ts`) ; le `Backend` TS
 signale l'indisponibilité en rejetant des promesses.
 
 Cible :
