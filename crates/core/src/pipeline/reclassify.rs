@@ -6,13 +6,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 
-use super::multi::{MergedClassification, merge_layers};
 use super::{Analysis, rules_for};
 use crate::classify::classify;
 use crate::ir::{Edge, Graph, Language};
 use crate::layers::Layers;
 use crate::matrix;
 use crate::model::{Classification, Matrix};
+use structure_classify::merge::{MergedClassification, merge_layers};
 
 /// `a` reclassified with the rules of its roots as they are now (language
 /// defaults plus each root's `.structure/rules.toml`, merged across roots as
