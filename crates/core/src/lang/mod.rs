@@ -23,7 +23,7 @@ use std::process::Command;
 use structure_ir::ir::Language;
 /// Pure frontend of a language (`structure_lang::frontend`).
 pub use structure_lang::frontend as pure;
-pub use structure_lang::{Frontend, ParseOutput};
+pub use structure_lang::{Frontend, ParseOutput, language_id};
 
 pub use java::SCIP_JAVA_VERSION;
 pub use ts_args::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts_index_args};
@@ -90,15 +90,6 @@ pub fn frontend(lang: Language) -> &'static dyn LanguageFrontend {
         Language::Java => &JAVA,
         Language::TypeScript => &TYPESCRIPT,
         Language::Pharo => &PHARO,
-    }
-}
-
-/// Serialized id of `lang` (`java`, `typescript`, `pharo`), as in JSON.
-pub fn language_id(lang: Language) -> &'static str {
-    match lang {
-        Language::Java => "java",
-        Language::TypeScript => "typescript",
-        Language::Pharo => "pharo",
     }
 }
 

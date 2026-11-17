@@ -1,14 +1,21 @@
 //! Pull-request analysis fully in memory, for WebAssembly (no filesystem, git
 //! or SCIP). The pure core is [`analyze_pr`]; [`wasm`] is the thin JS glue.
 
-use anyhow::Context;
-use structure_classify::classify::{RuleSet, classify};
-use structure_classify::matrix;
-use structure_git::changes_from_diff;
-use structure_git::impact;
-use structure_ir::ir::Graph;
-use structure_ir::model::{CellSymbols, Classification, Impact};
+use std::collections::BTreeMap;
 
+use anyhow::{Context, bail};
+use structure_classify::classify::{RuleSet, classify};
+use structure_classify::layers::Layers;
+use structure_classify::matrix;
+use structure_classify::merge::{MergedClassification, append_graph, merge_layers};
+use structure_git::changes_from_diff;
+use structure_git::impact::{self, FileChange};
+use structure_ir::ir::{Graph, Language};
+use structure_ir::model::{CellSymbols, Classification, Impact, Matrix, Project};
+use structure_lang::Frontend;
+
+#[cfg(test)]
+mod sources_ts;
 mod wasm;
 
 /// Language of a set of paths (see [`structure_lang::detect_by_paths`]).
@@ -29,8 +36,74 @@ impl Analysis {
     }
 }
 
+/// The languages of a set of paths, in registry order: those with at least
+/// one source (a path counting for the first frontend of
+/// [`structure_lang::all`] that accepts it, as in [`detect_language`]).
+/// Fails when no path is a source.
+pub fn detect_languages<'a>(
+    paths: impl IntoIterator<Item = &'a str>,
+) -> anyhow::Result<Vec<Language>> {
+    let frontends = structure_lang::all();
+    let mut seen = vec![false; frontends.len()];
+    for p in paths {
+        if let Some(i) = frontends.iter().position(|f| f.is_source(p)) {
+            seen[i] = true;
+        }
+    }
+    let langs: Vec<Language> = frontends
+        .iter()
+        .zip(seen)
+        .filter(|(_, s)| *s)
+        .map(|(f, _)| f.language())
+        .collect();
+    if langs.is_empty() {
+        // The registry's own "no supported sources: expected ..." error.
+        detect_language(std::iter::empty())?;
+    }
+    Ok(langs)
+}
+
+/// One language of the PR analysed alone.
+struct Part {
+    graph: Graph,
+    classification: Classification,
+    layers: Layers,
+    matrix: Matrix,
+    warnings: Vec<String>,
+}
+
+fn analyze_language(
+    lang: &dyn Frontend,
+    project: &str,
+    files: &[(String, String)],
+) -> anyhow::Result<Part> {
+    let mut warnings = Vec::new();
+    let graph = lang.parse_sources(project, files, &mut warnings)?.graph;
+    let (toml, name) = lang.default_rules();
+    let rules = RuleSet::from_embedded(toml, name).context("loading default rules")?;
+    let classification = classify(&graph, &rules, lang.module_separator());
+    let layers = rules.layers();
+    let mut matrix = matrix::build(&graph, &classification, &layers, project, 0);
+    matrix.warnings = warnings.clone();
+    Ok(Part {
+        graph,
+        classification,
+        layers,
+        matrix,
+        warnings,
+    })
+}
+
 /// Analyse the sources of a PR head (`(path, content)`) against its unified
-/// `diff`, with the default rules of the detected language.
+/// `diff`, with the default rules of each language found
+/// ([`detect_languages`]). One language is analysed as one project named
+/// `project`. Several are analysed as the desktop analyses a root holding
+/// several languages: one unit per language, named `<repo> (<language>)`
+/// (`repo` being the last `/` segment of `project`), merged into one graph
+/// and matrix (ids `<unit>::<id>`, files `<unit>/<file>`, domains
+/// `<unit>/<domain>`, one entry per unit in `matrix.projects`); the diff then
+/// applies to every unit and `changed_files` keeps the diff's paths. No
+/// cross-language (HTTP, RPC) links are made.
 pub fn analyze_pr(
     files: &[(String, String)],
     diff: &str,
@@ -38,16 +111,83 @@ pub fn analyze_pr(
     base: &str,
     head: &str,
 ) -> anyhow::Result<Analysis> {
-    let lang = structure_lang::frontend(detect_language(files.iter().map(|(p, _)| p.as_str()))?);
-    let mut warnings = Vec::new();
-    let graph = lang.parse_sources(project, files, &mut warnings)?.graph;
-    let (toml, name) = lang.default_rules();
-    let rules = RuleSet::from_embedded(toml, name).context("loading default rules")?;
-    let classification = classify(&graph, &rules, lang.module_separator());
-    let mut matrix = matrix::build(&graph, &classification, &rules.layers(), project, 0);
-    matrix.warnings = warnings.clone();
+    let langs = detect_languages(files.iter().map(|(p, _)| p.as_str()))?;
     let changes = changes_from_diff(diff);
-    let mut impact = impact::compute(&graph, &classification, &changes, base, Some(head));
+    if let [lang] = langs.as_slice() {
+        let part = analyze_language(structure_lang::frontend(*lang), project, files)?;
+        let mut impact = impact::compute(
+            &part.graph,
+            &part.classification,
+            &changes,
+            base,
+            Some(head),
+        );
+        impact.warnings = part.warnings;
+        impact.matrix = Some(part.matrix);
+        return Ok(Analysis {
+            graph: part.graph,
+            classification: part.classification,
+            impact,
+        });
+    }
+
+    let repo = project.rsplit('/').next().unwrap_or(project);
+    let mut names = Vec::with_capacity(langs.len());
+    let mut parts = Vec::with_capacity(langs.len());
+    for &lang in &langs {
+        let name = format!("{repo} ({})", structure_lang::language_id(lang));
+        let part = analyze_language(structure_lang::frontend(lang), project, files)
+            .with_context(|| format!("project {name}"))?;
+        names.push(name);
+        parts.push(part);
+    }
+
+    let Some(first) = parts.first() else {
+        bail!("no supported sources");
+    };
+    let mut graph = Graph {
+        root: first.graph.root.clone(),
+        language: first.graph.language,
+        symbols: vec![],
+        edges: vec![],
+    };
+    let layers = merge_layers(parts.iter().map(|p| &p.layers));
+    let mut merged = MergedClassification::default();
+    let mut projects = Vec::with_capacity(parts.len());
+    let mut warnings = Vec::new();
+    for (name, part) in names.iter().zip(parts) {
+        projects.push(Project {
+            name: name.clone(),
+            root: project.to_string(),
+            language: part.graph.language,
+        });
+        append_graph(&mut graph, name, part.graph);
+        let mut sizes: BTreeMap<String, usize> = BTreeMap::new();
+        for c in &part.matrix.cells {
+            *sizes.entry(c.domain.clone()).or_default() += c.size;
+        }
+        merged.add(name, part.classification, sizes);
+        warnings.extend(part.warnings.into_iter().map(|w| format!("{name}: {w}")));
+    }
+    let classification = merged.finish();
+    let mut matrix = matrix::build(&graph, &classification, &layers, project, 0);
+    matrix.projects = projects;
+    matrix.warnings = warnings.clone();
+
+    let unit_changes: Vec<FileChange> = names
+        .iter()
+        .flat_map(|name| {
+            changes.iter().map(move |c| FileChange {
+                file: format!("{name}/{}", c.file),
+                lines: c.lines.clone(),
+            })
+        })
+        .collect();
+    let mut impact = impact::compute(&graph, &classification, &unit_changes, base, Some(head));
+    let mut changed: Vec<String> = changes.into_iter().map(|c| c.file).collect();
+    changed.sort();
+    changed.dedup();
+    impact.changed_files = changed;
     impact.warnings = warnings;
     impact.matrix = Some(matrix);
     Ok(Analysis {
@@ -176,6 +316,87 @@ mod tests {
         assert_eq!(detect_language(p).unwrap(), Language::TypeScript);
         let p = ["a.ts", "B.java", "C.java"];
         assert_eq!(detect_language(p).unwrap(), Language::Java);
+    }
+
+    #[test]
+    fn languages_with_sources_in_registry_order() {
+        let p = ["x.ts", "src/P/A.class.st", "B.java", "README.md"];
+        assert_eq!(
+            detect_languages(p).unwrap(),
+            [Language::Java, Language::TypeScript, Language::Pharo]
+        );
+        assert_eq!(
+            detect_languages(["a.ts", "src/P/package.st"]).unwrap(),
+            [Language::TypeScript]
+        );
+        let err = detect_languages(["README.md"]).unwrap_err();
+        assert!(err.to_string().contains("no supported sources"), "{err}");
+    }
+
+    #[test]
+    fn mixed_languages_are_split_and_merged() {
+        let files = vec![
+            f(
+                "back/src/main/java/p/Svc.java",
+                "package p;\n@Service\npublic class Svc {\n    public int run() {\n        return 1;\n    }\n}\n",
+            ),
+            f(
+                "back/src/main/java/p/Ctl.java",
+                "package p;\n@RestController\npublic class Ctl {\n    private Svc svc;\n    public int get() {\n        return svc.run();\n    }\n}\n",
+            ),
+            f(
+                "front/src/a.service.ts",
+                "export class AService {\n  run(): number {\n    return 1;\n  }\n}\n",
+            ),
+            f(
+                "front/src/b.component.ts",
+                "import { AService } from './a.service';\n@Component({})\nexport class BComponent {\n  constructor(private s: AService) {}\n  go() { return this.s.run(); }\n}\n",
+            ),
+        ];
+        // The PR only touches the minority language.
+        let a = analyze_pr(
+            &files,
+            &diff_for("front/src/a.service.ts"),
+            "owner/demo",
+            "b",
+            "h",
+        )
+        .unwrap();
+        let m = a.impact.matrix.as_ref().expect("matrix");
+        assert_eq!(m.project, "owner/demo");
+        let projects: Vec<(&str, Language)> = m
+            .projects
+            .iter()
+            .map(|p| (p.name.as_str(), p.language))
+            .collect();
+        assert_eq!(
+            projects,
+            [
+                ("demo (java)", Language::Java),
+                ("demo (typescript)", Language::TypeScript)
+            ]
+        );
+        assert!(a.graph.symbols.iter().any(|s| s.id == "demo (java)::p.Svc"));
+        assert!(
+            a.graph
+                .symbols
+                .iter()
+                .any(|s| s.file == "demo (typescript)/front/src/a.service.ts")
+        );
+        assert_eq!(a.impact.changed_files, ["front/src/a.service.ts"]);
+        let svc_ts = a
+            .graph
+            .symbols
+            .iter()
+            .find(|s| s.file.ends_with("a.service.ts") && s.container.is_none())
+            .expect("AService");
+        let changed = cell_of(&a, &svc_ts.id);
+        assert!(changed.contains("demo (typescript)/"), "{changed}");
+        assert_eq!(a.impact.changed_cells, [changed]);
+        assert!(!a.impact.impacted_cells.is_empty());
+        let java_cell = cell_of(&a, "demo (java)::p.Svc");
+        assert!(!a.impact.impacted_cells.iter().any(|c| c.id == java_cell));
+        assert!(m.cells.iter().any(|c| c.id == java_cell));
     }
 
     #[test]

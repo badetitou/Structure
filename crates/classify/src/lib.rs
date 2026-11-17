@@ -5,3 +5,4 @@ pub mod classify;
 pub mod layers;
 pub mod lens;
 pub mod matrix;
+pub mod merge;

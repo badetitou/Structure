@@ -3,6 +3,7 @@
 
 import { PrError, apiHeaders, githubError, prUrl, tarballUrl } from "./github.ts";
 import type { PrRef } from "./github.ts";
+import { SOURCE_EXTENSIONS } from "./sources.generated.ts";
 import { readTar } from "./tar.ts";
 import type { TarFile } from "./tar.ts";
 
@@ -18,8 +19,6 @@ export interface FetchOptions {
   fetch?: typeof fetch;
   onProgress?: (text: string) => void;
 }
-
-export const SOURCE_EXTENSIONS = [".java", ".ts", ".tsx", ".st"];
 
 export async function fetchPr(ref: PrRef, opts: FetchOptions = {}): Promise<PrData> {
   const f = opts.fetch ?? fetch;
