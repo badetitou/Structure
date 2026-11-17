@@ -569,6 +569,12 @@ mod tests {
             ]
         );
         assert_eq!(pre.edges, plain.edges, "edges are by cell index");
+        // `Cell` doc: the prefix is only on the id; `layer` and `domain` stay
+        // bare, so the id is never parsed.
+        for (p, c) in pre.cells.iter().zip(&plain.cells) {
+            assert_eq!((&p.layer, &p.domain, p.size), (&c.layer, &c.domain, c.size));
+            assert_eq!(p.id, format!("x/{}", Cell::id_for(&p.layer, &p.domain)));
+        }
         let page = cell_symbols_in(&g, &cls, "x/", &["x/business:account".into()], 0, 10);
         assert_eq!(page.total, 2);
         assert_eq!(

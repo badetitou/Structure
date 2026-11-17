@@ -1,8 +1,10 @@
 # Tauri API (UI contract)
 
-The UI talks to the Rust side through seven commands and one event. JSON field
-names are snake_case; enums are snake_case strings. Rust definitions live in
-`crates/ir/src/model.rs` and `ir.rs`. Samples: `docs/samples/matrix.json`,
+The UI talks to the Rust side through ten commands and one event. The
+commands (`app/src-tauri/src/commands.rs`) are thin wrappers over
+`structure_core::session::Session`. JSON field names are snake_case; enums are
+snake_case strings. Rust definitions live in `crates/ir/src/model.rs`,
+`crates/ir/src/ir.rs` and `crates/ir/src/highlight.rs`. Samples: `docs/samples/matrix.json`,
 `docs/samples/impact.json`.
 
 The TypeScript declarations of these types are generated from the Rust ones
@@ -221,9 +223,12 @@ interface DomainNode {
   children: DomainNode[]; // a module with own classes and sub-modules gets a leaf child for its own classes
 }
 interface Cell {
-  id: string; // "<layer>:<domain>", e.g. "business:account"
+  // "<layer>:<domain>", e.g. "business:account", in the default lens; another
+  // lens prefixes it ("package/<layer>:<path>" for `layer-package`). Read
+  // `layer` and `domain` instead of parsing the id.
+  id: string;
   layer: LayerId;
-  domain: string;
+  domain: string; // the column: an inferred domain, or a module path (`layer-package`)
   size: number;   // number of top-level symbols; list them with `cell_symbols`
 }
 interface CellSymbol { id: string; name: string; file: string }

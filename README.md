@@ -291,26 +291,28 @@ in [rules/README.md](crates/lang/rules/README.md#project-rules).
 
 ```text
 crates/
-  ir/          Graph, Symbol, Edge, Matrix, Impact: the shared contracts
+  ir/          Graph, Symbol, Edge, Matrix, Impact, Highlight: the shared contracts
   lang-java/   tree-sitter front end for Java
   lang-ts/     tree-sitter front end for TypeScript
   lang-pharo/  Tonel reader for Pharo (classes, methods, sends)
   lang/        pure language registry and built-in classification rules (rules/)
   scip/        reads index.scip, links occurrences to symbols
-  classify/    rules and the quotient matrix
-  git/         diff → changed and impacted cells
+  classify/    rules, layers, lenses and the quotient matrix
+  highlight/   pure highlight model (resolve, propagate, aggregate)
+  git/         diff → changed and impacted cells, refs, textual diffs
   wasm/        WebAssembly build of the analysis, for the browser extension
-  core/        facade and pipeline (analyze, indexers, snapshots, history)
+  core/        facade, pipeline (analyze, indexers, snapshots, history), linkers, Session
   cli/         the `structure` binary
 app/
-  src-tauri/   Tauri 2 commands over the pipeline
+  src-tauri/   Tauri 2 commands over the core Session
   ui/          Vite + Svelte 5 + TypeScript; extension/ and src/extension/ hold the browser extension
-docs/          plan, Tauri API contract, sample JSON
+docs/          architecture, POC plan, Tauri API contract, sample JSON
 scripts/       fetch and index the demo fixtures, build the wasm module
 tests/golden/  expected classifications
 ```
 
-More detail: [docs/plan.md](docs/plan.md) (POC plan, in French),
+More detail: [docs/architecture.md](docs/architecture.md) (current architecture
+and roadmap, in French), [docs/plan.md](docs/plan.md) (historical POC plan, in French),
 [docs/api.md](docs/api.md) (UI ↔ Rust contract), [app/README.md](app/README.md) (desktop app).
 
 ## Development

@@ -2,7 +2,8 @@
 
 Structure analyses a codebase (Java first, then TS) into a call graph,
 quotients it into `layer × domain` cells and renders it as an interactive
-matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no remote yet.
+matrix. Current architecture and roadmap: `docs/architecture.md` (the POC plan
+`docs/plan.md` is historical). Rust (cargo), on GitHub (`badetitou/Structure`).
 
 ## Commands
 
@@ -19,10 +20,12 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
 ## Map
 
 - `Cargo.toml` — virtual workspace (edition 2024); `app/` (Tauri) is excluded.
-- `crates/` — one-way deps `ir` <- `lang-java`/`lang-ts`/`lang-pharo` <- `lang`;
-  `ir` <- `scip`/`classify`/`highlight` <- `git`; `lang`/`scip`/`classify`/`git` <- `core` <- `cli`;
-  `lang`/`classify`/`git` <- `wasm` (`git` needs only `ir` and `highlight`;
-  `classify` dev-depends on `lang` for its tests, `lang` never depends on `classify`):
+- `crates/` — one-way deps (as in each `crates/*/Cargo.toml`):
+  `ir` <- `lang-java`/`lang-ts`/`lang-pharo` <- `lang`; `ir` <- `scip`;
+  `ir` <- `classify`; `ir` <- `highlight` <- `git`;
+  `ir`/`lang-*`/`lang`/`scip`/`classify`/`highlight`/`git` <- `core` <- `cli`;
+  `ir`/`lang`/`classify`/`git` <- `wasm` (`classify` dev-depends on `lang` for
+  its tests, `lang` never depends on `classify`):
   - `ir` (`structure-ir`): `ir` (Graph/Symbol/Edge/Port/ParseStat), `model`
     (LayerId/LayerDef/Matrix/Impact/Progress), `highlight` (Anchor/Seed/HighlightRequest/
     Highlight) — contracts, serde only; feature `ts`
@@ -36,7 +39,7 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     files → `ParseOutput { graph, stats }` (generic named counters, e.g. Pharo's
     sends), `default_rules`, `module_separator`), `all()`/`frontend()`,
     `detect_by_paths` (majority of sources, ties Java > TypeScript > Pharo).
-    Owns the embedded default rules `rules/*.toml` (layer/domain rules and
+    Owns the embedded default rules `crates/lang/rules/*.toml` (layer/domain rules and
     `[[layer]]` declarations, see `crates/lang/rules/README.md`), kept as plain
     strings (validated by `classify`'s tests).
   - `scip` (`structure-scip`): `scip` reads `index.scip`; `link` joins SCIP
@@ -53,11 +56,13 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     `propagate` (callers/callees BFS), `aggregate` (→ cells; `aggregate_by` with any
     cell mapping, e.g. a lens'), `highlight`.
   - `git` (`structure-git`): `impact` (git diff → `diff_request`, a `git-diff`
-    highlight → `Impact::from_highlight`; `ImpactIndex` = `HighlightIndex`) and
+    highlight → `Impact::from_highlight`; `ImpactIndex` = `HighlightIndex`), `diff`
+    (textual diff of a range for the Diff panel) and
     ref/fingerprint helpers (`resolve_base`, `resolve_commit`, `worktree_fingerprint`).
   - `core` (`structure-core`): facade, re-exports the crates above under their old
-    module names (`ir`, `model`, `java`, `ts`, `scip`, `link`, `metrics`, `classify`,
-    `layers`, `lens`, `matrix`, `impact`, `highlight`). Own code: `lang/` (native `LanguageFrontend`
+    module names (`ir`, `model`, `java`, `ts`, `pharo`, `scip`, `link`, `metrics`,
+    `classify`, `layers`, `lens`, `matrix`, `impact`, `diff`, `highlight`). Own code:
+    `lang/` (native `LanguageFrontend`
     trait: marker detection, parse from disk → `ParseOutput`, optional native
     `Indexer` (command, hint, SCIP cache tag; `None` for Pharo = no SCIP step);
     `pure()` gives the `structure-lang` frontend; registry `all()`/`frontend()`) and `pipeline/` (`mod`
@@ -65,7 +70,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     `multi` analysis units `(root, language)` — several roots, or one root per
     language named `<dir> (<language>)` with its own `index.<language>.scip` —
     merged, first unit's layers win, `reclassify` rules
-    re-applied to a cached graph + `rules_stamp`, `indexer`, `process`,
+    re-applied to a cached graph + `rules_stamp`, `indexer`, `scip_cache`
+    (SCIP documents shared by blob across worktrees), `process`,
     `progress`, `snapshot`, `history`, `lens`: `Analysis::lens` builds and caches a
     non-default lens' classification + matrix, `lens_cells` maps an impact's
     symbols to a lens' cells) and
@@ -78,7 +84,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     `session` (`Session`: owns cached analyses — working trees by canonical
     path + fingerprint, commit snapshots — generations and paging, `reclassify`,
     `lenses`/`matrix`/`impact_cells` per lens; API mirrors the Tauri commands).
-- `crates/cli` — bin `structure` (`analyze`, `impact`). Keep `main` thin.
+- `crates/cli` — bin `structure` (`analyze`, `impact`; calls `pipeline` directly,
+  not `Session`). Keep `main` thin.
 - `crates/wasm` (`structure-wasm`) — in-memory PR analysis for the browser
   extension (`analyze_pr`, JS glue in `wasm.rs`); `scripts/build-wasm.sh`.
 - `app/` — Tauri 2 app: `src-tauri` (thin commands over a managed `Session`), `ui` (Vite + Svelte
@@ -87,7 +94,8 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
   git, options, lenses; cross-store actions in `session.ts`), `src/*.ts` geometry helpers
   (`lens.ts`: lens ids and pure rules), `src/workspace/` panel registry +
   dockview glue + `context.ts` (`ViewContext`: what views read and do, instead of the stores; per-panel display options in `displays.svelte.ts`/`paneldisplay.ts`), `src/lib/components` Svelte components (`matrix/`, `workspace/`, `ui/`). See `app/README.md`.
-- `docs/` — `plan.md`, `api.md` (Tauri API contract), `samples/*.json`.
+- `docs/` — `architecture.md` (current target, roadmap and remaining gaps),
+  `plan.md` (historical POC plan), `api.md` (Tauri API contract), `samples/*.json`.
 - `scripts/` — fetch and index fixtures; `tests/golden/` — expected classifications.
 - `fixtures/` (gitignored) — sample projects. Tests needing them read env
   `STRUCTURE_FIXTURES` (default `<workspace>/fixtures`) and skip when absent.
