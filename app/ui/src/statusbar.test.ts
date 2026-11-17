@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Impact } from "./api";
 import type { ViewCell } from "./domaintree";
-import { impactLabel, selectionLabel, shortRef, snapshotLabel, statsLabel } from "./statusbar";
+import { cellCountsLabel, impactLabel, multiImpactLabel, selectionLabel, shortRef, snapshotLabel, statsLabel } from "./statusbar";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const impact = (over: Partial<Impact> = {}): Impact => ({
@@ -70,5 +70,17 @@ describe("selectionLabel", () => {
     expect(selectionLabel(cell(2), [{ id: "ui", label: "User interface", order: 0 }])).toBe(
       "User interface / d · 2 symbols",
     );
+  });
+});
+
+describe("multiImpactLabel", () => {
+  it("counts the overlays drawn and the cells the working tree does not have", () => {
+    expect(multiImpactLabel(2, 0)).toBe("2 overlays on the working tree");
+    expect(multiImpactLabel(3, 1)).toBe("3 overlays on the working tree · 1 cell not in working tree");
+    expect(multiImpactLabel(3, 4)).toBe("3 overlays on the working tree · 4 cells not in working tree");
+  });
+
+  it("cell counts of one overlay", () => {
+    expect(cellCountsLabel(impact())).toBe("1 changed cell · 2 impacted cells");
   });
 });

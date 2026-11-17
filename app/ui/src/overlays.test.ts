@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Impact } from "./api";
-import { OVERLAY_COLOURS, addOverlay, nextColour, selectionAfterRemoval, selectorVisible } from "./overlays";
+import {
+  OVERLAY_COLOURS,
+  addOverlay,
+  clickSelection,
+  isMacPlatform,
+  isToggleClick,
+  nextColour,
+  sameSelection,
+  selectionAfterRemoval,
+  selectorVisible,
+} from "./overlays";
 import type { Overlay, Range } from "./overlays";
 
 const imp = (base: string): Impact => ({
@@ -63,22 +73,61 @@ describe("overlay list", () => {
 
   it("selection after removal: kept when another overlay was shown, else the most recent left", () => {
     const left = [{ id: "o1" }, { id: "o3" }] as Overlay[];
-    expect(selectionAfterRemoval(left, "o1", "o2")).toBe("o1");
-    expect(selectionAfterRemoval(left, "o2", "o2")).toBe("o3");
-    expect(selectionAfterRemoval(left, null, "o2")).toBeNull();
-    expect(selectionAfterRemoval([], "o2", "o2")).toBeNull();
+    expect(selectionAfterRemoval(left, ["o1"], "o2")).toEqual(["o1"]);
+    expect(selectionAfterRemoval(left, ["o2"], "o2")).toEqual(["o3"]);
+    expect(selectionAfterRemoval(left, [], "o2")).toEqual([]);
+    expect(selectionAfterRemoval([], ["o2"], "o2")).toEqual([]);
+  });
+
+  it("selection after removal: an overlay removed from several shown only leaves them", () => {
+    const left = [{ id: "o1" }, { id: "o3" }] as Overlay[];
+    expect(selectionAfterRemoval(left, ["o2", "o1"], "o2")).toEqual(["o1"]);
+    expect(selectionAfterRemoval(left, ["o3", "o1"], "o2")).toEqual(["o3", "o1"]);
   });
 
   it("the selector is shown only with two overlays or more", () => {
     const one = addOverlay([], r("a"), imp("a"), null, "o1").list;
-    expect(selectorVisible([], null)).toBe(false);
-    expect(selectorVisible(one, "o1")).toBe(false);
-    expect(selectorVisible(addOverlay(pin(one, "o1"), r("b"), imp("b"), null, "o2").list, "o2")).toBe(true);
+    expect(selectorVisible([], [])).toBe(false);
+    expect(selectorVisible(one, ["o1"])).toBe(false);
+    expect(selectorVisible(addOverlay(pin(one, "o1"), r("b"), imp("b"), null, "o2").list, ["o2"])).toBe(true);
   });
 
   it("the selector shows a single overlay left unselected so that it stays reachable", () => {
     const kept = pin(addOverlay([], r("a"), imp("a"), null, "o1").list, "o1");
-    expect(selectorVisible(kept, null)).toBe(true);
-    expect(selectorVisible(kept, "o1")).toBe(false);
+    expect(selectorVisible(kept, [])).toBe(true);
+    expect(selectorVisible(kept, ["o1"])).toBe(false);
+  });
+});
+
+describe("overlay selection", () => {
+  it("a plain click selects exactly that overlay", () => {
+    expect(clickSelection([], "o1", false)).toEqual(["o1"]);
+    expect(clickSelection(["o1", "o2"], "o3", false)).toEqual(["o3"]);
+    expect(clickSelection(["o1", "o2"], "o2", false)).toEqual(["o2"]);
+    // plain click on the single selected one keeps it
+    expect(clickSelection(["o1"], "o1", false)).toEqual(["o1"]);
+  });
+
+  it("a toggle click adds or removes, in click order, but never empties the selection", () => {
+    expect(clickSelection(["o2"], "o1", true)).toEqual(["o2", "o1"]);
+    expect(clickSelection(["o2", "o1"], "o2", true)).toEqual(["o1"]);
+    expect(clickSelection(["o1"], "o1", true)).toEqual(["o1"]);
+    expect(clickSelection([], "o1", true)).toEqual(["o1"]);
+  });
+
+  it("compares selections by content and order", () => {
+    expect(sameSelection(["a", "b"], ["a", "b"])).toBe(true);
+    expect(sameSelection(["a", "b"], ["b", "a"])).toBe(false);
+    expect(sameSelection(["a"], ["a", "b"])).toBe(false);
+  });
+
+  it("toggles with cmd on macOS, with ctrl elsewhere", () => {
+    expect(isToggleClick({ metaKey: true, ctrlKey: false }, true)).toBe(true);
+    expect(isToggleClick({ metaKey: false, ctrlKey: true }, true)).toBe(false);
+    expect(isToggleClick({ metaKey: false, ctrlKey: true }, false)).toBe(true);
+    expect(isToggleClick({ metaKey: true, ctrlKey: false }, false)).toBe(false);
+    expect(isMacPlatform("MacIntel")).toBe(true);
+    expect(isMacPlatform("Win32")).toBe(false);
+    expect(isMacPlatform("Linux x86_64")).toBe(false);
   });
 });

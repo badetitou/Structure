@@ -14,6 +14,8 @@
   import { defaultEdgeOpacity } from "../../cellstate";
   import { FLAME_MAX_COLUMNS, MAX_COLUMNS, aggregate, aggregateImpact, bands, columns, flatColumns, initialExpanded, remapExpanded } from "../../domaintree";
   import { adjacency, reach, visibleEdges, type RemoteKind } from "../../graph";
+  import { overlayViews } from "../../multioverlay";
+  import type { OverlayHit } from "../../multioverlay";
   import { BAND_DENSE, BAND_NORMAL, STROKE_DENSE, STROKE_NORMAL, layout } from "../../layout";
   import { analysis } from "../../stores/analysis.svelte";
   import { impact } from "../../stores/impact.svelte";
@@ -128,7 +130,7 @@
   // Hover: adjacency once per view matrix, then one BFS per direction per hovered cell.
   // Tied to the matrix, mode, impact and expansion it was made under: any change drops it with no stale frame.
   let hovered = $state.raw<{ id: string; keys: unknown[] } | null>(null);
-  const hoverKeys = () => [matrix, mode, impact.current, expanded, alignedOn];
+  const hoverKeys = () => [matrix, mode, impact.current, impact.selectedIds, expanded, alignedOn];
   const hoveredId = $derived(
     hovered && hovered.keys.every((k, i) => k === hoverKeys()[i]) ? hovered.id : null,
   );
@@ -137,7 +139,12 @@
   const hover = $derived(
     hoveredId ? { id: hoveredId, fwd: reach(hoveredId, adj, "forward"), bwd: reach(hoveredId, adj, "backward") } : null,
   );
-  const shownImpact = $derived(impact.current ? aggregateImpact(impact.current, vm.cellMap) : null);
+  // Several overlays drawn together: each cell's hits (bands), their union drives edges and dimming.
+  const multiView = $derived(impact.multi ? overlayViews(impact.selectedOverlays, vm.cellMap) : null);
+  const NO_HITS: OverlayHit[] = [];
+  const shownImpact = $derived(
+    multiView ? multiView.union : impact.current ? aggregateImpact(impact.current, vm.cellMap) : null,
+  );
   const selTile = $derived(selection.selected ? tileById.get(selection.selected.id) : undefined);
   const selWidth = $derived((mode === "dense" ? STROKE_DENSE : STROKE_NORMAL)[1]);
 
@@ -344,6 +351,7 @@
             detailed={lay.detailed}
             {hover}
             impact={shownImpact}
+            hits={multiView ? (multiView.hits.get(c.cell.id) ?? NO_HITS) : null}
             onhover={setHover}
             onselect={(cell) => selection.select(cell)}
           />

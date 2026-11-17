@@ -229,6 +229,116 @@ describe("impact overlays", () => {
   });
 });
 
+describe("several overlays shown", () => {
+  /** Two kept overlays (a on a commit snapshot, b on the working tree) and c, unpinned; c shown. */
+  async function three() {
+    const work = { ...mx("work"), cells: [{ id: "w1", layer: "service", domain: "w1", size: 1 }] };
+    await loaded(work);
+    mocked.diff.mockResolvedValue({ base: "a", head: null, files: [], truncated: false });
+    mocked.impact.mockResolvedValueOnce(imp({ base: "a", head: "h", matrix: mx("snapA"), changed_cells: ["w1", "gone"] }));
+    await runImpact("a", "h");
+    keepOverlay();
+    mocked.impact.mockResolvedValueOnce(imp({ base: "b", impacted_cells: [{ id: "lost", distance: 1 }] }));
+    await runImpact("b", null);
+    keepOverlay();
+    mocked.impact.mockResolvedValueOnce(imp({ base: "c" }));
+    await runImpact("c", null);
+    return { work, ids: impact.overlays.map((o) => o.id) };
+  }
+
+  it("a toggle click adds an overlay: drawn together on the working tree, missing cells counted", async () => {
+    const { work, ids } = await three();
+    const [a, b, c] = ids;
+    selectOverlay(a, true);
+    expect(impact.selectedIds).toEqual([c, a]);
+    expect(impact.multi).toBe(true);
+    expect(impact.current).toBeNull();
+    expect(impact.selectedOverlays.map((o) => o.id)).toEqual([a, c]);
+    // a carries a snapshot, but several overlays are drawn on the working tree
+    expect(shown.matrix).toBe(work);
+    expect(shown.head).toBeNull();
+    expect(shown.missingCells).toBe(1);
+    selectOverlay(b, true);
+    expect(shown.missingCells).toBe(2);
+    // the diff follows the first selected one
+    expect(impact.selectedId).toBe(c);
+    expect(git.diff).toMatchObject({ base: "c", head: null });
+  });
+
+  it("toggling an overlay off keeps the others; the last one cannot be toggled off; a plain click shows one", async () => {
+    const { ids } = await three();
+    const [a, b, c] = ids;
+    selectOverlay(a, true);
+    selectOverlay(b, true);
+    selectOverlay(c, true);
+    expect(impact.selectedIds).toEqual([a, b]);
+    expect(impact.selectedId).toBe(a);
+    expect(git.diff).toMatchObject({ base: "a", head: "h" });
+    selectOverlay(a, true);
+    selectOverlay(b, true);
+    expect(impact.selectedIds).toEqual([b]);
+    expect(impact.multi).toBe(false);
+    selectOverlay(a, true);
+    selectOverlay(c, false);
+    expect(impact.selectedIds).toEqual([c]);
+    expect(shown.missingCells).toBe(0);
+  });
+
+  it("removing one of the overlays shown leaves the others shown; Clear drops them all", async () => {
+    const { ids } = await three();
+    const [a, b, c] = ids;
+    selectOverlay(a, true);
+    selectOverlay(b, true);
+    removeOverlay(c);
+    expect(impact.selectedIds).toEqual([a, b]);
+    expect(impact.multi).toBe(true);
+    clearImpact();
+    expect(impact.selectedIds).toEqual([]);
+    expect(impact.overlays.map((o) => o.id)).toEqual([a, b]);
+  });
+
+  it("a new impact is shown alone; Keep pins the unpinned one shown", async () => {
+    const { ids } = await three();
+    const [a, , c] = ids;
+    selectOverlay(a, true);
+    keepOverlay();
+    expect(impact.overlays.every((o) => o.pinned)).toBe(true);
+    mocked.impact.mockResolvedValueOnce(imp({ base: "d" }));
+    await runImpact("d", null);
+    expect(impact.selectedIds).toHaveLength(1);
+    expect(impact.selected?.label).toBe("d..working tree");
+    expect(impact.overlays.map((o) => o.id)).toContain(c);
+  });
+
+  it("a rules reload computes every overlay shown again, one after the other, keeping them shown", async () => {
+    const { ids } = await three();
+    const [a, b, c] = ids;
+    selectOverlay(b, true);
+    mocked.reclassify.mockResolvedValue(withCells(8, ["w1", 1]));
+    mocked.impact.mockClear();
+    mocked.impact.mockResolvedValue(imp({ base: "new" }));
+    await reloadRules();
+    for (let i = 0; i < 5; i++) await flush();
+    expect(mocked.impact.mock.calls.map((x) => x[1])).toEqual(["c", "b"]);
+    expect(impact.selectedIds).toEqual([c, b]);
+    expect(impact.overlays.map((o) => o.stale)).toEqual([true, false, false]);
+    expect(impact.overlays.find((o) => o.id === a)?.stale).toBe(true);
+  });
+
+  it("a failing re-run is not retried in a loop", async () => {
+    const { ids } = await three();
+    const [, b] = ids;
+    selectOverlay(b, true);
+    mocked.reclassify.mockResolvedValue(withCells(8, ["w1", 1]));
+    mocked.impact.mockClear();
+    mocked.impact.mockRejectedValue(new Error("boom"));
+    await reloadRules();
+    for (let i = 0; i < 5; i++) await flush();
+    expect(mocked.impact).toHaveBeenCalledTimes(1);
+    expect(impact.error).toContain("boom");
+  });
+});
+
 describe("impact overlay on its own", () => {
   it("abandon drops the running answer but keeps the impact shown and its range", async () => {
     const o = new ImpactOverlays();

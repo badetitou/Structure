@@ -19,7 +19,6 @@
   import { shown } from "../../stores/shown";
   import { folderName } from "../../recent";
   import ImpactRange from "./ImpactRange.svelte";
-  import OverlaySelector from "./OverlaySelector.svelte";
   import OptionsButton from "./OptionsButton.svelte";
   import ViewsMenu from "./workspace/ViewsMenu.svelte";
 
@@ -131,10 +130,10 @@
   {#if !analysis.multi && !embedded}
   {@render divider()}
   <ImpactRange />
-  <Button variant="outline" size="sm" disabled={!impact.current || impact.busy} onclick={() => clearImpact()}
+  <Button variant="outline" size="sm" disabled={!impact.selected || impact.busy} onclick={() => clearImpact()}
     >Clear impact</Button
   >
-  {#if impact.selected && !impact.selected.pinned}
+  {#if impact.selectedOverlays.some((o) => !o.pinned)}
     <Button
       variant="outline"
       size="sm"
@@ -143,7 +142,6 @@
       onclick={() => keepOverlay()}>Keep</Button
     >
   {/if}
-  <OverlaySelector />
   {/if}
   {/if}
   <span class="ml-auto flex flex-none items-center gap-1.5">

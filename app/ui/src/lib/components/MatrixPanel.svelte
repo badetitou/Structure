@@ -8,9 +8,11 @@
 <script lang="ts">
   import ImpactBusy from "./ImpactBusy.svelte";
   import MatrixView from "./MatrixView.svelte";
+  import OverlaySelector from "./OverlaySelector.svelte";
   import { shown } from "../../stores/shown";
 
-  // The matrix as a workspace panel, covered by the impact progress while one runs.
+  // The matrix as a workspace panel: the overlay selector above it (when there is a choice),
+  // the matrix covered by the impact progress while one runs.
   let view = $state<MatrixHandle | null>(null);
   $effect(() => {
     const v = view;
@@ -21,9 +23,12 @@
   });
 </script>
 
-<div class="relative flex min-h-0 min-w-0 flex-1">
-  {#if shown.matrix}
-    <MatrixView bind:this={view} matrix={shown.matrix} />
-  {/if}
-  <ImpactBusy />
+<div class="flex min-h-0 min-w-0 flex-1 flex-col">
+  <OverlaySelector />
+  <div class="relative flex min-h-0 min-w-0 flex-1">
+    {#if shown.matrix}
+      <MatrixView bind:this={view} matrix={shown.matrix} />
+    {/if}
+    <ImpactBusy />
+  </div>
 </div>

@@ -36,3 +36,15 @@ export function impactLabel(impact: Impact | null, busy: Progress | null): strin
 export function selectionLabel(cell: ViewCell | null, layers?: readonly LayerDef[]): string | null {
   return cell ? `${layerLabel(layers, cell.layer)} / ${cell.label} · ${plural(cell.size, "symbol")}` : null;
 }
+
+/** Several overlays drawn together: how many, and the cells they hit that the working tree
+ * does not have (see `cellsNotIn`). */
+export function multiImpactLabel(count: number, missing: number): string {
+  const base = `${count} overlays on the working tree`;
+  return missing > 0 ? `${base} · ${plural(missing, "cell")} not in working tree` : base;
+}
+
+/** "2 changed cells · 5 impacted cells" of one overlay. */
+export function cellCountsLabel(impact: Impact): string {
+  return `${plural(impact.changed_cells.length, "changed cell")} · ${plural(impact.impacted_cells.length, "impacted cell")}`;
+}
