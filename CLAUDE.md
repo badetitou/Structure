@@ -80,7 +80,7 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
   5 + TS, vitest): `src/api.ts` backend wrappers over the generated wire types
   in `src/generated/` (never hand-edited), `src/stores/` rune stores (analysis, impact, selection,
   git, options; cross-store actions in `session.ts`), `src/*.ts` geometry helpers, `src/workspace/` panel registry +
-  dockview glue, `src/lib/components` Svelte components (`matrix/`, `workspace/`, `ui/`). See `app/README.md`.
+  dockview glue + `context.ts` (`ViewContext`: what views read and do, instead of the stores), `src/lib/components` Svelte components (`matrix/`, `workspace/`, `ui/`). See `app/README.md`.
 - `docs/` — `plan.md`, `api.md` (Tauri API contract), `samples/*.json`.
 - `scripts/` — fetch and index fixtures; `tests/golden/` — expected classifications.
 - `fixtures/` (gitignored) — sample projects. Tests needing them read env

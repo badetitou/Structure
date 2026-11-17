@@ -4,9 +4,9 @@
   import { Button } from "$lib/components/ui/button";
   import * as ToggleGroup from "$lib/components/ui/toggle-group";
   import ThemeSwitch from "../../ThemeSwitch.svelte";
-  import { analysis } from "../../stores/analysis.svelte";
-  import { options } from "../../stores/options.svelte";
-  import { reloadRules } from "../../stores/session";
+  import { getViewContext } from "../../workspace/context";
+
+  const { lens, rules, actions } = getViewContext();
 
   // Gear button that opens the Options page: app preferences, persisted as they change.
   let open = $state(false);
@@ -36,7 +36,7 @@
           <ThemeSwitch />
         </div>
       </section>
-      {#if analysis.rulesReloadable}
+      {#if rules.reloadable}
         <section class="flex flex-col gap-3">
           <h2 class="m-0 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Project</h2>
           <div class="flex items-center justify-between gap-4">
@@ -46,11 +46,11 @@
                 >Apply <code>.structure/rules.toml</code> again without re-analysing (done automatically when it changes).</span
               >
             </span>
-            <Button variant="outline" size="sm" disabled={analysis.rulesBusy} onclick={() => void reloadRules()}
-              >{analysis.rulesBusy ? "Reloading…" : "Reload rules"}</Button
+            <Button variant="outline" size="sm" disabled={rules.busy} onclick={() => void actions.reloadRules()}
+              >{rules.busy ? "Reloading…" : "Reload rules"}</Button
             >
           </div>
-          {#if analysis.rulesError}<p class="m-0 text-xs text-destructive">{analysis.rulesError}</p>{/if}
+          {#if rules.error}<p class="m-0 text-xs text-destructive">{rules.error}</p>{/if}
         </section>
       {/if}
       <section class="flex flex-col gap-3">
@@ -65,8 +65,8 @@
             variant="outline"
             size="sm"
             aria-label="Top labels angle"
-            value={options.angledLabels ? "45" : "90"}
-            onValueChange={(v) => v && options.setAngledLabels(v === "45")}
+            value={lens.display.angledLabels ? "45" : "90"}
+            onValueChange={(v) => v && actions.setAngledLabels(v === "45")}
           >
             <ToggleGroup.Item value="90" class="px-2">Vertical</ToggleGroup.Item>
             <ToggleGroup.Item value="45" class="px-2">45°</ToggleGroup.Item>

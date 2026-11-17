@@ -4,6 +4,10 @@
   import ThemeSwitch from "./ThemeSwitch.svelte";
   import OptionsButton from "$lib/components/OptionsButton.svelte";
   import AnalysisScreen from "$lib/components/AnalysisScreen.svelte";
+  import { createViewContext, setViewContext } from "./workspace/context";
+
+  // The home bar's Options button reads the view context too (the analysis screen provides its own).
+  setViewContext(createViewContext());
 
   let screen = $state<"home" | "analysis">("home");
   let paths = $state<string[]>([]); // lives here so it survives Home remounts

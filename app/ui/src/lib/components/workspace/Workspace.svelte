@@ -4,6 +4,7 @@
   import "dockview/dist/styles/dockview.css";
   import { defaultLayout } from "../../../workspace/builtin";
   import { SvelteRenderer, dockDnd, loadDock, restore, saveDock, setTabHiddenIn, structureTheme, syncVisibility } from "../../../workspace/dock";
+  import { getViewContext, viewContextMap } from "../../../workspace/context";
   import { panels } from "../../../workspace/registry";
   import { workspace } from "../../../workspace/workspace.svelte";
   import MissingPanel from "./MissingPanel.svelte";
@@ -11,6 +12,8 @@
   // The dockview workspace: tabs, drag-and-drop docking and resizable splits for
   // the panels in the registry. The layout is restored and saved in localStorage.
   let host: HTMLDivElement;
+  // Panels are mounted as their own Svelte roots: they get the view context through `mount`.
+  const context = viewContextMap(getViewContext());
 
   const sync = (api: DockviewApi) =>
     syncVisibility(api, panels.isAvailable, (id, hidden) => setTabHiddenIn(host, id, hidden));
@@ -19,7 +22,7 @@
     const api = createDockview(host, {
       theme: structureTheme,
       ...dockDnd,
-      createComponent: ({ name }) => new SvelteRenderer(panels.get(name)?.component ?? MissingPanel),
+      createComponent: ({ name }) => new SvelteRenderer(panels.get(name)?.component ?? MissingPanel, context),
     });
     restore(api, loadDock(), panels.has, defaultLayout);
     workspace.api = api;

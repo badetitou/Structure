@@ -8,7 +8,7 @@ export interface PanelContribution {
   /** Stable id, stored in the persisted layout. */
   id: string;
   title: string;
-  /** Rendered with no props: a panel reads what it needs from the app state. */
+  /** Rendered with no props: a panel reads what it needs and acts through `getViewContext()` (context.ts), never the stores. */
   component: Component;
   /** While this returns false, a group holding only unavailable panels is hidden (takes no room); read reactively. */
   available?: () => boolean;

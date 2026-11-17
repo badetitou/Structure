@@ -17,10 +17,7 @@
   import { overlayViews } from "../../multioverlay";
   import type { OverlayHit } from "../../multioverlay";
   import { BAND_DENSE, BAND_NORMAL, STROKE_DENSE, STROKE_NORMAL, layout } from "../../layout";
-  import { analysis } from "../../stores/analysis.svelte";
-  import { impact } from "../../stores/impact.svelte";
-  import { options } from "../../stores/options.svelte";
-  import { selection } from "../../stores/selection.svelte";
+  import { getViewContext } from "../../workspace/context";
   import { fit, isFit, oneToOne, panBy, resize as resizeVb, toUser, wheelZoomFactor, zoomAtClamped } from "../../viewport";
   import type { ViewBox } from "../../viewport";
   import ColumnHeaders from "./matrix/ColumnHeaders.svelte";
@@ -31,6 +28,8 @@
   // matrix, the mode and the expanded groups; hover, impact and selection only
   // feed per-cell / per-edge derivations, and pan / zoom is one `transform`.
   let { matrix }: { matrix: Matrix } = $props();
+  const { lens, overlays: impact, selection, actions } = getViewContext();
+  const options = lens.display;
 
   const mode = $derived(options.mode);
   const transposed = $derived(options.transposed);
@@ -40,7 +39,7 @@
   // A new analysis or mode starts from its default expansion; the flame view opens the tree
   // much deeper so the matrix grows sideways. A commit snapshot of the same analysis keeps
   // the open groups (remapped by label, as its tree can differ) and the zoom.
-  const base = $derived(analysis.work ?? matrix);
+  const base = $derived(lens.work ?? matrix);
   let override = $state.raw<{ base: Matrix; tree: DomainNode[]; flame: boolean; set: Set<string> } | null>(null);
   const flame = $derived(mode === "flame");
   // Aligned view: several projects with remote links, front and back domains share rows.
@@ -150,9 +149,9 @@
 
   // Publish the aggregated view so the details panel names visible cells.
   $effect(() => {
-    selection.view = vm;
+    actions.publishView(vm);
     return () => {
-      selection.view = null;
+      actions.publishView(null);
     };
   });
 
@@ -160,7 +159,7 @@
   // after a rules reload, take the view's cell of the same id (its members may have changed).
   $effect(() => {
     const cells = vm.cells;
-    untrack(() => selection.sync(cells));
+    untrack(() => actions.syncSelection(cells));
   });
 
   function setExpanded(key: string, on: boolean) {
@@ -169,7 +168,7 @@
     else set.delete(key);
     if (tree) override = { base, tree, flame, set };
     // Expand / collapse changes the cell ids: drop the selection and hover.
-    selection.select(null);
+    actions.selectCell(null);
   }
 
   // Zoom / pan. The viewport keeps the pane's aspect (see viewport.ts); the
@@ -353,7 +352,7 @@
             impact={shownImpact}
             hits={multiView ? (multiView.hits.get(c.cell.id) ?? NO_HITS) : null}
             onhover={setHover}
-            onselect={(cell) => selection.select(cell)}
+            onselect={(cell) => actions.selectCell(cell)}
           />
         {/each}
         <!-- The selected outline is drawn last so neighbours (dense tiles touch) do not cover it. -->

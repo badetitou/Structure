@@ -6,7 +6,9 @@
   import { Button } from "$lib/components/ui/button";
   import type { DiffLine } from "../../api";
   import { fileLabel, rangeLabel, startsOpen, statusLetter, totals } from "../../diffview";
-  import { git } from "../../stores/git.svelte";
+  import { getViewContext } from "../../workspace/context";
+
+  const { git } = getViewContext();
 
   const d = $derived(git.diff);
   const sum = $derived(d?.data ? totals(d.data) : null);

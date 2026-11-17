@@ -12,11 +12,7 @@
   import { canAlign } from "../../aligned";
   import ThemeSwitch from "../../ThemeSwitch.svelte";
   import { parseMode } from "../../mode";
-  import { analysis } from "../../stores/analysis.svelte";
-  import { impact } from "../../stores/impact.svelte";
-  import { options } from "../../stores/options.svelte";
-  import { clearImpact, keepOverlay } from "../../stores/session";
-  import { shown } from "../../stores/shown";
+  import { getViewContext } from "../../workspace/context";
   import { folderName } from "../../recent";
   import ImpactRange from "./ImpactRange.svelte";
   import OptionsButton from "./OptionsButton.svelte";
@@ -40,9 +36,12 @@
     embedded?: boolean;
   } = $props();
 
+  const { lens, overlays: impact, actions } = getViewContext();
+  const options = lens.display;
+
   // Several projects: their names joined; else the project name or folder.
   const title = $derived(
-    analysis.work?.projects?.length ? analysis.work.projects.map((p) => p.name).join(" + ") : analysis.work?.project || folderName(analysis.project),
+    lens.work?.projects?.length ? lens.work.projects.map((p) => p.name).join(" + ") : lens.work?.project || folderName(lens.project),
   );
 </script>
 
@@ -61,7 +60,7 @@
 
 <header class="flex h-10 flex-none items-center gap-1.5 overflow-x-auto border-b bg-card px-2 whitespace-nowrap">
   <img src="/logo.svg" alt="Structure" class="size-6 flex-none" />
-  <h1 class="m-0 max-w-56 truncate text-sm font-semibold" title={analysis.paths.join("\n")}>{title}</h1>
+  <h1 class="m-0 max-w-56 truncate text-sm font-semibold" title={lens.paths.join("\n")}>{title}</h1>
   {#if ready}
   {@render divider()}
   {@render iconBtn(ZoomOut, "Zoom out", onZoomOut)}
@@ -74,7 +73,7 @@
     size="sm"
     aria-label="Matrix view"
     value={options.mode}
-    onValueChange={(v) => v && options.setMode(parseMode(v))}
+    onValueChange={(v) => v && actions.setMode(parseMode(v))}
   >
     <ToggleGroup.Item value="normal" aria-label="Normal view" class="px-2">Normal</ToggleGroup.Item>
     <ToggleGroup.Item value="dense" aria-label="Dense view" class="px-2">Dense</ToggleGroup.Item>
@@ -89,7 +88,7 @@
           size="sm"
           aria-label="Swap axes"
           pressed={options.transposed}
-          onPressedChange={(on) => options.setTransposed(on)}><ArrowLeftRight /></Toggle
+          onPressedChange={(on) => actions.setTransposed(on)}><ArrowLeftRight /></Toggle
         >
       {/snippet}
     </Tooltip.Trigger>
@@ -97,40 +96,40 @@
       >Swap axes — {options.transposed ? "domains as rows, layers as columns" : "layers as rows, domains as columns"}</Tooltip.Content
     >
   </Tooltip.Root>
-  {#if canAlign(shown.matrix?.projects, shown.matrix?.httpEdges ?? [], shown.matrix?.rpcEdges ?? [])}
+  {#if canAlign(lens.matrix?.projects, lens.matrix?.httpEdges ?? [], lens.matrix?.rpcEdges ?? [])}
     <Toggle
       variant="outline"
       size="sm"
       class="px-2"
       aria-label="Align projects: front and back domains on shared rows"
       pressed={options.aligned}
-      onPressedChange={(v) => options.setAligned(v)}>Align projects</Toggle
+      onPressedChange={(v) => actions.setAligned(v)}>Align projects</Toggle
     >
   {/if}
-  {#if (shown.matrix?.httpEdges.length ?? 0) > 0}
+  {#if (lens.matrix?.httpEdges.length ?? 0) > 0}
     <Toggle
       variant="outline"
       size="sm"
       class="px-2"
       aria-label="Show front-to-back HTTP links"
       pressed={options.showHttp}
-      onPressedChange={(v) => options.setShowHttp(v)}>HTTP links</Toggle
+      onPressedChange={(v) => actions.setShowHttp(v)}>HTTP links</Toggle
     >
   {/if}
-  {#if (shown.matrix?.rpcEdges.length ?? 0) > 0}
+  {#if (lens.matrix?.rpcEdges.length ?? 0) > 0}
     <Toggle
       variant="outline"
       size="sm"
       class="px-2"
       aria-label="Show GWT RPC links"
       pressed={options.showRpc}
-      onPressedChange={(v) => options.setShowRpc(v)}>RPC links</Toggle
+      onPressedChange={(v) => actions.setShowRpc(v)}>RPC links</Toggle
     >
   {/if}
-  {#if !analysis.multi && !embedded}
+  {#if !lens.multi && !embedded}
   {@render divider()}
   <ImpactRange />
-  <Button variant="outline" size="sm" disabled={!impact.selected || impact.busy} onclick={() => clearImpact()}
+  <Button variant="outline" size="sm" disabled={!impact.selected || impact.busy} onclick={() => actions.clearImpact()}
     >Clear impact</Button
   >
   {#if impact.selectedOverlays.some((o) => !o.pinned)}
@@ -139,7 +138,7 @@
       size="sm"
       disabled={impact.busy}
       title="Keep this impact as an overlay: the next impact is added next to it"
-      onclick={() => keepOverlay()}>Keep</Button
+      onclick={() => actions.keepOverlays()}>Keep</Button
     >
   {/if}
   {/if}

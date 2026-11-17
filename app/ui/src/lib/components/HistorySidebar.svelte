@@ -5,9 +5,9 @@
   import { rowSvg } from "../../graphsvg";
   import { clickCommit, headIndex, isSelected, relativeDate } from "../../history";
   import { layoutLanes } from "../../lanes";
-  import { git } from "../../stores/git.svelte";
-  import { impact } from "../../stores/impact.svelte";
-  import { pickHistory } from "../../stores/session";
+  import { getViewContext } from "../../workspace/context";
+
+  const { git, overlays, actions } = getViewContext();
 
   const hist = $derived(git.history);
   const lanes = $derived(hist ? layoutLanes(hist.commits) : null);
@@ -20,7 +20,7 @@
   const rowClass =
     "flex h-10 cursor-pointer items-center gap-1.5 overflow-hidden px-2.5 pl-1.5 select-none enabled:hover:bg-muted disabled:cursor-wait";
   // Rows are locked while an impact runs; the selected (pending) rows get a spinner.
-  const busy = $derived(impact.busy);
+  const busy = $derived(overlays.busy);
   const dim = $derived(busy ? "opacity-60" : "");
   // Only the range's head is analysed; the rest of the range is just the diff base.
   const pending = $derived(busy ? headIndex(git.historySel) : null);
@@ -35,7 +35,7 @@
         class="{rowClass} w-full text-left {git.historySel?.kind === 'worktree' ? 'bg-accent' : dim}"
         disabled={busy}
         aria-busy={busy && git.historySel?.kind === "worktree"}
-        onclick={() => pickHistory({ kind: "worktree" })}
+        onclick={() => actions.pickHistory({ kind: "worktree" })}
       >
         <span
           class="flex-none"
@@ -59,7 +59,7 @@
         class="{rowClass} w-full text-left {isSelected(git.historySel, i) ? 'bg-accent' : dim}"
         disabled={busy}
         aria-busy={pending === i}
-        onclick={(ev) => pickHistory(clickCommit(git.historySel, i, ev.shiftKey))}
+        onclick={(ev) => actions.pickHistory(clickCommit(git.historySel, i, ev.shiftKey))}
       >
         <span
           class="flex-none"
