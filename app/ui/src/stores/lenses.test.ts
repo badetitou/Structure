@@ -171,6 +171,7 @@ describe("view context, per panel lens", () => {
     const pcell = { ...cell, id: "p1", members: ["package/service:com.x"], size: 3 } as typeof cell;
     selection.select(pcell, "layer-package");
     // The lens' new matrix not loaded yet: kept as is, in its lens.
+    mocked.matrix.mockReturnValue(new Promise(() => {}));
     mocked.reclassify.mockResolvedValue(withCells(8, ["service:b", 4]));
     await reloadRules();
     expect(selection.selected).toBe(pcell);
