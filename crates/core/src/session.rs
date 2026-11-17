@@ -342,20 +342,30 @@ impl Session {
     /// one fail with "analysis changed". A rules file is the only change
     /// that keeps the working tree fresh for [`Session::impact`].
     ///
-    /// The project's cached commit snapshots are dropped: they were
+    /// The cached commit snapshots of each project root are dropped: they were
     /// classified with the rules of their own commit, and dropping them keeps
     /// every cached classification one a fresh analysis would give (the next
     /// commit impact analyses its snapshot again). On error (no cached
     /// analysis, invalid rules) the cache is unchanged.
     pub fn reclassify(&self, paths: &[String]) -> anyhow::Result<Matrix> {
+        self.reclassify_then(paths, &|| {})
+    }
+
+    /// [`Session::reclassify`], calling `after_rules` once the rules are read
+    /// (tests use it to edit them in that window).
+    fn reclassify_then(&self, paths: &[String], after_rules: &dyn Fn()) -> anyhow::Result<Matrix> {
         let (roots, key) = canonical_many(paths)?;
         let (_, fingerprint, generation, cached) = self
             .cache
             .get(&key)?
             .ok_or_else(|| anyhow!("no analysis to reclassify, run Analyze"))?;
+        // Taken before the rules are read: a rules edit made meanwhile leaves
+        // the entry stale rather than marking it applied.
+        let current = combined_fingerprint(&roots);
         let mut a = pipeline::reclassify(&cached)?;
+        after_rules();
         drop(cached);
-        let fingerprint = reclassified_fingerprint(fingerprint, combined_fingerprint(&roots));
+        let fingerprint = reclassified_fingerprint(fingerprint, current);
         let next = self.cache.next_generation();
         a.matrix.generation = next;
         let matrix = a.matrix.clone();
@@ -365,7 +375,10 @@ impl Session {
         {
             bail!("analysis changed, re-run Analyze");
         }
-        self.cache.remove_snapshots_of(&key)?;
+        // Snapshots are keyed per single root (see `Session::impact`).
+        for root in &roots {
+            self.cache.remove_snapshots_of(&root.to_string_lossy())?;
+        }
         Ok(matrix)
     }
 
@@ -384,7 +397,8 @@ impl Session {
     /// Impact of `base..head` on the project at `path`. Without `head` it is
     /// the working tree: its cached analysis is reused while nothing changed
     /// since (same HEAD, status and file mtimes), else it is re-parsed so
-    /// symbol ranges match the diff (the possibly stale index is reused).
+    /// symbol ranges match the diff (the possibly stale index is reused);
+    /// invalid project rules are then an error that keeps the cached analysis.
     /// With `head`, the commit's snapshot is analysed once and cached under
     /// its full SHA, which `Impact::head` then carries.
     pub fn impact(
@@ -415,7 +429,11 @@ impl Session {
                     reindex_if_stale: false,
                     ..self.impact_options
                 };
-                self.run_analyze(std::slice::from_ref(&p), &key, &opts, progress)?
+                let roots = std::slice::from_ref(&p);
+                // Fail before the cached analysis is dropped: invalid rules
+                // keep it, as [`Session::reclassify`] does.
+                pipeline::check_rules(roots)?;
+                self.run_analyze(roots, &key, &opts, progress)?
             }
         };
         step(progress, "computing impact", 50);
@@ -1057,6 +1075,237 @@ mod tests {
         s.impact(&path, Some(&c1), Some(&c2), &record).unwrap();
         let first = steps.lock().unwrap().first().cloned();
         assert_eq!(first, Some(format!("checking out {}", &c2[..7])));
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// A git repository at a fresh temp dir with `files` committed (c0), then
+    /// `class B` added to `java` (c1). Returns the repo and both SHAs.
+    fn repo_with(tag: &str, files: &[(&str, &str)], java: &str) -> (PathBuf, String, String) {
+        use crate::pipeline::test_support::git_ok;
+        let repo =
+            std::env::temp_dir().join(format!("structure-session-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        git_ok(&repo, &["init", "-q"]);
+        for (rel, text) in files {
+            let f = repo.join(rel);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(f, text).unwrap();
+        }
+        git_ok(&repo, &["add", "."]);
+        git_ok(&repo, &["commit", "-q", "-m", "c0"]);
+        let c0 = git_ok(&repo, &["rev-parse", "HEAD"]).trim().to_string();
+        let f = repo.join(java);
+        let mut text = std::fs::read_to_string(&f).unwrap();
+        text.push_str("class B { void b() {} }\n");
+        std::fs::write(&f, text).unwrap();
+        git_ok(&repo, &["commit", "-q", "-am", "c1"]);
+        let c1 = git_ok(&repo, &["rev-parse", "HEAD"]).trim().to_string();
+        (repo, c0, c1)
+    }
+
+    fn cell_ids(m: &Matrix) -> Vec<String> {
+        let mut ids: Vec<String> = m.cells.iter().map(|c| c.id.clone()).collect();
+        ids.sort();
+        ids
+    }
+
+    #[test]
+    fn commit_impact_of_a_multi_language_repo_root_keeps_project_names() {
+        let (repo, c0, c1) = repo_with(
+            "ml-root",
+            &[
+                ("pom.xml", "<project/>"),
+                ("package.json", "{}"),
+                ("src/A.java", "class A { void a() {} }\n"),
+                ("web/app.ts", "export class Web { run() {} }\n"),
+            ],
+            "src/A.java",
+        );
+        let path = repo.to_string_lossy().into_owned();
+        let name = repo.file_name().unwrap().to_string_lossy().into_owned();
+        let s = Session::with_impact_options(no_scip());
+        let m = s
+            .analyze(std::slice::from_ref(&path), &no_scip(), &|_| {})
+            .unwrap();
+        let names: Vec<&str> = m.projects.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [format!("{name} (java)"), format!("{name} (typescript)")]
+        );
+
+        let i = s.impact(&path, Some(&c0), Some(&c1), &|_| {}).unwrap();
+        let sm = i.matrix.as_ref().unwrap();
+        let snames: Vec<&str> = sm.projects.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(snames, names, "named after the project, not the commit");
+        assert_eq!(cell_ids(sm), cell_ids(&m), "same cells as the working tree");
+        assert!(!sm.project.contains(&c1[..7]), "{}", sm.project);
+        assert_eq!(i.changed_symbols, [format!("{name} (java)::B")], "{i:?}");
+        assert!(
+            i.changed_cells.iter().all(|c| cell_ids(&m).contains(c)),
+            "{i:?}"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn impact_of_a_root_expanded_to_one_sub_project() {
+        let (repo, c0, c1) = repo_with(
+            "one-sub",
+            &[
+                ("backend/pom.xml", "<project/>"),
+                (
+                    "backend/src/A.java",
+                    "package com.acme.billing;\nclass A { void a() {} }\n",
+                ),
+            ],
+            "backend/src/A.java",
+        );
+        let path = repo.to_string_lossy().into_owned();
+        let s = Session::with_impact_options(no_scip());
+        // Working tree (c1) against c0: B was added.
+        let i = s.impact(&path, Some(&c0), None, &|_| {}).unwrap();
+        assert_eq!(i.changed_files, ["backend/src/A.java"]);
+        assert_eq!(i.changed_symbols, ["com.acme.billing.B"], "{i:?}");
+        assert_eq!(i.changed_cells, ["unknown:billing"], "{i:?}");
+        // The commit path expands the root as well.
+        let i = s.impact(&path, Some(&c0), Some(&c1), &|_| {}).unwrap();
+        assert_eq!(i.changed_files, ["backend/src/A.java"]);
+        assert_eq!(i.changed_symbols, ["com.acme.billing.B"], "{i:?}");
+        assert_eq!(i.changed_cells, ["unknown:billing"], "{i:?}");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn working_tree_impact_with_invalid_rules_keeps_the_analysis() {
+        let (repo, c1, _) = temp_repo("impact-invalid-rules");
+        let root = repo.join("app");
+        let path = root.to_string_lossy().into_owned();
+        let paths = vec![path.clone()];
+        let s = Session::with_impact_options(no_scip());
+        let m = s.analyze(&paths, &no_scip(), &|_| {}).unwrap();
+        std::fs::create_dir_all(root.join(".structure")).unwrap();
+        std::fs::write(
+            root.join(pipeline::PROJECT_RULES),
+            "[[rule]]\nlayer = \"nope\"\n",
+        )
+        .unwrap();
+        let e = format!(
+            "{:#}",
+            s.impact(&path, Some(&c1), None, &|_| {}).unwrap_err()
+        );
+        assert!(e.contains(".structure/rules.toml"), "{e}");
+        // The matrix on screen still has its analysis.
+        assert!(
+            s.cell_symbols(&paths, None, m.generation, None, &[], None, None)
+                .is_ok()
+        );
+        assert!(
+            s.matrix(&paths, None, m.generation, "layer-package")
+                .is_ok()
+        );
+        // Once the rules are fixed, reclassify works on it.
+        std::fs::write(root.join(pipeline::PROJECT_RULES), VIEW_RULES).unwrap();
+        assert!(layer_ids(&s.reclassify(&paths).unwrap()).contains(&"view".to_string()));
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn commit_impact_with_invalid_rules_keeps_the_analysis() {
+        use crate::pipeline::test_support::git_ok;
+        let (repo, c1, _) = temp_repo("commit-invalid-rules");
+        let root = repo.join("app");
+        let path = root.to_string_lossy().into_owned();
+        let paths = vec![path.clone()];
+        let s = Session::with_impact_options(no_scip());
+        let m = s.analyze(&paths, &no_scip(), &|_| {}).unwrap();
+        std::fs::create_dir_all(root.join(".structure")).unwrap();
+        std::fs::write(
+            root.join(pipeline::PROJECT_RULES),
+            "[[rule]]\nlayer = \"nope\"\n",
+        )
+        .unwrap();
+        git_ok(&repo, &["add", "."]);
+        git_ok(&repo, &["commit", "-q", "-m", "bad rules"]);
+        let bad = git_ok(&repo, &["rev-parse", "HEAD"]).trim().to_string();
+        let e = format!(
+            "{:#}",
+            s.impact(&path, Some(&c1), Some(&bad), &|_| {}).unwrap_err()
+        );
+        assert!(e.contains(".structure/rules.toml"), "{e}");
+        // No snapshot was cached, and the working-tree analysis is kept.
+        let snaps = s
+            .cache
+            .with(|v| v.iter().filter(|e| e.snapshot).count())
+            .unwrap();
+        assert_eq!(snaps, 0);
+        assert!(
+            s.cell_symbols(&paths, None, m.generation, None, &[], None, None)
+                .is_ok()
+        );
+        assert!(
+            s.matrix(&paths, None, m.generation, "layer-package")
+                .is_ok()
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn rules_edited_while_reclassifying_leave_the_entry_stale() {
+        let (repo, c1, _) = temp_repo("reclassify-race");
+        let root = repo.join("app");
+        let path = root.to_string_lossy().into_owned();
+        let paths = vec![path.clone()];
+        let s = Session::with_impact_options(no_scip());
+        s.analyze(&paths, &no_scip(), &|_| {}).unwrap();
+        std::fs::create_dir_all(root.join(".structure")).unwrap();
+        let rules = root.join(pipeline::PROJECT_RULES);
+        std::fs::write(&rules, VIEW_RULES).unwrap();
+        // Edited after being read, before the reclassified entry is stored.
+        let edit = || std::fs::write(&rules, format!("{VIEW_RULES}# edited\n")).unwrap();
+        s.reclassify_then(&paths, &edit).unwrap();
+        let (_, key) = canonical(&path).unwrap();
+        let (_, stored, _, _) = s.cache.get(&key).unwrap().unwrap();
+        assert_ne!(
+            stored,
+            combined_fingerprint(&[root.canonicalize().unwrap()])
+        );
+        // So the next working-tree impact analyses it again.
+        let steps = Mutex::new(Vec::<String>::new());
+        s.impact(&path, Some(&c1), None, &|p| {
+            steps.lock().unwrap().push(p.step)
+        })
+        .unwrap();
+        let steps = steps.lock().unwrap();
+        assert!(steps.iter().any(|st| st == "parsing"), "{steps:?}");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn reclassify_drops_the_snapshots_of_each_root() {
+        use crate::pipeline::test_support::git_ok;
+        let (repo, _, c2) = temp_repo("reclassify-multi");
+        std::fs::create_dir_all(repo.join("lib/src")).unwrap();
+        std::fs::write(repo.join("lib/pom.xml"), "<project/>").unwrap();
+        std::fs::write(repo.join("lib/src/L.java"), "class L {}\n").unwrap();
+        git_ok(&repo, &["add", "."]);
+        git_ok(&repo, &["commit", "-q", "-m", "lib"]);
+        let c3 = git_ok(&repo, &["rev-parse", "HEAD"]).trim().to_string();
+        let app = repo.join("app").to_string_lossy().into_owned();
+        let lib = repo.join("lib").to_string_lossy().into_owned();
+        let paths = vec![app.clone(), lib.clone()];
+        let s = Session::with_impact_options(no_scip());
+        s.analyze(&paths, &no_scip(), &|_| {}).unwrap();
+        s.impact(&app, Some(&c2), Some(&c3), &|_| {}).unwrap();
+        s.impact(&lib, Some(&c2), Some(&c3), &|_| {}).unwrap();
+        let snaps = |s: &Session| {
+            s.cache
+                .with(|v| v.iter().filter(|e| e.snapshot).count())
+                .unwrap()
+        };
+        assert_eq!(snaps(&s), 2);
+        s.reclassify(&paths).unwrap();
+        assert_eq!(snaps(&s), 0, "every root's snapshots dropped");
         let _ = std::fs::remove_dir_all(&repo);
     }
 }

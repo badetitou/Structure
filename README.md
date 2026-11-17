@@ -349,8 +349,9 @@ indexer. See [scripts/README.md](scripts/README.md).
 - **Pharo call edges are heuristic.** Sends to other receivers resolve only when
   the selector is defined once in the project.
 - **The browser extension uses tree-sitter only** (no SCIP), so Java and
-  TypeScript have no call edges there: impact follows `Uses` and supertype edges. One root per PR, no HTTP or
-  RPC links. It is not yet listed on the Chrome Web Store or addons.mozilla.org; install it
+  TypeScript have no call edges there: impact follows `Uses` and supertype edges. A PR mixing languages
+  is analysed as one project per language with sources (`<repo> (java)`, `<repo> (typescript)`), as the
+  desktop does, but there are no HTTP or RPC links between them. It is not yet listed on the Chrome Web Store or addons.mozilla.org; install it
   from a [release](https://github.com/badetitou/Structure/releases/latest).
 
 ## License

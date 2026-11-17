@@ -6,7 +6,10 @@
 //!
 //! A new language needs a `Language` variant in `structure-ir`, a parser crate,
 //! one [`Frontend`] implementation here with its `rules/<lang>.toml`, one
-//! `static` and one line in [`all`] and one arm in [`frontend`].
+//! `static` and one line in [`all`] and one arm in [`frontend`]; then
+//! regenerate the browser extension's copy of the extensions
+//! (`app/ui/src/extension/sources.generated.ts`, checked by a `structure-wasm`
+//! test that says how).
 //!
 //! The default rules are kept as plain strings: validating them needs
 //! `structure-classify`, which only dev-depends on this crate (its tests take
@@ -190,6 +193,15 @@ pub fn frontend(lang: Language) -> &'static dyn Frontend {
         Language::Java => &JAVA,
         Language::TypeScript => &TYPESCRIPT,
         Language::Pharo => &PHARO,
+    }
+}
+
+/// Serialized id of `lang` (`java`, `typescript`, `pharo`), as in JSON.
+pub fn language_id(lang: Language) -> &'static str {
+    match lang {
+        Language::Java => "java",
+        Language::TypeScript => "typescript",
+        Language::Pharo => "pharo",
     }
 }
 

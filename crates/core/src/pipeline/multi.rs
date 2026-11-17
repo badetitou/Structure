@@ -2,9 +2,10 @@
 //! and matrix.
 //!
 //! The analysis unit is a `(root, language)` pair ([`Unit`]): a root holding
-//! one language is one unit named after its directory, a root holding several
-//! is one unit per language named `<dir> (<language>)` (e.g. `app (java)`,
-//! `app (typescript)`), each with its own indexer and SCIP index file
+//! one language is one unit named after its base name (its directory name, or
+//! the name given to [`units_named`], e.g. the analysed project's for a commit
+//! snapshot), a root holding several is one unit per language named
+//! `<base> (<language>)` (e.g. `app (java)`, `app (typescript)`), each with its own indexer and SCIP index file
 //! (`index.<language>.scip`), its sources, and its language's default rules
 //! plus the root's project rules. Each unit runs the single-unit pipeline;
 //! with at least two units the results are merged: symbol ids become
@@ -18,9 +19,9 @@ use anyhow::bail;
 
 use super::{Analysis, Options, analyze_unit, project_name};
 use crate::ir::{Graph, Language};
-use crate::layers::Layers;
 use crate::matrix;
-use crate::model::{Classification, DomainNode, LayerDef, Matrix, Placement, Progress, Project};
+use crate::model::{Matrix, Progress, Project};
+use structure_classify::merge::{MergedClassification, append_graph, merge_layers};
 
 /// Root dir names, suffixed `-2`, `-3`... when they clash.
 #[cfg(test)]
@@ -107,9 +108,9 @@ pub fn expand_roots(roots: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
 pub(super) struct Unit {
     pub root: PathBuf,
     pub language: Language,
-    /// Project name in the matrix: the root's directory name (deduplicated
-    /// across roots), followed by ` (<language>)` when the root holds several
-    /// languages.
+    /// Project name in the matrix: the root's base name (its directory name,
+    /// or the one given to [`units_named`]; deduplicated across roots),
+    /// followed by ` (<language>)` when the root holds several languages.
     pub name: String,
     /// SCIP index file name in `root` ([`crate::lang::index_file`]).
     pub index: String,
@@ -118,11 +119,21 @@ pub(super) struct Unit {
 /// The analysis units of detectable `roots`, in root order then in language
 /// priority order ([`super::detect_languages`]).
 pub(super) fn units(roots: &[PathBuf]) -> anyhow::Result<Vec<Unit>> {
+    units_named(roots, project_name)
+}
+
+/// [`units`], each root's base name given by `base_name` instead of its
+/// directory name (a commit snapshot is named after the project it was taken
+/// of, not after its checkout directory).
+pub(super) fn units_named(
+    roots: &[PathBuf],
+    base_name: impl Fn(&Path) -> String,
+) -> anyhow::Result<Vec<Unit>> {
     let mut raw: Vec<(PathBuf, Language, String, String)> = vec![];
     for root in roots {
         let langs = super::detect_languages(root)?;
         let shared = langs.len() > 1;
-        let base = project_name(root);
+        let base = base_name(root);
         for lang in langs {
             let name = if shared {
                 format!("{base} ({})", crate::lang::language_id(lang))
@@ -197,104 +208,6 @@ pub fn analyze_many(
     analyze_units(&units(&expanded)?, opts, progress, false)
 }
 
-fn prefix_id(project: &str, id: &str) -> String {
-    if id.starts_with("ext:") {
-        id.to_string()
-    } else {
-        format!("{project}::{id}")
-    }
-}
-
-fn qualify_tree(project: &str, nodes: &[DomainNode]) -> Vec<DomainNode> {
-    nodes
-        .iter()
-        .map(|n| DomainNode {
-            label: n.label.clone(),
-            domain: n.domain.as_ref().map(|d| format!("{project}/{d}")),
-            size: n.size,
-            children: qualify_tree(project, &n.children),
-        })
-        .collect()
-}
-
-/// Each root's declared layers merged by id. The first (primary) root keeps
-/// its layers, labels and orders; a layer only declared by later roots is
-/// appended after them, in root order then in that root's order, so the
-/// primary root's rows never move. `unknown` stays implicit and last.
-pub(super) fn merge_layers<'a>(per_root: impl IntoIterator<Item = &'a Layers>) -> Layers {
-    let mut roots = per_root.into_iter();
-    let mut defs: Vec<LayerDef> = roots.next().map_or_else(Vec::new, |l| l.defs().to_vec());
-    defs.retain(|d| !d.id.is_unknown());
-    for layers in roots {
-        for d in layers.defs().iter().filter(|d| !d.id.is_unknown()) {
-            if defs.iter().any(|l| l.id == d.id) {
-                continue;
-            }
-            let order = defs
-                .iter()
-                .map(|l| l.order.saturating_add(1))
-                .max()
-                .unwrap_or(0);
-            defs.push(LayerDef { order, ..d.clone() });
-        }
-    }
-    Layers::new(defs)
-}
-
-/// Per-root classifications merged into one: symbol ids `<project>::<id>`,
-/// domains `<project>/<domain>`, and one domain-tree node per project.
-#[derive(Default)]
-pub(super) struct MergedClassification {
-    placements: BTreeMap<String, Placement>,
-    tree: Vec<DomainNode>,
-    any_tree: bool,
-}
-
-impl MergedClassification {
-    /// Adds the classification of project `name`; `sizes` (top-level symbols
-    /// placed per domain) make its tree leaves when it has no domain tree.
-    pub(super) fn add(&mut self, name: &str, cls: Classification, sizes: BTreeMap<String, usize>) {
-        for (id, p) in cls.placements {
-            self.placements.insert(
-                prefix_id(name, &id),
-                Placement {
-                    layer: p.layer,
-                    domain: format!("{name}/{}", p.domain),
-                },
-            );
-        }
-        let children = match &cls.domain_tree {
-            Some(t) => {
-                self.any_tree = true;
-                qualify_tree(name, t)
-            }
-            // Domains are name roots: one leaf per domain.
-            None => sizes
-                .into_iter()
-                .map(|(d, size)| DomainNode {
-                    domain: Some(format!("{name}/{d}")),
-                    label: d,
-                    size,
-                    children: vec![],
-                })
-                .collect(),
-        };
-        self.tree.push(DomainNode {
-            label: name.to_string(),
-            domain: None,
-            size: children.iter().map(|c| c.size).sum(),
-            children,
-        });
-    }
-
-    pub(super) fn finish(self) -> Classification {
-        Classification {
-            placements: self.placements,
-            domain_tree: self.any_tree.then_some(self.tree),
-        }
-    }
-}
-
 fn merge(units: &[Unit], parts: Vec<Analysis>) -> Analysis {
     let roots: Vec<PathBuf> = units.iter().map(|u| u.root.clone()).collect();
     let names: Vec<String> = units.iter().map(|u| u.name.clone()).collect();
@@ -319,19 +232,8 @@ fn merge(units: &[Unit], parts: Vec<Analysis>) -> Analysis {
             root: root.display().to_string(),
             language: a.graph.language,
         });
-        let part = std::sync::Arc::unwrap_or_clone(a.graph);
-        for mut s in part.symbols {
-            s.id = prefix_id(name, &s.id);
-            s.container = s.container.map(|c| prefix_id(name, &c));
-            s.file = format!("{name}/{}", s.file);
-            graph.symbols.push(s);
-        }
         // Remote edges are linked again on the merged graph below.
-        for mut e in part.edges.into_iter().filter(|e| !e.kind.is_remote()) {
-            e.from = prefix_id(name, &e.from);
-            e.to = prefix_id(name, &e.to);
-            graph.edges.push(e);
-        }
+        append_graph(&mut graph, name, std::sync::Arc::unwrap_or_clone(a.graph));
         let mut sizes: BTreeMap<String, usize> = BTreeMap::new();
         for c in &a.matrix.cells {
             *sizes.entry(c.domain.clone()).or_default() += c.size;
@@ -442,66 +344,6 @@ mod tests {
         touch(&d, "multi/b/package.json");
         let out = expand_roots(&[d.join("solo"), d.join("multi")]).unwrap();
         assert_eq!(names(&out), ["solo", "a", "b"]);
-    }
-
-    fn layers(defs: &[(&str, &str, u32)]) -> Layers {
-        Layers::new(defs.iter().map(|&(id, label, order)| LayerDef {
-            id: id.into(),
-            label: label.into(),
-            order,
-        }))
-    }
-
-    fn rows(l: &Layers) -> Vec<(String, String, u32)> {
-        l.defs()
-            .iter()
-            .map(|d| (d.id.to_string(), d.label.clone(), d.order))
-            .collect()
-    }
-
-    #[test]
-    fn first_root_layers_win_and_later_ones_are_appended() {
-        let first = layers(&[("entry", "Entry", 3), ("model", "Model", 6)]);
-        let second = layers(&[("view", "Views", 0), ("entry", "Other", 1)]);
-        let third = layers(&[("jobs", "Jobs", 0), ("view", "Screens", 9)]);
-        let merged = merge_layers([&first, &second, &third]);
-        let row = |id: &str, label: &str, order| (id.to_string(), label.to_string(), order);
-        assert_eq!(
-            rows(&merged),
-            [
-                row("entry", "Entry", 3),
-                row("model", "Model", 6),
-                row("view", "Views", 7),
-                row("jobs", "Jobs", 8),
-                row("unknown", "unknown", 9),
-            ]
-        );
-    }
-
-    #[test]
-    fn identical_layers_merge_unchanged() {
-        let a = layers(&[("ui", "ui", 0), ("model", "model", 6)]);
-        assert_eq!(merge_layers([&a, &a.clone()]), a);
-    }
-
-    #[test]
-    fn later_root_unknown_does_not_leak_in() {
-        let first = layers(&[("ui", "ui", 0), ("model", "model", 6)]);
-        // A later root declaring `unknown` (custom label, early order) next to
-        // a layer already known: nothing of it reaches the merged layers.
-        let later = layers(&[("unknown", "Misc", 0), ("ui", "Screens", 3)]);
-        assert_eq!(merge_layers([&first, &later]), first);
-    }
-
-    #[test]
-    fn single_root_layers_are_kept() {
-        let only = layers(&[("view", "Views", 2), ("entry", "Entry", 0)]);
-        assert_eq!(merge_layers([&only]), only);
-    }
-
-    #[test]
-    fn no_root_gives_only_unknown() {
-        assert_eq!(merge_layers([]), Layers::new([]));
     }
 
     #[test]

@@ -71,6 +71,9 @@ export interface LensView {
   readonly project: string;
   /** Several distinct roots analysed together (no git views). */
   readonly multi: boolean;
+  /** Working-tree matrix as analysed (default lens), null until analysed: what does not
+   * depend on the lens (project names, language), there while a lens matrix loads. */
+  readonly analysed: Matrix | null;
   /** Working-tree matrix (the base a commit snapshot is compared to) through the lens, null
    * until analysed (or while the lens matrix loads). */
   readonly work: Matrix | null;
@@ -104,6 +107,9 @@ export interface OverlaysView {
   readonly busy: boolean;
   readonly progress: Progress | null;
   readonly error: string;
+  /** Overlays shown whose cells the context's lens could not get ("" when none): they are drawn
+   * empty in it (see `ViewActions.retryLens`). */
+  readonly lensError: string;
 }
 
 /** The selected cell (shared by every view) and its symbols. */
@@ -142,6 +148,9 @@ export interface ViewActions {
   publishView(view: ViewMatrix | null): void;
   /** Keeps the selection in step with the cells drawn. */
   syncSelection(cells: ViewCell[]): void;
+  /** The view's cell ids changed (a group expanded or collapsed): the selection is dropped
+   * when it is this view's (made in its lens and, for a panel, while it is the active one). */
+  expansionChanged(): void;
   /** Shows overlay `id` alone, or with `toggle` adds / removes it from the ones shown. */
   selectOverlay(id: string, toggle?: boolean): void;
   /** Keeps the overlays shown when the next impact runs. */
@@ -161,6 +170,8 @@ export interface ViewActions {
   setShowRpc(on: boolean): void;
   /** Shows the panel (the active one, for the base context) through lens `id`. */
   setLens(id: string): void;
+  /** Retries what the context's lens could not load (see `session.retryLens`). */
+  retryLens(): void;
   setAngledLabels(on: boolean): void;
 }
 
@@ -209,7 +220,7 @@ export function createViewContext(): ViewContext {
   // The base context's display: the active matrix panel's, else the global defaults.
   const own = (): Omit<PanelDisplay, "lens"> => displays.active ?? options;
   const display = displayOf(own);
-  const baseLens = () => resolveLens(displays.active?.lens ?? DEFAULT_LENS, lenses.available);
+  const baseLens = () => resolveLens(displays.active?.lens ?? DEFAULT_LENS, lenses.available, lenses.known);
   const lens = lensOf(display, baseLens);
   const overlays = overlaysOf(baseLens);
   const sel: SelectionView = {
@@ -262,6 +273,9 @@ export function createViewContext(): ViewContext {
       selection.view = view;
     },
     syncSelection: (cells) => selection.sync(cells),
+    expansionChanged: () => {
+      if (selection.lens === baseLens()) selection.select(null, baseLens());
+    },
     selectOverlay: (id, toggle = false) => session.selectOverlay(id, toggle),
     keepOverlays: () => session.keepOverlay(),
     removeOverlay: (id) => session.removeOverlay(id),
@@ -275,6 +289,7 @@ export function createViewContext(): ViewContext {
     setShowHttp: (on) => displays.set({ showHttp: on }),
     setShowRpc: (on) => displays.set({ showRpc: on }),
     setLens: (id) => displays.set({ lens: id }),
+    retryLens: () => session.retryLens(baseLens()),
     setAngledLabels: (on) => options.setAngledLabels(on),
   };
   const make = (panel: string | null, lens: LensView, overlays: OverlaysView, actions: ViewActions): ViewContext => ({
@@ -294,7 +309,9 @@ export function createViewContext(): ViewContext {
   function forPanel(id: string, params: unknown, persist: (d: PanelDisplay) => void): ViewContext {
     const state = displays.attach(id, params, persist);
     const set = (patch: Partial<PanelDisplay>) => displays.set(patch, id);
-    const panelLens = () => resolveLens(state.lens, lenses.available);
+    const panelLens = () => resolveLens(state.lens, lenses.available, lenses.known);
+    // The shared selection is this panel's: made in its lens, and the panel is the active one.
+    const ownsSelection = () => displays.activeId === id && selection.lens === panelLens();
     const panelActions: ViewActions = {
       ...actions,
       selectCell: (cell) => selection.select(cell, panelLens()),
@@ -303,7 +320,11 @@ export function createViewContext(): ViewContext {
       publishView: (view) => displays.publishView(id, view),
       // A selection made in another lens is not this panel's to drop.
       syncSelection: (cells) => {
-        if (displays.activeId === id && selection.lens === panelLens()) selection.sync(cells);
+        if (ownsSelection()) selection.sync(cells);
+      },
+      // Another panel's selection does not depend on this panel's expansion.
+      expansionChanged: () => {
+        if (ownsSelection()) selection.select(null, panelLens());
       },
       setMode: (mode) => set({ mode }),
       setTransposed: (on) => set({ transposed: on }),
@@ -311,6 +332,7 @@ export function createViewContext(): ViewContext {
       setShowHttp: (on) => set({ showHttp: on }),
       setShowRpc: (on) => set({ showRpc: on }),
       setLens: (lens) => set({ lens }),
+      retryLens: () => session.retryLens(panelLens()),
     };
     return make(id, lensOf(displayOf(() => state), panelLens), overlaysOf(panelLens), panelActions);
   }
@@ -359,6 +381,14 @@ function overlaysOf(lensId: () => string): OverlaysView {
     },
     get error() {
       return impact.error;
+    },
+    get lensError() {
+      const l = lensId();
+      if (l === DEFAULT_LENS) return "";
+      const failed = impact.selectedOverlays.filter((o) => lenses.impactError(l, o.impact) !== "");
+      if (failed.length === 0) return "";
+      const names = failed.map((o) => o.label).join(", ");
+      return `Cannot draw ${names} in ${lensLabel(l, lenses.available)}: ${lenses.impactError(l, failed[0].impact)}`;
     },
   };
 }
@@ -410,6 +440,9 @@ function lensOf(display: DisplayView, lensId: () => string): LensView {
     },
     get multi() {
       return analysis.multi;
+    },
+    get analysed() {
+      return analysis.work;
     },
     get work() {
       return lenses.matrix(lensId(), analysis.work, null);

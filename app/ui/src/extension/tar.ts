@@ -8,7 +8,7 @@ export const MAX_SOURCE_BYTES = 60 * 1024 * 1024;
 
 export interface TarOptions {
   /** Extensions to keep, with the dot, e.g. `.java`. */
-  extensions: string[];
+  extensions: readonly string[];
   maxBytes?: number;
 }
 

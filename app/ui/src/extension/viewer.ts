@@ -12,6 +12,7 @@ import { ext } from "./browser";
 import { READY_TYPE } from "./frame";
 import { parsePrParam } from "./github";
 import { fetchPr } from "./pipeline";
+import { SOURCE_EXTENSIONS_TEXT } from "./sources.generated";
 import { TOKEN_KEY } from "./settings";
 
 const target = document.getElementById("app") as HTMLElement;
@@ -69,7 +70,9 @@ async function main() {
     const m = e instanceof Error ? e.message : String(e);
     const unsupported = /no supported sources/.test(m);
     return say(
-      unsupported ? "Unsupported language: no .java, .ts, .tsx or Pharo (.st) source found in this repository." : `Analysis failed: ${m}`,
+      unsupported
+        ? `Unsupported language: no ${SOURCE_EXTENSIONS_TEXT} source found in this repository.`
+        : `Analysis failed: ${m}`,
       true,
     );
   }

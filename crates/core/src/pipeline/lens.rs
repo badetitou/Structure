@@ -10,11 +10,11 @@ use std::sync::{Arc, Mutex};
 use anyhow::anyhow;
 
 use super::Analysis;
-use super::multi::MergedClassification;
 use crate::highlight::{HighlightedSymbol, Role, aggregate_by};
 use crate::lens::{Lens, package_classification};
 use crate::matrix;
 use crate::model::{Classification, ImpactedCell, ImpactedSymbol, LensCells, Matrix};
+use structure_classify::merge::MergedClassification;
 
 /// A non-default lens of an analysis.
 #[derive(Debug)]

@@ -105,9 +105,10 @@ export class ImpactOverlays {
     this.selectedIds = selectionAfterRemoval(this.overlays, this.selectedIds, id);
   }
 
-  /** Every overlay was computed with rules that changed since. */
-  markStale() {
-    this.overlays = this.overlays.map((o) => ({ ...o, stale: true }));
+  /** Every overlay (or those of `ids`) must be computed again: with rules that changed since,
+   * or because the backend no longer holds the analysis it was computed on. */
+  markStale(ids?: readonly string[]) {
+    this.overlays = this.overlays.map((o) => (!ids || ids.includes(o.id) ? { ...o, stale: true } : o));
   }
 
   /** Drops the running request (its answer will be ignored) so that a new one can start; the overlays and the range stay. */
