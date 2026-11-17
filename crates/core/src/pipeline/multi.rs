@@ -2,9 +2,10 @@
 //! and matrix.
 //!
 //! The analysis unit is a `(root, language)` pair ([`Unit`]): a root holding
-//! one language is one unit named after its directory, a root holding several
-//! is one unit per language named `<dir> (<language>)` (e.g. `app (java)`,
-//! `app (typescript)`), each with its own indexer and SCIP index file
+//! one language is one unit named after its base name (its directory name, or
+//! the name given to [`units_named`], e.g. the analysed project's for a commit
+//! snapshot), a root holding several is one unit per language named
+//! `<base> (<language>)` (e.g. `app (java)`, `app (typescript)`), each with its own indexer and SCIP index file
 //! (`index.<language>.scip`), its sources, and its language's default rules
 //! plus the root's project rules. Each unit runs the single-unit pipeline;
 //! with at least two units the results are merged: symbol ids become
@@ -107,9 +108,9 @@ pub fn expand_roots(roots: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
 pub(super) struct Unit {
     pub root: PathBuf,
     pub language: Language,
-    /// Project name in the matrix: the root's directory name (deduplicated
-    /// across roots), followed by ` (<language>)` when the root holds several
-    /// languages.
+    /// Project name in the matrix: the root's base name (its directory name,
+    /// or the one given to [`units_named`]; deduplicated across roots),
+    /// followed by ` (<language>)` when the root holds several languages.
     pub name: String,
     /// SCIP index file name in `root` ([`crate::lang::index_file`]).
     pub index: String,
@@ -118,11 +119,21 @@ pub(super) struct Unit {
 /// The analysis units of detectable `roots`, in root order then in language
 /// priority order ([`super::detect_languages`]).
 pub(super) fn units(roots: &[PathBuf]) -> anyhow::Result<Vec<Unit>> {
+    units_named(roots, project_name)
+}
+
+/// [`units`], each root's base name given by `base_name` instead of its
+/// directory name (a commit snapshot is named after the project it was taken
+/// of, not after its checkout directory).
+pub(super) fn units_named(
+    roots: &[PathBuf],
+    base_name: impl Fn(&Path) -> String,
+) -> anyhow::Result<Vec<Unit>> {
     let mut raw: Vec<(PathBuf, Language, String, String)> = vec![];
     for root in roots {
         let langs = super::detect_languages(root)?;
         let shared = langs.len() > 1;
-        let base = project_name(root);
+        let base = base_name(root);
         for lang in langs {
             let name = if shared {
                 format!("{base} ({})", crate::lang::language_id(lang))

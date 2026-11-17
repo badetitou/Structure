@@ -185,20 +185,30 @@ fn project_name(root: &Path) -> String {
         .unwrap_or_else(|| "project".into())
 }
 
+/// One root through the whole pipeline. A root holding several languages is
+/// analysed as one unit per language, merged as [`analyze_many`] merges roots.
 pub fn analyze(
     root: &Path,
     opts: &Options,
     progress: &dyn Fn(Progress),
 ) -> anyhow::Result<Analysis> {
-    analyze_in(root, opts, progress, false)
+    if !root.is_dir() {
+        bail!("not a directory: {}", root.display());
+    }
+    let units = multi::units(std::slice::from_ref(&root.to_path_buf()))?;
+    multi::analyze_units(&units, opts, progress, false)
 }
 
-/// [`analyze`]; with `from_cache` (a clean checkout without its own SCIP
-/// index), the SCIP index is first composed from cached documents. A root
-/// holding several languages is analysed as one unit per language, merged as
-/// [`analyze_many`] merges roots.
-pub(super) fn analyze_in(
+/// `root` analysed as [`analyze_many`] analyses one root (an undetectable
+/// root is expanded to its sub-projects), the root itself named `name`
+/// instead of after its directory: a commit snapshot is checked out in a
+/// directory named after the commit, but its projects must keep the names
+/// the working tree gives them. With `from_cache` (a clean checkout without
+/// its own SCIP index), the SCIP index is first composed from cached
+/// documents.
+pub(super) fn analyze_as(
     root: &Path,
+    name: &str,
     opts: &Options,
     progress: &dyn Fn(Progress),
     from_cache: bool,
@@ -206,8 +216,25 @@ pub(super) fn analyze_in(
     if !root.is_dir() {
         bail!("not a directory: {}", root.display());
     }
-    let units = multi::units(std::slice::from_ref(&root.to_path_buf()))?;
+    let roots = multi::expand_roots(std::slice::from_ref(&root.to_path_buf()))?;
+    let units = multi::units_named(&roots, |r| {
+        if r == root {
+            name.to_string()
+        } else {
+            project_name(r)
+        }
+    })?;
     multi::analyze_units(&units, opts, progress, from_cache)
+}
+
+/// Error when a unit of `roots` (expanded as [`analyze_many`] does) has an
+/// unreadable or invalid [`PROJECT_RULES`] file, or when `roots` hold no
+/// project: the checks an analysis would fail on before anything is indexed.
+pub fn check_rules(roots: &[PathBuf]) -> anyhow::Result<()> {
+    for unit in multi::units(&multi::expand_roots(roots)?)? {
+        rules_for(&unit.root, unit.language)?;
+    }
+    Ok(())
 }
 
 /// One `(root, language)` unit through the whole pipeline.
