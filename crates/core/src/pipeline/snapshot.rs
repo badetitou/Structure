@@ -5,7 +5,7 @@ use anyhow::{Context, bail};
 use crate::impact;
 use crate::model::{Impact, Progress};
 
-use super::{Analysis, Options, analyze, analyze_in};
+use super::{Analysis, Options, analyze, analyze_as, project_name};
 use structure_git::resolve_base;
 
 /// Most snapshots kept per repository; the least recently used are removed.
@@ -105,7 +105,12 @@ fn prune_snapshots(root: &Path, snaps: &Path, max: usize, keep: &str) {
 }
 
 /// Snapshot of `head` (see [`snapshot`]) and its analysis. A commit never
-/// changes, so callers may cache the result per (project, head).
+/// changes, so callers may cache the result per (project, head). The
+/// snapshot is analysed as the working tree at `root` is by
+/// [`super::analyze_many`]: an undetectable root is expanded to its
+/// sub-projects, and projects are named after `root`, not after the
+/// snapshot's directory (the commit SHA when `root` is the repository root),
+/// so ids and cells match the working tree's.
 pub fn analyze_snapshot(
     root: &Path,
     head: &str,
@@ -113,7 +118,7 @@ pub fn analyze_snapshot(
     progress: &dyn Fn(Progress),
 ) -> anyhow::Result<(PathBuf, Analysis)> {
     let snap = snapshot(root, head)?;
-    let analysis = analyze_in(&snap, opts, progress, !opts.exact)?;
+    let analysis = analyze_as(&snap, &project_name(root), opts, progress, !opts.exact)?;
     Ok((snap, analysis))
 }
 

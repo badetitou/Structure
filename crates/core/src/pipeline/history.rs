@@ -98,11 +98,11 @@ pub fn impact(
 }
 
 /// Impact of `changes` (git paths relative to `root`) on `analysis`. The SCIP
-/// indexes we write into the project are build artefacts, not changes. In a
-/// merged analysis the graph names files `<project>/<file>`: each change is
-/// mapped to every project whose root is `root` or below it (a root holding
-/// several languages has one project per language); `changed_files` keeps
-/// the git paths. Carries the analysis' warnings.
+/// indexes we write into the project are build artefacts, not changes. When
+/// the analysed roots are not `root` itself (a merged analysis, or `root`
+/// expanded to a single sub-project), each change is mapped to the graph's
+/// file names (see [`unit_changes`]); `changed_files` keeps the git paths.
+/// Carries the analysis' warnings.
 pub(super) fn compute(
     root: &Path,
     analysis: &Analysis,
@@ -130,17 +130,37 @@ pub(super) fn compute(
     result
 }
 
-/// `changes` with the graph's file names of a merged analysis, `None` for a
-/// single-project one (its files are the git paths already).
+/// `changes` with the graph's file names, `None` when they are the git paths
+/// already (a single project analysed at `root` itself). In a merged analysis
+/// the graph names files `<project>/<file>`: each change is mapped to every
+/// project whose root is `root` or below it (a root holding several languages
+/// has one project per language). A single project below `root` (an
+/// undetectable `root` expanded to one sub-project) names files relative to
+/// its own root, without a prefix. Changes outside every project are dropped.
 fn unit_changes(root: &Path, a: &Analysis, changes: &[FileChange]) -> Option<Vec<FileChange>> {
-    let projects = &a.matrix.projects;
-    if projects.is_empty() || projects.len() != a.roots.len() {
-        return None;
-    }
     let canon = |p: &Path| -> PathBuf { p.canonicalize().unwrap_or_else(|_| p.to_path_buf()) };
     let root = canon(root);
+    let projects = &a.matrix.projects;
+    // Each unit root with the prefix its files carry in the graph.
+    let units: Vec<(&PathBuf, Option<&str>)> = match a.roots.as_slice() {
+        [only] if projects.is_empty() => {
+            let below = canon(only)
+                .strip_prefix(&root)
+                .is_ok_and(|rel| !rel.as_os_str().is_empty());
+            if !below {
+                return None;
+            }
+            vec![(only, None)]
+        }
+        roots if !projects.is_empty() && projects.len() == roots.len() => roots
+            .iter()
+            .zip(projects)
+            .map(|(r, p)| (r, Some(p.name.as_str())))
+            .collect(),
+        _ => return None,
+    };
     let mut out = vec![];
-    for (unit_root, p) in a.roots.iter().zip(projects) {
+    for (unit_root, name) in units {
         let Ok(rel) = canon(unit_root).strip_prefix(&root).map(Path::to_path_buf) else {
             continue;
         };
@@ -159,7 +179,10 @@ fn unit_changes(root: &Path, a: &Analysis, changes: &[FileChange]) -> Option<Vec
                 }
             };
             out.push(FileChange {
-                file: format!("{}/{file}", p.name),
+                file: match name {
+                    Some(n) => format!("{n}/{file}"),
+                    None => file.to_string(),
+                },
                 lines: c.lines.clone(),
             });
         }

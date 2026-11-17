@@ -118,11 +118,21 @@ pub(super) struct Unit {
 /// The analysis units of detectable `roots`, in root order then in language
 /// priority order ([`super::detect_languages`]).
 pub(super) fn units(roots: &[PathBuf]) -> anyhow::Result<Vec<Unit>> {
+    units_named(roots, project_name)
+}
+
+/// [`units`], each root's base name given by `base_name` instead of its
+/// directory name (a commit snapshot is named after the project it was taken
+/// of, not after its checkout directory).
+pub(super) fn units_named(
+    roots: &[PathBuf],
+    base_name: impl Fn(&Path) -> String,
+) -> anyhow::Result<Vec<Unit>> {
     let mut raw: Vec<(PathBuf, Language, String, String)> = vec![];
     for root in roots {
         let langs = super::detect_languages(root)?;
         let shared = langs.len() > 1;
-        let base = project_name(root);
+        let base = base_name(root);
         for lang in langs {
             let name = if shared {
                 format!("{base} ({})", crate::lang::language_id(lang))
