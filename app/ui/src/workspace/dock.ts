@@ -1,6 +1,13 @@
 // Glue between the panel registry and dockview: how a registered Svelte panel is
 // mounted, which groups are shown, and how the layout is persisted.
-import type { DockviewApi, DockviewOptions, DockviewTheme, IContentRenderer, SerializedDockview } from "dockview";
+import type {
+  DockviewApi,
+  DockviewOptions,
+  DockviewTheme,
+  GroupPanelPartInitParameters,
+  IContentRenderer,
+  SerializedDockview,
+} from "dockview";
 import { mount, unmount } from "svelte";
 import type { Component } from "svelte";
 
@@ -22,10 +29,13 @@ export const dockDnd = {
   dndStrategy: "pointer",
 } as const satisfies Pick<DockviewOptions, "dndStrategy">;
 
+/** The Svelte context of a panel: fixed, or built from its init parameters (its params and api). */
+export type PanelContext = Map<unknown, unknown> | ((init: GroupPanelPartInitParameters) => Map<unknown, unknown>);
+
 /**
  * Mounts a Svelte component (no props) as a dockview panel's content. A panel is its own
  * Svelte root, so the Svelte context it reads (the view context, see context.ts) is handed
- * over explicitly as `context`.
+ * over explicitly as `context`; a function builds it per panel instance when mounted.
  */
 export class SvelteRenderer implements IContentRenderer {
   readonly element: HTMLElement;
@@ -33,14 +43,16 @@ export class SvelteRenderer implements IContentRenderer {
 
   constructor(
     private readonly component: Component,
-    private readonly context?: Map<unknown, unknown>,
+    private readonly context?: PanelContext,
   ) {
     this.element = document.createElement("div");
     this.element.className = "dock-panel";
   }
 
-  init(): void {
-    if (!this.instance) this.instance = mount(this.component, { target: this.element, context: this.context });
+  init(init: GroupPanelPartInitParameters): void {
+    if (this.instance) return;
+    const context = typeof this.context === "function" ? this.context(init) : this.context;
+    this.instance = mount(this.component, { target: this.element, context });
   }
 
   dispose(): void {
@@ -78,6 +90,18 @@ export function syncVisibility(
     for (const p of g.panels) setTabHidden(p.id, !available(p.id));
     if (g.activePanel && !available(g.activePanel.id)) g.panels.find((p) => available(p.id))?.api?.setActive();
   }
+}
+
+/**
+ * `pred` asked of a panel's contribution (its dockview component) rather than its id: the
+ * instances of a multi-instance panel (`matrix`, `matrix-2`, …) share one. `component` gives
+ * a panel's component, undefined when unknown (the id is used then).
+ */
+export function byComponent(
+  component: (panel: string) => string | undefined,
+  pred: (contribution: string) => boolean,
+): (panel: string) => boolean {
+  return (panel) => pred(component(panel) ?? panel);
 }
 
 /** Hides / shows the tab of `panel` inside the dockview mounted in `host`. */

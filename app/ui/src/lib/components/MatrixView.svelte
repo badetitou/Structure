@@ -28,7 +28,7 @@
   // matrix, the mode and the expanded groups; hover, impact and selection only
   // feed per-cell / per-edge derivations, and pan / zoom is one `transform`.
   let { matrix }: { matrix: Matrix } = $props();
-  const { lens, overlays: impact, selection, actions } = getViewContext();
+  const { lens, overlays: impact, selection, actions, displays } = getViewContext();
   const options = lens.display;
 
   const mode = $derived(options.mode);
@@ -157,8 +157,10 @@
 
   // A mode switch can change the expansion (flame opens deeper): drop a selection whose cell left the view;
   // after a rules reload, take the view's cell of the same id (its members may have changed).
+  // Also when this panel becomes the active one: the shared selection must match its cells.
   $effect(() => {
     const cells = vm.cells;
+    void displays.activeId;
     untrack(() => actions.syncSelection(cells));
   });
 

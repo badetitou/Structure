@@ -12,6 +12,14 @@ export interface PanelContribution {
   component: Component;
   /** While this returns false, a group holding only unavailable panels is hidden (takes no room); read reactively. */
   available?: () => boolean;
+  /**
+   * Several instances can be open at once: the first has the contribution's id, the others
+   * `<id>-N` (see `nextInstanceId`); the Views menu offers "New <title> view". Single-instance
+   * panels (the default) have one panel whose id is the contribution's.
+   */
+  multi?: boolean;
+  /** Each instance owns display options, kept in its dockview params (`ViewContext.forPanel`). */
+  display?: boolean;
 }
 
 /** Panel registry: contributions by id, in registration order. */

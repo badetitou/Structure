@@ -23,7 +23,8 @@
   // The view context of this screen: the toolbar, status bar and every panel read and act through it.
   const ctx = setViewContext(createViewContext());
 
-  const matrix = $derived(matrixControl.current);
+  // Zoom / fit act on the active matrix panel.
+  const matrix = $derived(matrixControl.get(ctx.displays.activeId ?? "") ?? null);
 
   onMount(() => {
     let live = true;
