@@ -2,10 +2,10 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::ts;
-use structure_ir::ir::{Graph, Language};
+use structure_ir::ir::Language;
 
 use super::ts_args::{node_heap_mb, node_options, ts_index_args};
-use super::{Frontend, LanguageFrontend, find_on_path};
+use super::{Frontend, Indexer, LanguageFrontend, ParseOutput, find_on_path};
 
 pub const SCIP_TS_VERSION: &str = "0.6.1";
 
@@ -24,7 +24,28 @@ impl LanguageFrontend for TypeScriptFrontend {
         "tsconfig.json/package.json (TypeScript)"
     }
 
-    fn indexer_command(&self, root: &Path) -> Option<Command> {
+    fn indexer(&self) -> Option<&dyn Indexer> {
+        Some(&ScipTypeScript)
+    }
+
+    fn parse_project(
+        &self,
+        root: &Path,
+        _warnings: &mut Vec<String>,
+    ) -> anyhow::Result<ParseOutput> {
+        ts::parse_project(root).map(ParseOutput::new)
+    }
+}
+
+/// `@sourcegraph/scip-typescript`, through `npx`.
+pub struct ScipTypeScript;
+
+impl Indexer for ScipTypeScript {
+    fn cache_tag(&self) -> String {
+        format!("scip-typescript-{SCIP_TS_VERSION}")
+    }
+
+    fn command(&self, root: &Path) -> Option<Command> {
         find_on_path("npx").map(|p| {
             let mut c = Command::new(p);
             c.args(["-y"])
@@ -38,13 +59,5 @@ impl LanguageFrontend for TypeScriptFrontend {
             );
             c
         })
-    }
-
-    fn indexer_hint(&self, _root: &Path) -> Option<String> {
-        None
-    }
-
-    fn parse_project(&self, root: &Path) -> anyhow::Result<Graph> {
-        ts::parse_project(root)
     }
 }

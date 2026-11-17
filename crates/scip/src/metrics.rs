@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::scip::ScipIndex;
-use structure_ir::ir::{EdgeKind, Graph};
+use structure_ir::ir::{EdgeKind, Graph, ParseStat};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PhaseTiming {
@@ -22,8 +22,9 @@ pub struct Metrics {
     pub edges_by_kind: BTreeMap<&'static str, usize>,
     /// Final edges whose target is `ext:*`, by kind name.
     pub ext_edges_by_kind: BTreeMap<&'static str, usize>,
-    /// Pharo only: message sends (resolved to a `Call` edge, unresolved).
-    pub sends: Option<(usize, usize)>,
+    /// Counters reported by the language parser (e.g. Pharo's sends), in
+    /// parser order.
+    pub parse_stats: Vec<ParseStat>,
 }
 
 fn kind_name(k: EdgeKind) -> &'static str {
@@ -50,6 +51,23 @@ impl Metrics {
     pub fn record_scip(&mut self, idx: &ScipIndex) {
         self.scip_documents = idx.documents.len();
         self.scip_occurrences = idx.documents.iter().map(|d| d.occurrences.len()).sum();
+    }
+
+    /// [`Self::parse_stats`] as text, one line per run of stats sharing a
+    /// group: `sends: 3 resolved, 1 unresolved`.
+    pub fn parse_stats_lines(&self) -> Vec<String> {
+        let mut lines: Vec<(&str, Vec<String>)> = Vec::new();
+        for s in &self.parse_stats {
+            let item = format!("{} {}", s.value, s.name);
+            match lines.last_mut() {
+                Some((g, items)) if *g == s.group => items.push(item),
+                _ => lines.push((s.group, vec![item])),
+            }
+        }
+        lines
+            .into_iter()
+            .map(|(g, items)| format!("{g}: {}", items.join(", ")))
+            .collect()
     }
 
     pub fn record_edges(&mut self, g: &Graph) {
@@ -112,6 +130,24 @@ mod tests {
         m.record_edges(&g);
         assert_eq!(m.edges_by_kind["call"], 1);
         assert_eq!(m.ext_edges_by_kind["uses"], 2);
+    }
+
+    #[test]
+    fn parse_stats_render_by_group() {
+        let stat = |group, name, value| ParseStat { group, name, value };
+        let m = Metrics {
+            parse_stats: vec![
+                stat("sends", "resolved", 3),
+                stat("sends", "unresolved", 1),
+                stat("files", "skipped", 2),
+            ],
+            ..Metrics::default()
+        };
+        assert_eq!(
+            m.parse_stats_lines(),
+            vec!["sends: 3 resolved, 1 unresolved", "files: 2 skipped"]
+        );
+        assert!(Metrics::default().parse_stats_lines().is_empty());
     }
 
     #[test]

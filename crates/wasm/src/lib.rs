@@ -40,7 +40,7 @@ pub fn analyze_pr(
 ) -> anyhow::Result<Analysis> {
     let lang = structure_lang::frontend(detect_language(files.iter().map(|(p, _)| p.as_str()))?);
     let mut warnings = Vec::new();
-    let graph = lang.parse_sources(project, files, &mut warnings)?;
+    let graph = lang.parse_sources(project, files, &mut warnings)?.graph;
     let (toml, name) = lang.default_rules();
     let rules = RuleSet::from_embedded(toml, name).context("loading default rules")?;
     let classification = classify(&graph, &rules, lang.module_separator());

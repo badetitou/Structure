@@ -1,10 +1,12 @@
 //! Native language frontends: the per-language parts that need a process or
-//! the filesystem (marker detection, SCIP indexer, parsing a project from
-//! disk). The pure parts (extensions, in-memory parsing, default rules, module
-//! separator) live in `structure-lang` ([`pure`]), shared with the wasm build.
+//! the filesystem (marker detection, parsing a project from disk, and an
+//! optional SCIP [`Indexer`]). The pure parts (extensions, in-memory parsing,
+//! default rules, module separator) live in `structure-lang` ([`pure`]),
+//! shared with the wasm build.
 //! A new language needs:
 //! - a `Language` variant in `structure-ir` and a frontend in `structure-lang`;
-//! - one module here implementing [`LanguageFrontend`];
+//! - one module here implementing [`LanguageFrontend`] (and [`Indexer`] when a
+//!   SCIP indexer exists for it);
 //! - one `static` and one line in [`all`], and one arm in [`frontend`].
 //!
 //! The `registry_is_consistent` test fails if a variant is missing from [`all`]
@@ -18,10 +20,10 @@ mod typescript;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use structure_ir::ir::{Graph, Language};
-pub use structure_lang::Frontend;
+use structure_ir::ir::Language;
 /// Pure frontend of a language (`structure_lang::frontend`).
 pub use structure_lang::frontend as pure;
+pub use structure_lang::{Frontend, ParseOutput};
 
 pub use java::SCIP_JAVA_VERSION;
 pub use ts_args::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts_index_args};
@@ -38,20 +40,37 @@ pub trait LanguageFrontend: Sync {
     fn detect(&self, root: &Path) -> bool;
     /// Human description of the detection markers, for error messages.
     fn markers(&self) -> &'static str;
-    /// SCIP indexer invocation, or `None` if no indexer is available.
-    fn indexer_command(&self, root: &Path) -> Option<Command>;
+    /// The language's SCIP indexer, `None` when it has none (the pipeline
+    /// then uses the parsed graph alone).
+    fn indexer(&self) -> Option<&dyn Indexer>;
+    /// Parse the project's sources (no SCIP) into a graph and stats, pushing
+    /// soft problems into `warnings`.
+    fn parse_project(&self, root: &Path, warnings: &mut Vec<String>)
+    -> anyhow::Result<ParseOutput>;
+}
+
+/// A SCIP indexer of one language, run in the project root to write
+/// `index.scip`.
+pub trait Indexer: Sync {
+    /// Key of the SCIP documents this indexer produces in the document cache
+    /// (tool and version: a new version invalidates the cache).
+    fn cache_tag(&self) -> String;
+    /// Indexer invocation, or `None` if the tool is not available here.
+    fn command(&self, root: &Path) -> Option<Command>;
     /// Build-tool specific advice appended to indexer failures.
-    fn indexer_hint(&self, root: &Path) -> Option<String>;
-    /// Parse the project's sources into a graph (tree-sitter only).
-    fn parse_project(&self, root: &Path) -> anyhow::Result<Graph>;
-    /// [`Self::parse_project`], pushing soft problems into `warnings`.
-    fn parse_project_warned(
-        &self,
-        root: &Path,
-        _warnings: &mut Vec<String>,
-    ) -> anyhow::Result<Graph> {
-        self.parse_project(root)
+    fn hint(&self, _root: &Path) -> Option<String> {
+        None
     }
+}
+
+/// Document cache key of a language without an [`Indexer`].
+pub const NO_INDEXER_TAG: &str = "none";
+
+/// [`Indexer::cache_tag`] of `lang`, or [`NO_INDEXER_TAG`].
+pub fn scip_cache_tag(lang: Language) -> String {
+    frontend(lang)
+        .indexer()
+        .map_or_else(|| NO_INDEXER_TAG.to_string(), |i| i.cache_tag())
 }
 
 static JAVA: java::JavaFrontend = java::JavaFrontend;
@@ -105,5 +124,19 @@ mod tests {
             let (toml, name) = f.pure().default_rules();
             assert!(crate::classify::RuleSet::from_embedded(toml, name).is_ok());
         }
+    }
+
+    #[test]
+    fn cache_tags_name_the_indexer_version() {
+        assert_eq!(
+            scip_cache_tag(Language::Java),
+            format!("scip-java-{SCIP_JAVA_VERSION}")
+        );
+        assert_eq!(
+            scip_cache_tag(Language::TypeScript),
+            format!("scip-typescript-{SCIP_TS_VERSION}")
+        );
+        assert!(frontend(Language::Pharo).indexer().is_none());
+        assert_eq!(scip_cache_tag(Language::Pharo), "none");
     }
 }

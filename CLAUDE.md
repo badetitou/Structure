@@ -23,7 +23,7 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
   `ir` <- `scip`/`classify`/`highlight` <- `git`; `lang`/`scip`/`classify`/`git` <- `core` <- `cli`;
   `lang`/`classify`/`git` <- `wasm` (`git` needs only `ir` and `highlight`;
   `classify` dev-depends on `lang` for its tests, `lang` never depends on `classify`):
-  - `ir` (`structure-ir`): `ir` (Graph/Symbol/Edge), `model`
+  - `ir` (`structure-ir`): `ir` (Graph/Symbol/Edge/ParseStat), `model`
     (LayerId/LayerDef/Matrix/Impact/Progress), `highlight` (Anchor/Seed/HighlightRequest/
     Highlight) — contracts, serde only; feature `ts`
     derives the TS declarations (ts-rs; module `ts`, test `generated_ts_types`).
@@ -33,14 +33,15 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     ranges, annotations, supertype and `Uses` edges; `ext:<Name>` = external type).
   - `lang` (`structure-lang`): pure (wasm-safe) language registry — `Frontend`
     trait (`language`, `extensions`, `is_source`, `parse_sources` over in-memory
-    files, `default_rules`, `module_separator`), `all()`/`frontend()`,
+    files → `ParseOutput { graph, stats }` (generic named counters, e.g. Pharo's
+    sends), `default_rules`, `module_separator`), `all()`/`frontend()`,
     `detect_by_paths` (majority of sources, ties Java > TypeScript > Pharo).
     Owns the embedded default rules `rules/*.toml` (layer/domain rules and
     `[[layer]]` declarations, see `crates/lang/rules/README.md`), kept as plain
     strings (validated by `classify`'s tests).
   - `scip` (`structure-scip`): `scip` reads `index.scip`; `link` joins SCIP
     occurrences to tree-sitter symbols → `Call`/`Uses`/`Implements` edges;
-    `metrics` (run stats).
+    `metrics` (run stats; parser stats rendered by `parse_stats_lines`).
   - `classify` (`structure-classify`): `classify` (`RuleSet`: parse, merge,
     validate rules TOML; classification by rules + module separator); `layers` (`Layers`: the
     declared `LayerDef`s sorted by order, `unknown` implicit and last);
@@ -54,8 +55,9 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
   - `core` (`structure-core`): facade, re-exports the crates above under their old
     module names (`ir`, `model`, `java`, `ts`, `scip`, `link`, `metrics`, `classify`,
     `layers`, `matrix`, `impact`, `highlight`). Own code: `lang/` (native `LanguageFrontend`
-    trait: marker detection, indexer, parse from disk; `pure()` gives the
-    `structure-lang` frontend; registry `all()`/`frontend()`) and `pipeline/` (`mod`
+    trait: marker detection, parse from disk → `ParseOutput`, optional native
+    `Indexer` (command, hint, SCIP cache tag; `None` for Pharo = no SCIP step);
+    `pure()` gives the `structure-lang` frontend; registry `all()`/`frontend()`) and `pipeline/` (`mod`
     analyze/detect + `<root>/.structure/rules.toml` merged over the defaults,
     `multi` several roots — first root's layers win, `reclassify` rules
     re-applied to a cached graph + `rules_stamp`, `indexer`, `process`,

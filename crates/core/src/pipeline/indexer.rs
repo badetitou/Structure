@@ -8,7 +8,7 @@ use super::process::run_indexer;
 
 /// Build-tool specific advice appended to indexer failures. Pure: only checks marker files in `root`.
 fn indexer_hint(root: &Path, lang: Language) -> Option<String> {
-    frontend(lang).indexer_hint(root)
+    frontend(lang).indexer().and_then(|i| i.hint(root))
 }
 
 /// Number of source files modified after `index` was written.
@@ -74,7 +74,7 @@ pub fn ensure_index_with_progress(
             return Ok(Some(index));
         }
     }
-    let cmd = frontend(lang).indexer_command(root);
+    let cmd = frontend(lang).indexer().and_then(|i| i.command(root));
     let Some(cmd) = cmd else {
         warn("no SCIP indexer found (scip-java/cs/npx); using tree-sitter only".into());
         return Ok(None);

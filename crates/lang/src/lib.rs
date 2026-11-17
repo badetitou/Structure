@@ -13,7 +13,42 @@
 //! the rules from here), so the check lives on the classify side.
 
 use anyhow::bail;
-use structure_ir::ir::{Graph, Language};
+use structure_ir::ir::{Graph, Language, ParseStat};
+
+/// Result of parsing a project: its graph and the parser's own counters
+/// (empty for most languages; Pharo reports its resolved/unresolved sends).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParseOutput {
+    pub graph: Graph,
+    pub stats: Vec<ParseStat>,
+}
+
+impl ParseOutput {
+    /// A graph without stats.
+    pub fn new(graph: Graph) -> Self {
+        ParseOutput {
+            graph,
+            stats: Vec::new(),
+        }
+    }
+}
+
+impl From<structure_lang_pharo::Parsed> for ParseOutput {
+    fn from(p: structure_lang_pharo::Parsed) -> Self {
+        let stat = |name, value| ParseStat {
+            group: "sends",
+            name,
+            value,
+        };
+        ParseOutput {
+            graph: p.graph,
+            stats: vec![
+                stat("resolved", p.stats.resolved),
+                stat("unresolved", p.stats.unresolved),
+            ],
+        }
+    }
+}
 
 pub trait Frontend: Sync {
     /// Serialized identifier of the language.
@@ -23,14 +58,14 @@ pub trait Frontend: Sync {
     /// Whether `path` (`/`-separated) counts as a source of this language
     /// when detecting the language of a set of paths ([`detect_by_paths`]).
     fn is_source(&self, path: &str) -> bool;
-    /// Parse in-memory `(path, content)` sources of `project` into a graph,
-    /// pushing soft problems into `warnings`.
+    /// Parse in-memory `(path, content)` sources of `project` into a graph
+    /// and stats, pushing soft problems into `warnings`.
     fn parse_sources(
         &self,
         project: &str,
         files: &[(String, String)],
         warnings: &mut Vec<String>,
-    ) -> anyhow::Result<Graph>;
+    ) -> anyhow::Result<ParseOutput>;
     /// Embedded default rules: `(toml, display name)`.
     fn default_rules(&self) -> (&'static str, &'static str);
     /// Separator of module paths in symbol ids (domain inference).
@@ -57,8 +92,8 @@ impl Frontend for JavaFrontend {
         project: &str,
         files: &[(String, String)],
         warnings: &mut Vec<String>,
-    ) -> anyhow::Result<Graph> {
-        structure_lang_java::parse_sources(project, files, warnings)
+    ) -> anyhow::Result<ParseOutput> {
+        structure_lang_java::parse_sources(project, files, warnings).map(ParseOutput::new)
     }
 
     fn default_rules(&self) -> (&'static str, &'static str) {
@@ -90,8 +125,8 @@ impl Frontend for TypeScriptFrontend {
         project: &str,
         files: &[(String, String)],
         _warnings: &mut Vec<String>,
-    ) -> anyhow::Result<Graph> {
-        structure_lang_ts::parse_sources(project, files)
+    ) -> anyhow::Result<ParseOutput> {
+        structure_lang_ts::parse_sources(project, files).map(ParseOutput::new)
     }
 
     fn default_rules(&self) -> (&'static str, &'static str) {
@@ -126,8 +161,8 @@ impl Frontend for PharoFrontend {
         project: &str,
         files: &[(String, String)],
         warnings: &mut Vec<String>,
-    ) -> anyhow::Result<Graph> {
-        Ok(structure_lang_pharo::parse_sources(project, files, warnings).graph)
+    ) -> anyhow::Result<ParseOutput> {
+        Ok(structure_lang_pharo::parse_sources(project, files, warnings).into())
     }
 
     fn default_rules(&self) -> (&'static str, &'static str) {
@@ -272,10 +307,31 @@ mod tests {
             "src/main/java/p/A.java".to_string(),
             "package p;\npublic class A {}\n".to_string(),
         )];
-        let g = frontend(Language::Java)
+        let out = frontend(Language::Java)
             .parse_sources("demo", &files, &mut Vec::new())
             .unwrap();
-        assert_eq!(g.language, Language::Java);
-        assert!(g.symbols.iter().any(|s| s.id == "p.A"));
+        assert_eq!(out.graph.language, Language::Java);
+        assert!(out.graph.symbols.iter().any(|s| s.id == "p.A"));
+        assert!(out.stats.is_empty());
+    }
+
+    #[test]
+    fn pharo_reports_send_stats() {
+        let files = vec![(
+            "src/P/A.class.st".to_string(),
+            "Class { #name : 'A', #superclass : 'Object', #category : 'P' }\n\
+             A >> foo [ ^ self bar ]\n\
+             A >> bar [ ^ x baz ]\n"
+                .to_string(),
+        )];
+        let out = frontend(Language::Pharo)
+            .parse_sources("demo", &files, &mut Vec::new())
+            .unwrap();
+        let stat = |name, value| ParseStat {
+            group: "sends",
+            name,
+            value,
+        };
+        assert_eq!(out.stats, vec![stat("resolved", 1), stat("unresolved", 1)]);
     }
 }

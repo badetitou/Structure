@@ -1,10 +1,9 @@
 use std::path::Path;
-use std::process::Command;
 
 use crate::pharo;
-use structure_ir::ir::{Graph, Language};
+use structure_ir::ir::Language;
 
-use super::{Frontend, LanguageFrontend};
+use super::{Frontend, Indexer, LanguageFrontend, ParseOutput};
 
 pub struct PharoFrontend;
 
@@ -33,24 +32,16 @@ impl LanguageFrontend for PharoFrontend {
         "src/.properties or src/**/*.class.st (Pharo Tonel)"
     }
 
-    fn indexer_command(&self, _root: &Path) -> Option<Command> {
+    fn indexer(&self) -> Option<&dyn Indexer> {
         None
     }
 
-    fn indexer_hint(&self, _root: &Path) -> Option<String> {
-        None
-    }
-
-    fn parse_project(&self, root: &Path) -> anyhow::Result<Graph> {
-        pharo::parse_project(root)
-    }
-
-    fn parse_project_warned(
+    fn parse_project(
         &self,
         root: &Path,
         warnings: &mut Vec<String>,
-    ) -> anyhow::Result<Graph> {
-        pharo::parse_project_with_warnings(root, warnings)
+    ) -> anyhow::Result<ParseOutput> {
+        Ok(pharo::parse_project_full(root, warnings)?.into())
     }
 }
 
