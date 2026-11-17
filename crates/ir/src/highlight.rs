@@ -102,8 +102,9 @@ pub struct HighlightedSymbol {
     pub distance: u32,
 }
 
-/// A highlighted `layer:domain` cell: the strongest role and the smallest
-/// distance of its highlighted symbols.
+/// A highlighted cell (the id of a matrix cell of the lens it was
+/// aggregated for): the strongest role and the smallest distance of its
+/// highlighted symbols.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct HighlightedCell {

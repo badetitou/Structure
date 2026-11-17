@@ -1,5 +1,8 @@
 # Structure — plan du POC
 
+> Plan historique du POC, gardé tel quel. Structure actuelle, feuille de route et
+> écarts restants : [`architecture.md`](architecture.md) (et la section « Map » de `CLAUDE.md`).
+
 ## Vision
 
 Chaque application est un call graph. On ne l'affiche pas symbole par symbole :

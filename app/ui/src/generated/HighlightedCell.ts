@@ -2,7 +2,8 @@
 import type { Role } from "./Role";
 
 /**
- * A highlighted `layer:domain` cell: the strongest role and the smallest
- * distance of its highlighted symbols.
+ * A highlighted cell (the id of a matrix cell of the lens it was
+ * aggregated for): the strongest role and the smallest distance of its
+ * highlighted symbols.
  */
 export type HighlightedCell = { id: string, role: Role, distance: number, };

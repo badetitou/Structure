@@ -141,11 +141,16 @@ fn is_zero(n: &u64) -> bool {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Cell {
-    /// "<layer>:<domain>", e.g. "business:account".
+    /// `[<lens prefix>]<layer>:<domain>`: "business:account" in the default
+    /// lens (`layer-domain`, empty prefix), "package/business:org.foo" in
+    /// `layer-package` (see `classify::lens`). Read `layer` and `domain`
+    /// instead of parsing the id.
     pub id: String,
     pub layer: LayerId,
+    /// The column: an inferred domain, or a module path in `layer-package`.
     pub domain: String,
-    /// Number of top-level symbols; the list is `matrix::cell_symbols`.
+    /// Number of top-level symbols; the list is `matrix::cell_symbols_in`
+    /// (the `cell_symbols` command).
     pub size: usize,
 }
 

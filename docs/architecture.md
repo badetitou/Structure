@@ -1,7 +1,9 @@
 # Structure — cible d'architecture
 
-Plan de refonte décidé le 2026-11-16. Complète `plan.md` (POC) ; chaque étape
-de la feuille de route est une PR à un seul sujet.
+Plan de refonte décidé le 2026-11-16. Remplace `plan.md` (POC, historique)
+pour la structure actuelle ; chaque étape de la feuille de route est une PR à
+un seul sujet. État : toutes les étapes sont faites sauf #75 (plus tard) ; les
+écarts restants sont notés en place (« reste ») et résumés à la fin.
 
 ## Principe
 
@@ -13,17 +15,19 @@ Sources ──► Graph ──► Lens (quotient) ──► Overlays (highlights
 
 Chaque flèche est un contrat. Le code **pur** (ir, langages, classify,
 highlight) compile en wasm ; le code **natif** (git, indexeurs SCIP, cache,
-système de fichiers) n'existe que dans l'engine natif.
+système de fichiers) n'existe que dans l'engine natif. La crate `structure-git`
+compile aussi en wasm, qui n'en utilise que la lecture d'un diff
+(`changes_from_diff`) et l'impact sur un graphe en mémoire.
 
 ## 1. Langages
 
-Constat : la correspondance langage → règles/séparateur existe en trois copies
-(`core/src/lang`, `wasm/src/lib.rs`, tests de `classify`) ; le pipeline a des
-cas Pharo et un `match` de tag de cache ; `LanguageFrontend` mêle parsing pur
-et indexeur natif ; `Symbol` porte `http`/`http_calls`/`rpc_calls` et
-`EdgeKind` a `Http`/`Rpc` en dur.
+Constat (avant #73) : la correspondance langage → règles/séparateur existait en
+trois copies (`core/src/lang`, `wasm/src/lib.rs`, tests de `classify`) ; le
+pipeline avait des cas Pharo et un `match` de tag de cache ; `LanguageFrontend`
+mêlait parsing pur et indexeur natif ; `Symbol` portait
+`http`/`http_calls`/`rpc_calls` et `EdgeKind` avait `Http`/`Rpc` en dur.
 
-Cible :
+Cible — fait (#73) :
 - crate pur `structure-lang` : trait `Frontend { language, extensions,
   is_source, parse_sources(files) -> ParseOutput, default_rules,
   module_separator }` + registre, utilisé par `core` et `wasm` ;
@@ -54,11 +58,11 @@ Cible :
 
 ## 2. Couches configurables
 
-Les règles nomment déjà les couches par chaîne ; seuls la liste et l'ordre
-sont figés (enum `Layer` dans `model.rs`, type `Layer` généré dans
-`app/ui/src/generated/`).
+Constat (avant #72) : les règles nommaient déjà les couches par chaîne ; seuls
+la liste et l'ordre étaient figés (une enum `Layer` dans `model.rs`, retirée
+depuis).
 
-Cible :
+Cible — fait (#72) :
 - `Layer` devient `LayerId(String)` ; `Matrix.layers` porte les définitions
   `{ id, label, order }` ; `unknown` reste implicite, toujours en dernier ;
 - section `[[layer]]` dans les règles TOML ; les règles par défaut déclarent
@@ -75,24 +79,36 @@ Cible :
 
 ## 3. Séparation front/back
 
-Constat : cache et orchestration vivaient dans `app/src-tauri/src/commands.rs`
-(déplacés dans `structure_core::session` par #71) ; les types sont écrits deux fois (`model.rs`, `api.ts`) ; le `Backend` TS
-signale l'indisponibilité en rejetant des promesses.
+Constat (avant #71 et #83) : cache et orchestration vivaient dans
+`app/src-tauri/src/commands.rs` ; les types étaient écrits deux fois
+(`model.rs`, `api.ts`) ; le `Backend` TS signalait l'indisponibilité en
+rejetant des promesses.
 
 Cible :
 - engine Rust `Session` : possède le cache, expose `open(paths)`, `matrix`,
   `cell_symbols`, `highlight(request)`, `reclassify`, `history`, `diff` ;
-  commandes Tauri, CLI et (sous-ensemble) wasm passent par elle ;
+  commandes Tauri, CLI et (sous-ensemble) wasm passent par elle — fait en
+  partie (#71) : `structure_core::session::Session` possède le cache (working
+  trees, snapshots de commit, générations) et expose `analyze` (au lieu de
+  `open`), `reclassify`, `rules_stamp`, `impact`, `cell_symbols`, `lenses`,
+  `matrix`, `impact_cells`, `history`, `diff` ; les commandes Tauri en sont des
+  enveloppes minces. Reste : `highlight(request)` (aucune commande ne rend un
+  `Highlight`, voir §5) ; la CLI appelle encore `pipeline` directement
+  (`analyze_many`, `impact`, `impact_at`) ; le wasm n'utilise pas `Session`
+  (il appelle `structure-lang`, `classify` et `git` sur des fichiers en
+  mémoire, sans cache) ;
 - types TS générés depuis Rust — fait (#83) : `ts-rs`, derive derrière la
   feature `ts` de `structure-ir`, fichiers commités dans
   `app/ui/src/generated/`, un test échoue s'ils sont périmés ;
 - `Backend` TS avec `capabilities { history, diff, pickFolder, reclassify,
   highlightSources[] }` dont dérivent les `available()` des panneaux, le
   bouton « Reload rules » et la surveillance des règles ; une méthode non
-  supportée est absente au lieu de rejeter — fait (#71) ;
-  `AppState` découpé en stores (`app/ui/src/stores/`) : analyse, impact (futur
-  overlay de highlight), sélection, git, options d'affichage ; la coordination
-  entre stores est dans `session.ts` — fait (#71).
+  supportée est absente au lieu de rejeter — fait (#71 ; `lenses` ajouté par
+  #74) ;
+  l'ancien `AppState` (`state.svelte.ts`, retiré) découpé en stores
+  (`app/ui/src/stores/`) : analyse, impact (liste d'overlays), sélection, git,
+  options d'affichage, lenses ; la coordination entre stores est dans
+  `session.ts` — fait (#71).
 
 ## 4. Vues
 
@@ -122,7 +138,8 @@ La sélection reste partagée mais retient sa lens : un panneau d'une autre lens
 
 Cible :
 - contrat `ViewContext { lens, overlays, selection, actions }` passé à chaque
-  vue, au lieu de lire les stores globaux ; sélection et overlays forment un bus partagé ;
+  vue, au lieu de lire les stores globaux ; sélection et overlays forment un bus partagé —
+  fait (PR 1) ;
 - séparer la *lens* (back : manière de quotienter — layer × domaine, arbre de
   packages, projet × couche) du *rendu* (front : matrice, dense, graphe de
   voisinage, liste) — fait pour layer × domaine et layer × package (PR 3) ; projet × couche
@@ -138,7 +155,8 @@ pure `structure-highlight` (contrats dans `crates/ir/src/highlight.rs`) ;
 `compute_with` (`crates/git/src/impact.rs`) n'y ajoute que git. En JSON,
 `Anchor` est étiqueté par `kind` (`Symbol { id }` plutôt que `Symbol(String)`).
 
-Cible, dans le code pur :
+Cible, dans le code pur — fait (#69), sauf la propagation `Path` (avec #75) ;
+les rôles sont `changed` et `reached` :
 
 ```rust
 enum Anchor { Symbol(String), Location { file, lines }, Qualified { name, file_hint, line } }
@@ -155,10 +173,13 @@ struct Highlight { source, symbols: [{id, role, distance}], cells: [{id, role, d
   propagation `Callers`) et l'adaptateur unique `Impact::from_highlight`
   (`structure-ir`) en tire le JSON `Impact` inchangé (`changed_*` = rôle
   `changed`, `impacted_*` = le reste avec sa distance). Le `Highlight` lui-même
-  ne passe pas encore sur le fil : #70 l'y ajoutera avec son consommateur.
-- UI : `app.highlights[]`, overlays nommés — fait (#70) : `impact`
-  (`ImpactOverlays`) tient la liste et la sélection, règles pures dans
-  `overlays.ts` et `multioverlay.ts`.
+  ne passe toujours pas sur le fil : #70 a fait les overlays côté UI sur le
+  type `Impact` (et `LensCells` pour une autre lens) ; envoyer un `Highlight`
+  (`Session::highlight(request)`) est reporté à son premier consommateur, la
+  source stack trace (#75).
+- UI : liste d'overlays nommés (la cible disait `app.highlights[]`) — fait
+  (#70) : le store `impact` (`ImpactOverlays`, `app/ui/src/stores/`) tient la
+  liste et la sélection, règles pures dans `overlays.ts` et `multioverlay.ts`.
 - Sélecteur d'overlays : visible seulement quand au moins deux overlays sont
   chargés, dans une barre fine au-dessus de la matrice ; clic = un seul (celui
   par défaut), cmd/ctrl-clic = ajoute ou retire. Chaque overlay a sa couleur
@@ -180,16 +201,24 @@ struct Highlight { source, symbols: [{id, role, distance}], cells: [{id, role, d
 
 Issue parente : #68 (une sous-issue par étape, une case = une PR).
 
-1. #83 Contrats : génération des types TS depuis Rust.
+1. #83 Contrats : génération des types TS depuis Rust — fait.
 2. #69 Highlight pur : extraire resolve / propagate / aggregate de
    `compute_with` (sans changement de comportement) ; modèle `Highlight`,
-   `Impact` comme source git.
-3. #70 UI highlights : `app.highlights[]`, sélecteur, rendu multi-overlay — fait.
+   `Impact` comme source git — fait.
+3. #70 UI highlights : liste d'overlays, sélecteur, rendu multi-overlay — fait.
 4. #71 Engine `Session` : sortir cache et orchestration de `commands.rs` ;
-   puis `Backend` à capacités.
+   puis `Backend` à capacités — fait (Tauri seulement, voir les écarts).
 5. #72 Couches : `LayerId` (sans changement de comportement) ; `[[layer]]` ;
-   fichier de projet ; `reclassify`.
+   fichier de projet ; `reclassify` — fait.
 6. #73 Langages : crate `structure-lang` pur (le wasm l'utilise) ; trait
-   `Indexer` ; ports et linkers ; dépôts multi-langages.
+   `Indexer` ; ports et linkers ; dépôts multi-langages — fait.
 7. #74 Vues : `ViewContext` ; options par panneau ; lens configurables — fait.
 8. #75 Plus tard : source stack trace (coller), vue Trace ; MCP ensuite.
+
+Écarts restants par rapport à la cible :
+- `Session` n'a ni `open(paths)` (c'est `analyze`) ni `highlight(request)` ;
+  la CLI et le wasm ne passent pas par elle (§3) ;
+- le `Highlight` ne passe pas sur le fil, et la propagation `Path` n'existe
+  pas (§5, avec #75) ;
+- la lens projet × couche n'est pas au registre (§4) ; l'édition des règles
+  depuis l'UI reste à faire (§2).
