@@ -85,32 +85,8 @@ fn run_analysis(
         Some(s) => eprintln!("link: {s:?}"),
         None => eprintln!("link: none (tree-sitter only)"),
     }
-    if let Some(h) = &analysis.http_stats {
-        eprintln!(
-            "http: {}/{} linked, {} unknown path, {} ambiguous",
-            h.linked, h.calls, h.unknown_path, h.ambiguous
-        );
-        for u in &h.unmatched {
-            eprintln!("  unmatched: {u}");
-        }
-    }
-    if let Some(r) = &analysis.rpc_stats {
-        eprintln!(
-            "rpc: {}/{} linked, {} no implementation, {} unresolved service",
-            r.linked, r.calls, r.no_impl, r.unresolved_service
-        );
-        if r.maybe_rpc > 0 {
-            eprintln!(
-                "rpc: {} call(s) on an unknown `X.Util.getInstance()` service, not counted",
-                r.maybe_rpc
-            );
-        }
-        for u in r.unmatched.iter().take(20) {
-            eprintln!("  unmatched: {u}");
-        }
-        if r.unmatched.len() > 20 {
-            eprintln!("  ... and {} more", r.unmatched.len() - 20);
-        }
+    for line in analysis.remote_links.iter().flat_map(|r| r.stats.summary()) {
+        eprintln!("{line}");
     }
     for w in &analysis.warnings {
         eprintln!("warning: {w}");
@@ -133,7 +109,7 @@ fn print_metrics(m: &Metrics) {
         "scip: {} documents, {} occurrences",
         m.scip_documents, m.scip_occurrences
     );
-    let fmt = |e: &std::collections::BTreeMap<&str, usize>| {
+    let fmt = |e: &std::collections::BTreeMap<String, usize>| {
         let total: usize = e.values().sum();
         let kinds: Vec<String> = e.iter().map(|(k, n)| format!("{k} {n}")).collect();
         format!("{total} ({})", kinds.join(", "))

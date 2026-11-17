@@ -27,9 +27,7 @@ fn named_sym(id: &str, name: &str, container: Option<&str>, file: &str, s: u32, 
         name_range: r,
         annotations: vec![],
         supertypes: vec![],
-        http: vec![],
-        http_calls: vec![],
-        rpc_calls: vec![],
+        ports: vec![],
         package: None,
     }
 }

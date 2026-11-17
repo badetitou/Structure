@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use anyhow::bail;
 
 use super::{Analysis, Options, analyze_in, project_name};
-use crate::ir::{EdgeKind, Graph};
+use crate::ir::Graph;
 use crate::layers::Layers;
 use crate::matrix;
 use crate::model::{Classification, DomainNode, LayerDef, Matrix, Placement, Progress, Project};
@@ -253,8 +253,8 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
             s.file = format!("{name}/{}", s.file);
             graph.symbols.push(s);
         }
-        // Rpc edges are linked again on the merged graph below.
-        for mut e in part.edges.into_iter().filter(|e| e.kind != EdgeKind::Rpc) {
+        // Remote edges are linked again on the merged graph below.
+        for mut e in part.edges.into_iter().filter(|e| !e.kind.is_remote()) {
             e.from = prefix_id(name, &e.from);
             e.to = prefix_id(name, &e.to);
             graph.edges.push(e);
@@ -270,10 +270,7 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
         metrics.scip_documents += a.metrics.scip_documents;
         metrics.scip_occurrences += a.metrics.scip_occurrences;
     }
-    let (http_edges, http_stats) = crate::http_link::link_http(&graph);
-    graph.edges.extend(http_edges);
-    let (rpc_edges, rpc_stats) = crate::rpc_link::link_rpc(&graph);
-    graph.edges.extend(rpc_edges);
+    let remote_links = crate::linker::run(&mut graph, true);
     metrics.record_edges(&graph);
 
     let classification = merged.finish();
@@ -286,8 +283,7 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
         classification,
         matrix,
         link_stats,
-        http_stats: Some(http_stats),
-        rpc_stats: (rpc_stats.calls + rpc_stats.maybe_rpc > 0).then_some(rpc_stats),
+        remote_links,
         metrics,
         warnings,
         layers,

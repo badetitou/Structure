@@ -8,7 +8,9 @@ use anyhow::Context;
 use rayon::prelude::*;
 use tree_sitter::{Node, Parser};
 
-use structure_ir::ir::{Edge, EdgeKind, Graph, Language, Range, Symbol, SymbolKind};
+use structure_ir::ir::{
+    Edge, EdgeKind, Graph, Language, Port, PortKey, PortRole, Range, Symbol, SymbolKind, protocol,
+};
 
 mod http;
 
@@ -201,9 +203,7 @@ impl Ctx<'_> {
             name_range: rng(s.name_node),
             annotations: s.annotations,
             supertypes: s.supertypes,
-            http: vec![],
-            http_calls: vec![],
-            rpc_calls: vec![],
+            ports: vec![],
             package: self.package.clone(),
         });
     }
@@ -216,7 +216,11 @@ impl Ctx<'_> {
             return;
         }
         if let Some(s) = self.out.symbols.iter_mut().rev().find(|s| s.id == id) {
-            s.http_calls.extend(calls);
+            s.ports.extend(
+                calls
+                    .into_iter()
+                    .map(|c| Port::new(protocol::HTTP, PortRole::Requires, PortKey::Endpoint(c))),
+            );
         }
     }
 
@@ -410,7 +414,9 @@ impl Ctx<'_> {
                         let mut c3 = clause.walk();
                         for t in clause.named_children(&mut c3) {
                             if let Some(n) = heritage_name(t, self.src) {
-                                self.out.heritage.push((id.clone(), n.clone(), kind));
+                                self.out
+                                    .heritage
+                                    .push((id.clone(), n.clone(), kind.clone()));
                                 supers.push(n);
                             }
                         }
@@ -760,7 +766,7 @@ fn assemble(root_label: &str, parsed: Vec<(String, FileSymbols)>) -> anyhow::Res
     let mut edges = Vec::new();
     let mut seen: BTreeSet<(String, String, u8)> = BTreeSet::new();
     let mut add = |from: &str, to: String, kind: EdgeKind| {
-        if seen.insert((from.to_string(), to.clone(), kind as u8)) {
+        if seen.insert((from.to_string(), to.clone(), kind.rank())) {
             edges.push(Edge {
                 from: from.to_string(),
                 to,
@@ -771,7 +777,7 @@ fn assemble(root_label: &str, parsed: Vec<(String, FileSymbols)>) -> anyhow::Res
     for (rel, f) in &parsed {
         for (from, name, kind) in &f.heritage {
             if let Resolved::Project(to) = resolver.resolve(rel, name) {
-                add(from, to, *kind);
+                add(from, to, kind.clone());
             }
         }
         for (from, name) in &f.uses {
@@ -785,7 +791,7 @@ fn assemble(root_label: &str, parsed: Vec<(String, FileSymbols)>) -> anyhow::Res
 
     let mut symbols: Vec<Symbol> = parsed.into_iter().flat_map(|(_, f)| f.symbols).collect();
     symbols.sort_by(|a, b| a.id.cmp(&b.id));
-    edges.sort_by(|a, b| (&a.from, &a.to, a.kind as u8).cmp(&(&b.from, &b.to, b.kind as u8)));
+    edges.sort_by(|a, b| (&a.from, &a.to, a.kind.rank()).cmp(&(&b.from, &b.to, b.kind.rank())));
     Ok(Graph {
         root: root_label.to_string(),
         language: Language::TypeScript,

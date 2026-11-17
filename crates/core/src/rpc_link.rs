@@ -1,14 +1,20 @@
-//! Links GWT RPC calls (`Symbol::rpc_calls`, client) to the methods of the
-//! classes implementing the service (server) over a graph, merged or not.
+//! The GWT RPC linker: links GWT RPC calls (`Requires` ports of protocol
+//! `gwt-rpc`, client) to the methods of the classes implementing the service
+//! (server) over a graph, merged or not. Services have no `Provides` port:
+//! implementations are found from the type hierarchy of the graph (and by
+//! name for an interface living in another project or a library), which a
+//! frontend cannot know when it parses one root.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
-use crate::ir::{Edge, EdgeKind, Graph, Symbol, SymbolKind};
+use crate::ir::{Edge, EdgeKind, Graph, PortRole, RpcCall, Symbol, SymbolKind, protocol};
+use crate::linker::{Linker, LinkerStats};
 
 /// Outcome of [`link_rpc`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RpcLinkStats {
-    /// Calls found (every `rpc_calls` entry).
+    /// Calls found (every `gwt-rpc` `Requires` port, `maybe` ones aside).
     pub calls: usize,
     /// Calls that became at least one edge.
     pub linked: usize,
@@ -22,6 +28,60 @@ pub struct RpcLinkStats {
     pub maybe_rpc: usize,
     /// Calls not linked, as "caller -> Service#method(arity)".
     pub unmatched: Vec<String>,
+}
+
+impl LinkerStats for RpcLinkStats {
+    /// Only when the graph has RPC calls.
+    fn reported(&self) -> bool {
+        self.calls + self.maybe_rpc > 0
+    }
+
+    fn summary(&self) -> Vec<String> {
+        let mut out = vec![format!(
+            "rpc: {}/{} linked, {} no implementation, {} unresolved service",
+            self.linked, self.calls, self.no_impl, self.unresolved_service
+        )];
+        if self.maybe_rpc > 0 {
+            out.push(format!(
+                "rpc: {} call(s) on an unknown `X.Util.getInstance()` service, not counted",
+                self.maybe_rpc
+            ));
+        }
+        out.extend(
+            self.unmatched
+                .iter()
+                .take(20)
+                .map(|u| format!("  unmatched: {u}")),
+        );
+        if self.unmatched.len() > 20 {
+            out.push(format!("  ... and {} more", self.unmatched.len() - 20));
+        }
+        out
+    }
+}
+
+/// [`link_rpc`] as a [`Linker`]; one root or several.
+pub struct RpcLinker;
+
+impl Linker for RpcLinker {
+    fn protocol(&self) -> &'static str {
+        protocol::GWT_RPC
+    }
+
+    fn single_root(&self) -> bool {
+        true
+    }
+
+    fn link(&self, graph: &Graph) -> (Vec<Edge>, Arc<dyn LinkerStats>) {
+        let (edges, stats) = link_rpc(graph);
+        (edges, Arc::new(stats))
+    }
+}
+
+/// GWT RPC calls made by `s`.
+fn rpc_calls(s: &Symbol) -> impl Iterator<Item = &RpcCall> {
+    s.ports(protocol::GWT_RPC, PortRole::Requires)
+        .filter_map(|k| k.as_service_method())
 }
 
 struct Index<'g> {
@@ -162,12 +222,12 @@ impl<'g> Index<'g> {
     }
 }
 
-/// `Rpc` edges from each calling symbol to the implementation methods it
+/// `Remote { gwt-rpc }` edges from each calling symbol to the implementation methods it
 /// reaches, plus stats. The `AsyncCallback` parameter is dropped from the
 /// arity first (`Impl#m(n-1)`), then kept (`Impl#m(n)`, methods returning a `Request`).
 pub fn link_rpc(graph: &Graph) -> (Vec<Edge>, RpcLinkStats) {
     let mut stats = RpcLinkStats::default();
-    if graph.symbols.iter().all(|s| s.rpc_calls.is_empty()) {
+    if graph.symbols.iter().all(|s| rpc_calls(s).next().is_none()) {
         return (vec![], stats);
     }
     let idx = Index::new(graph);
@@ -175,7 +235,7 @@ pub fn link_rpc(graph: &Graph) -> (Vec<Edge>, RpcLinkStats) {
     let mut services: HashMap<(&str, bool), (bool, BTreeSet<&str>)> = HashMap::new();
     let mut pairs: BTreeSet<(&str, &str)> = BTreeSet::new();
     for caller in &graph.symbols {
-        for call in &caller.rpc_calls {
+        for call in rpc_calls(caller) {
             let (found, impls) = services
                 .entry((call.service.as_str(), call.maybe))
                 .or_insert_with(|| {
@@ -225,7 +285,7 @@ pub fn link_rpc(graph: &Graph) -> (Vec<Edge>, RpcLinkStats) {
         .map(|(f, t)| Edge {
             from: f.to_string(),
             to: t.to_string(),
-            kind: EdgeKind::Rpc,
+            kind: EdgeKind::remote(protocol::GWT_RPC),
         })
         .collect();
     (edges, stats)
@@ -234,7 +294,7 @@ pub fn link_rpc(graph: &Graph) -> (Vec<Edge>, RpcLinkStats) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{Language, Range, RpcCall};
+    use crate::ir::{Language, Port, PortKey, Range};
 
     fn sym(id: &str, kind: SymbolKind, container: Option<&str>) -> Symbol {
         let r = Range {
@@ -254,19 +314,25 @@ mod tests {
             annotations: vec![],
             supertypes: vec![],
             package: None,
-            http: vec![],
-            http_calls: vec![],
-            rpc_calls: vec![],
+            ports: vec![],
         }
     }
 
-    fn call(service: &str, method: &str, arity: u32) -> RpcCall {
-        RpcCall {
+    fn rpc(c: RpcCall) -> Port {
+        Port::new(
+            protocol::GWT_RPC,
+            PortRole::Requires,
+            PortKey::ServiceMethod(c),
+        )
+    }
+
+    fn call(service: &str, method: &str, arity: u32) -> Port {
+        rpc(RpcCall {
             service: service.into(),
             method: method.into(),
             arity,
             maybe: false,
-        }
+        })
     }
 
     fn edge(from: &str, to: &str, kind: EdgeKind) -> Edge {
@@ -305,13 +371,16 @@ mod tests {
     fn async_arity_drops_the_callback() {
         let mut syms = base();
         let mut c = sym("c.Cl#run(0)", SymbolKind::Method, None);
-        c.rpc_calls = vec![call("p.X", "go", 2)];
+        c.ports = vec![call("p.X", "go", 2)];
         syms.push(c);
         let g = graph(syms, vec![edge("p.XImpl", "p.X", EdgeKind::Implements)]);
         let (e, s) = link_rpc(&g);
         assert_eq!(pairs(&e), [("c.Cl#run(0)", "p.XImpl#go(1)")]);
         assert_eq!((s.calls, s.linked), (1, 1));
-        assert!(e.iter().all(|e| e.kind == EdgeKind::Rpc));
+        assert!(
+            e.iter()
+                .all(|e| e.kind == EdgeKind::remote(protocol::GWT_RPC))
+        );
     }
 
     #[test]
@@ -319,7 +388,7 @@ mod tests {
         let mut syms = base();
         syms.push(sym("p.XImpl#req(1)", SymbolKind::Method, Some("p.XImpl")));
         let mut c = sym("cl", SymbolKind::Method, None);
-        c.rpc_calls = vec![call("p.X", "req", 1)];
+        c.ports = vec![call("p.X", "req", 1)];
         syms.push(c);
         let g = graph(syms, vec![edge("p.XImpl", "p.X", EdgeKind::Implements)]);
         assert_eq!(pairs(&link_rpc(&g).0), [("cl", "p.XImpl#req(1)")]);
@@ -333,7 +402,7 @@ mod tests {
         // implements through a sub-interface
         syms.push(sym("p.Y", SymbolKind::Interface, None));
         let mut c = sym("cl", SymbolKind::Method, None);
-        c.rpc_calls = vec![call("p.X", "go", 2), call("p.X", "go", 2)];
+        c.ports = vec![call("p.X", "go", 2), call("p.X", "go", 2)];
         syms.push(c);
         let g = graph(
             syms,
@@ -360,7 +429,7 @@ mod tests {
             sym("p.Impl", SymbolKind::Class, None),
         ];
         let mut c = sym("cl", SymbolKind::Method, None);
-        c.rpc_calls = vec![call("p.X", "go", 1)];
+        c.ports = vec![call("p.X", "go", 1)];
         syms.push(c);
         let g = graph(
             syms,
@@ -376,7 +445,7 @@ mod tests {
     fn unresolved_service_and_missing_impl_are_reported() {
         let mut syms = base();
         let mut c = sym("cl", SymbolKind::Method, None);
-        c.rpc_calls = vec![
+        c.ports = vec![
             call("Nowhere", "go", 1),
             call("p.X", "missing", 1),
             call("p.X", "go", 1),
@@ -395,7 +464,7 @@ mod tests {
         let mut imp = sym("srv::q.Impl", SymbolKind::Class, None);
         imp.supertypes = vec!["X".into()];
         let mut c = sym("web::cl", SymbolKind::Method, None);
-        c.rpc_calls = vec![call("p.X", "go", 2)];
+        c.ports = vec![call("p.X", "go", 2)];
         let g = graph(
             vec![
                 sym("web::p.X", SymbolKind::Interface, None),
@@ -420,7 +489,7 @@ mod tests {
         syms.push(other);
         syms.push(sym("o.Other#go(1)", SymbolKind::Method, Some("o.Other")));
         let mut c = sym("cl", SymbolKind::Method, None);
-        c.rpc_calls = vec![call("p.X", "go", 2)];
+        c.ports = vec![call("p.X", "go", 2)];
         syms.push(c);
         let g = graph(syms, vec![edge("p.XImpl", "p.X", EdgeKind::Implements)]);
         assert_eq!(pairs(&link_rpc(&g).0), [("cl", "p.XImpl#go(1)")]);
@@ -429,10 +498,12 @@ mod tests {
     #[test]
     fn maybe_calls_need_a_remote_service_in_the_graph() {
         let mut maybe = sym("cl", SymbolKind::Method, None);
-        maybe.rpc_calls = vec![RpcCall {
+        maybe.ports = vec![rpc(RpcCall {
+            service: "X".into(),
+            method: "go".into(),
+            arity: 2,
             maybe: true,
-            ..call("X", "go", 2)
-        }];
+        })];
         // `X` exists but is no RemoteService: dropped, counted apart.
         let mut syms = base();
         syms.push(maybe.clone());
@@ -452,6 +523,36 @@ mod tests {
         let (e, s) = link_rpc(&g);
         assert_eq!(pairs(&e), [("cl", "p.XImpl#go(1)")]);
         assert_eq!((s.calls, s.linked, s.maybe_rpc), (1, 1, 0));
+    }
+
+    #[test]
+    fn summary_matches_the_cli_lines() {
+        let mut syms = base();
+        let mut c = sym("cl", SymbolKind::Method, None);
+        c.ports = (0..22).map(|i| call("p.X", &format!("m{i}"), 1)).collect();
+        c.ports.push(rpc(RpcCall {
+            service: "Y".into(),
+            method: "go".into(),
+            arity: 1,
+            maybe: true,
+        }));
+        syms.push(c);
+        let g = graph(syms, vec![edge("p.XImpl", "p.X", EdgeKind::Implements)]);
+        let (_, s) = link_rpc(&g);
+        assert!(s.reported());
+        let lines = s.summary();
+        assert_eq!(lines.len(), 1 + 1 + 20 + 1);
+        assert_eq!(
+            lines[0],
+            "rpc: 0/22 linked, 22 no implementation, 0 unresolved service"
+        );
+        assert_eq!(
+            lines[1],
+            "rpc: 1 call(s) on an unknown `X.Util.getInstance()` service, not counted"
+        );
+        assert_eq!(lines[2], "  unmatched: cl -> p.X#m0(1)");
+        assert_eq!(lines[22], "  ... and 2 more");
+        assert!(!RpcLinkStats::default().reported());
     }
 
     #[test]

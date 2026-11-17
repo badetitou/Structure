@@ -561,9 +561,7 @@ diff --git a/M b/M\n--- a/M\n+++ b/M\n@@ -1,2 +1,2 @@\n-a\n\\ No newline at end 
             name_range: r,
             annotations: vec![],
             supertypes: vec![],
-            http: vec![],
-            http_calls: vec![],
-            rpc_calls: vec![],
+            ports: vec![],
             package: None,
         }
     }

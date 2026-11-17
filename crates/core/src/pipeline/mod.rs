@@ -85,10 +85,10 @@ pub struct Analysis {
     pub classification: Classification,
     pub matrix: Matrix,
     pub link_stats: Option<LinkStats>,
-    /// HTTP call matching; only with several roots.
-    pub http_stats: Option<crate::http_link::HttpLinkStats>,
-    /// GWT RPC call matching; only when the graph has RPC calls.
-    pub rpc_stats: Option<crate::rpc_link::RpcLinkStats>,
+    /// Cross-project linker runs worth reporting, in registry order (see
+    /// [`crate::linker::run`]): HTTP only with several roots, GWT RPC when the
+    /// graph has RPC calls.
+    pub remote_links: Vec<crate::linker::LinkerRun>,
     pub metrics: Metrics,
     pub warnings: Vec<String>,
     /// Declared layers of the rules used (merged across roots, see
@@ -100,6 +100,16 @@ pub struct Analysis {
 }
 
 impl Analysis {
+    /// Stats of the HTTP linker, if it ran (several roots).
+    pub fn http_stats(&self) -> Option<&crate::http_link::HttpLinkStats> {
+        crate::linker::http_stats(&self.remote_links)
+    }
+
+    /// Stats of the GWT RPC linker, if the graph had RPC calls.
+    pub fn rpc_stats(&self) -> Option<&crate::rpc_link::RpcLinkStats> {
+        crate::linker::rpc_stats(&self.remote_links)
+    }
+
     /// Index shared by every impact computed on this analysis, built on first
     /// use. `graph` must not change once it is built.
     pub fn impact_index(&self) -> &ImpactIndex {
@@ -258,8 +268,7 @@ pub(super) fn analyze_in(
         }
         None => (graph, None),
     };
-    let (rpc_edges, rpc_stats) = crate::rpc_link::link_rpc(&graph);
-    graph.edges.extend(rpc_edges);
+    let remote_links = crate::linker::run(&mut graph, false);
     metrics.phase("link", t, None);
     metrics.record_edges(&graph);
 
@@ -290,8 +299,7 @@ pub(super) fn analyze_in(
         classification,
         matrix,
         link_stats,
-        http_stats: None,
-        rpc_stats: (rpc_stats.calls + rpc_stats.maybe_rpc > 0).then_some(rpc_stats),
+        remote_links,
         metrics,
         warnings,
         layers,

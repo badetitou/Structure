@@ -19,8 +19,19 @@ mod rpc;
 pub use rpc::{RawRpcCall, Receiver};
 
 use structure_ir::ir::{
-    Edge, EdgeKind, Graph, HttpEndpoint, HttpVerb, Language, Range, RpcCall, Symbol, SymbolKind,
+    Edge, EdgeKind, Graph, HttpEndpoint, HttpVerb, Language, Port, PortKey, PortRole, Range,
+    RpcCall, Symbol, SymbolKind, protocol,
 };
+
+/// An HTTP endpoint served by a handler method.
+fn http_port(e: HttpEndpoint) -> Port {
+    Port::new(protocol::HTTP, PortRole::Provides, PortKey::Endpoint(e))
+}
+
+/// Whether `p` is an HTTP endpoint served by its symbol.
+fn is_http_port(p: &Port) -> bool {
+    p.protocol == protocol::HTTP && p.role == PortRole::Provides
+}
 
 /// Result of parsing one Java source file.
 #[derive(Debug, Clone, Default)]
@@ -359,9 +370,7 @@ impl Ctx<'_> {
             annotations: annotations_of(node, self.src),
             supertypes: vec![],
             package: self.package.clone(),
-            http: vec![],
-            http_calls: vec![],
-            rpc_calls: vec![],
+            ports: vec![],
         });
         self.out.symbols.len() - 1
     }
@@ -488,7 +497,10 @@ impl Ctx<'_> {
                         );
                         self.rpc(m, &id);
                         let idx = self.symbol(id, SymbolKind::Method, m, n, Some(tid));
-                        self.out.symbols[idx].http = method_endpoints(m, self.src, &self.prefixes);
+                        self.out.symbols[idx].ports = method_endpoints(m, self.src, &self.prefixes)
+                            .into_iter()
+                            .map(http_port)
+                            .collect();
                         let raw = method_endpoints(m, self.src, &[String::new()]);
                         if !raw.is_empty() && !self.prefixes.is_empty() {
                             let mid = self.out.symbols[idx].id.clone();
@@ -877,7 +889,7 @@ fn assemble(
     let mut edges = Vec::new();
     let mut seen: HashSet<(String, String, u8)> = HashSet::new();
     let mut push = |from: &str, to: String, kind: EdgeKind| {
-        if seen.insert((from.to_string(), to.clone(), kind as u8)) {
+        if seen.insert((from.to_string(), to.clone(), kind.rank())) {
             edges.push(Edge {
                 from: from.to_string(),
                 to,
@@ -918,7 +930,7 @@ fn assemble(
     attach_rpc(&mut all, &parsed, &index);
     inherit_endpoints(&mut all, &parsed, &generated, &index, &gen_index, warnings);
     all.sort_by(|a, b| a.id.cmp(&b.id));
-    edges.sort_by(|a, b| (&a.from, &a.to, a.kind as u8).cmp(&(&b.from, &b.to, b.kind as u8)));
+    edges.sort_by(|a, b| (&a.from, &a.to, a.kind.rank()).cmp(&(&b.from, &b.to, b.kind.rank())));
 
     Ok(Graph {
         root: root_label.to_string(),
@@ -963,7 +975,9 @@ fn remote_services(parsed: &[FileSymbols], index: &TypeIndex) -> HashSet<String>
     }
 }
 
-/// Turn the raw RPC-shaped calls of each file into `Symbol::rpc_calls`.
+/// Turn the raw RPC-shaped calls of each file into GWT RPC `Requires` ports.
+/// Services get no `Provides` port: the linker finds their implementations
+/// from the type hierarchy of the (merged) graph.
 fn attach_rpc(all: &mut [Symbol], parsed: &[FileSymbols], index: &TypeIndex) {
     if parsed.iter().all(|f| f.rpc_raw.is_empty()) {
         return;
@@ -996,12 +1010,16 @@ fn attach_rpc(all: &mut [Symbol], parsed: &[FileSymbols], index: &TypeIndex) {
                 },
             };
             if let (Some((service, maybe)), Some(&i)) = (service, by_id.get(&raw.caller)) {
-                all[i].rpc_calls.push(RpcCall {
-                    service,
-                    method: raw.method.clone(),
-                    arity: raw.arity,
-                    maybe,
-                });
+                all[i].ports.push(Port::new(
+                    protocol::GWT_RPC,
+                    PortRole::Requires,
+                    PortKey::ServiceMethod(RpcCall {
+                        service,
+                        method: raw.method.clone(),
+                        arity: raw.arity,
+                        maybe,
+                    }),
+                ));
             }
         }
     }
@@ -1063,7 +1081,7 @@ fn inherit_endpoints(
         // nearest type-level mapping (own class, then supertypes).
         let raw = match routes.get(&s.id) {
             Some(r) => r,
-            None if s.http.is_empty() => {
+            None if !s.ports.iter().any(is_http_port) => {
                 match inherited_routes(&supers, &routes, tid, suffix, &mut HashSet::new()) {
                     Some(r) => r,
                     None => continue,
@@ -1085,7 +1103,8 @@ fn inherit_endpoints(
                 }
             }
         }
-        s.http = out;
+        s.ports.retain(|p| !is_http_port(p));
+        s.ports.extend(out.into_iter().map(http_port));
     }
     if unresolved_api > 0 {
         warnings.push(format!(

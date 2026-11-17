@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use structure_core::ir::EdgeKind;
+use structure_core::ir::{EdgeKind, protocol};
 use structure_core::pipeline::{self, Analysis, Options};
 
 fn fixtures() -> PathBuf {
@@ -76,7 +76,7 @@ fn http_calls_link_to_backend_handlers() {
         return;
     };
     let a = pipeline::analyze_many(&[back, front], &offline(), &|_| {}).expect("analyze");
-    let s = a.http_stats.as_ref().expect("http stats");
+    let s = a.http_stats().expect("http stats");
     assert_eq!(
         (s.calls, s.linked, s.unknown_path, s.ambiguous),
         (18, 17, 1, 0),
@@ -84,10 +84,11 @@ fn http_calls_link_to_backend_handlers() {
     );
     assert!(s.unmatched.is_empty(), "{s:?}");
     let has = |from: &str, to: &str| {
-        a.graph
-            .edges
-            .iter()
-            .any(|e| e.kind == EdgeKind::Http && e.from.ends_with(from) && e.to.ends_with(to))
+        a.graph.edges.iter().any(|e| {
+            e.kind == EdgeKind::remote(protocol::HTTP)
+                && e.from.ends_with(from)
+                && e.to.ends_with(to)
+        })
     };
     assert!(has(
         "UserService.getCurrentUser",

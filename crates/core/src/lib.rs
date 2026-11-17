@@ -3,6 +3,7 @@
 
 pub mod http_link;
 pub mod lang;
+pub mod linker;
 pub mod pipeline;
 pub mod rpc_link;
 pub mod session;

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use structure_ir::ir::Graph;
+use structure_ir::ir::{Graph, PortKey, PortRole, protocol};
 use structure_lang_java::parse_project;
 
 fn write(dir: &Path, rel: &str, content: &str) {
@@ -117,8 +117,8 @@ fn maybe(g: &Graph, caller: &str) -> Vec<bool> {
         .iter()
         .find(|s| s.id == caller)
         .unwrap_or_else(|| panic!("no {caller}"))
-        .rpc_calls
-        .iter()
+        .ports(protocol::GWT_RPC, PortRole::Requires)
+        .filter_map(PortKey::as_service_method)
         .map(|c| c.maybe)
         .collect()
 }
@@ -128,8 +128,8 @@ fn calls<'a>(g: &'a Graph, caller: &str) -> Vec<(&'a str, &'a str, u32)> {
         .iter()
         .find(|s| s.id == caller)
         .unwrap_or_else(|| panic!("no {caller}"))
-        .rpc_calls
-        .iter()
+        .ports(protocol::GWT_RPC, PortRole::Requires)
+        .filter_map(PortKey::as_service_method)
         .map(|c| (c.service.as_str(), c.method.as_str(), c.arity))
         .collect()
 }
@@ -175,14 +175,21 @@ fn rpc_call_shapes_are_extracted() {
         g.symbols
             .iter()
             .filter(|s| s.id.starts_with("c.ui.Page#"))
-            .all(|s| s.rpc_calls.iter().all(|c| c.service != "c.other.IFoo"))
+            .all(|s| s
+                .ports(protocol::GWT_RPC, PortRole::Requires)
+                .filter_map(PortKey::as_service_method)
+                .all(|c| c.service != "c.other.IFoo"))
     );
     // The service and its Util never count as callers.
     assert!(
         g.symbols
             .iter()
             .filter(|s| s.id.starts_with("c.remote."))
-            .all(|s| s.rpc_calls.is_empty())
+            .all(|s| s
+                .ports(protocol::GWT_RPC, PortRole::Requires)
+                .filter_map(PortKey::as_service_method)
+                .next()
+                .is_none())
     );
     let _ = std::fs::remove_dir_all(&dir);
 }

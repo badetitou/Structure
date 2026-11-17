@@ -23,7 +23,7 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
   `ir` <- `scip`/`classify`/`highlight` <- `git`; `lang`/`scip`/`classify`/`git` <- `core` <- `cli`;
   `lang`/`classify`/`git` <- `wasm` (`git` needs only `ir` and `highlight`;
   `classify` dev-depends on `lang` for its tests, `lang` never depends on `classify`):
-  - `ir` (`structure-ir`): `ir` (Graph/Symbol/Edge/ParseStat), `model`
+  - `ir` (`structure-ir`): `ir` (Graph/Symbol/Edge/Port/ParseStat), `model`
     (LayerId/LayerDef/Matrix/Impact/Progress), `highlight` (Anchor/Seed/HighlightRequest/
     Highlight) — contracts, serde only; feature `ts`
     derives the TS declarations (ts-rs; module `ts`, test `generated_ts_types`).
@@ -62,9 +62,12 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     `multi` several roots — first root's layers win, `reclassify` rules
     re-applied to a cached graph + `rules_stamp`, `indexer`, `process`,
     `progress`, `snapshot`, `history`) and
-    `http_link` (matches TS `http_calls` to Java `http` endpoints → `Http` edges,
-    multi-root only) and `rpc_link` (matches GWT `rpc_calls` to the classes
-    implementing the sync service → `Rpc` edges, one or several roots) and
+    `linker` (`Linker` trait + registry `all()`, `run()`: turns symbol `ports`
+    — `Port { protocol, role: Provides|Requires, key }` — into
+    `EdgeKind::Remote { protocol }` edges) with its two linkers `http_link`
+    (TS `http` `Requires` ports to Java `Provides` endpoints, multi-root only)
+    and `rpc_link` (GWT `gwt-rpc` `Requires` ports to the classes implementing
+    the sync service, found from the type hierarchy; one or several roots) and
     `session` (`Session`: owns cached analyses — working trees by canonical
     path + fingerprint, commit snapshots — generations and paging, `reclassify`;
     API mirrors the Tauri commands).

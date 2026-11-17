@@ -31,8 +31,16 @@ Cible :
   commande, aide, tag de cache SCIP) — Pharo n'en a pas ;
 - `ParseOutput.stats` : métriques génériques (remplace `metrics.sends`) ;
 - ports : `Port { protocol, role: Provides | Requires, key }` sur les symboles,
-  trait `Linker` → arêtes `EdgeKind::Remote(protocol)` ; `http_link` et
-  `rpc_link` deviennent deux linkers ;
+  trait `Linker` → arêtes `EdgeKind::Remote { protocol }` ; `http_link` et
+  `rpc_link` deviennent deux linkers (registre `core::linker`, lancés par le
+  pipeline : HTTP en multi-racine seulement, GWT RPC sur une ou plusieurs
+  racines). Décisions : le protocole est une chaîne (`http`, `gwt-rpc`) ; la
+  clé est une petite enum par forme (`Endpoint {verb, path}`,
+  `ServiceMethod {service, method, arity}`) qu'un nouveau protocole réutilise ;
+  les services GWT n'ont pas de port `Provides` : le linker trouve les
+  implémentations dans la hiérarchie de types du graphe (fusionné), qu'un
+  frontend ne voit pas en parsant une racine. Le `Matrix` garde ses champs
+  `http_edges`/`rpc_edges` (un par protocole connu) ;
 - un dépôt peut contenir plusieurs langages : la détection rend une liste,
   `multi.rs` fusionne des unités `(racine, langage)`.
 

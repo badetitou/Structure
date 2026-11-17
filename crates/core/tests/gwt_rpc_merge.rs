@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use structure_core::ir::EdgeKind;
+use structure_core::ir::{EdgeKind, protocol};
 use structure_core::pipeline::{self, Options};
 
 fn write(dir: &Path, rel: &str, content: &str) {
@@ -47,7 +47,7 @@ fn rpc_edges(a: &pipeline::Analysis) -> Vec<(&str, &str)> {
     a.graph
         .edges
         .iter()
-        .filter(|e| e.kind == EdgeKind::Rpc)
+        .filter(|e| e.kind == EdgeKind::remote(protocol::GWT_RPC))
         .map(|e| (e.from.as_str(), e.to.as_str()))
         .collect()
 }
@@ -69,7 +69,7 @@ fn async_type_from_another_root_links_in_the_merge() {
     let back = project("xback", &[SERVICE, ASYNC, SERVER]);
     let a = pipeline::analyze_many(&[front.clone(), back.clone()], &offline(), &|_| {})
         .expect("analyze");
-    let s = a.rpc_stats.as_ref().expect("rpc stats");
+    let s = a.rpc_stats().expect("rpc stats");
     assert_eq!(
         (s.calls, s.linked, s.unresolved_service),
         (1, 1, 0),
@@ -99,11 +99,11 @@ fn per_root_rpc_edges_are_dropped_before_the_merge() {
         &[("a/A.java", "package a; class A { void f() {} }")],
     );
     let alone = pipeline::analyze(&one, &offline(), &|_| {}).expect("analyze");
-    assert_eq!(alone.rpc_stats.as_ref().map(|s| s.linked), Some(1));
+    assert_eq!(alone.rpc_stats().map(|s| s.linked), Some(1));
     assert_eq!(rpc_edges(&alone).len(), 1);
     let a =
         pipeline::analyze_many(&[one.clone(), two.clone()], &offline(), &|_| {}).expect("analyze");
-    let s = a.rpc_stats.as_ref().expect("rpc stats");
+    let s = a.rpc_stats().expect("rpc stats");
     assert_eq!((s.calls, s.linked), (1, 1), "{s:?}");
     assert_eq!(rpc_edges(&a).len(), 1);
     let _ = std::fs::remove_dir_all(&one);
@@ -122,7 +122,7 @@ fn non_service_util_is_not_rpc() {
         )],
     );
     let a = pipeline::analyze(&dir, &offline(), &|_| {}).expect("analyze");
-    let s = a.rpc_stats.as_ref().expect("a maybe call exists");
+    let s = a.rpc_stats().expect("a maybe call exists");
     assert_eq!(
         (s.calls, s.maybe_rpc, s.unresolved_service),
         (0, 1, 0),
