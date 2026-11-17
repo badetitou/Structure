@@ -142,6 +142,16 @@ pub struct Graph {
     pub edges: Vec<Edge>,
 }
 
+/// A named counter reported by a language parser (e.g. Pharo's resolved
+/// message sends). Consecutive stats of one `group` render together as
+/// `group: value name, value name` (see `Metrics::parse_stats_lines`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseStat {
+    pub group: &'static str,
+    pub name: &'static str,
+    pub value: usize,
+}
+
 impl Graph {
     pub fn symbol(&self, id: &str) -> Option<&Symbol> {
         self.symbols.iter().find(|s| s.id == id)

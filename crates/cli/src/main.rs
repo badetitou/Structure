@@ -140,8 +140,8 @@ fn print_metrics(m: &Metrics) {
     };
     eprintln!("edges: {}", fmt(&m.edges_by_kind));
     eprintln!("edges to ext:*: {}", fmt(&m.ext_edges_by_kind));
-    if let Some((resolved, unresolved)) = m.sends {
-        eprintln!("sends: {resolved} resolved, {unresolved} unresolved");
+    for line in m.parse_stats_lines() {
+        eprintln!("{line}");
     }
     match peak_rss_bytes() {
         Some(b) => eprintln!("peak RSS: {:.1} MiB", b as f64 / (1024.0 * 1024.0)),

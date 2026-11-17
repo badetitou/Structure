@@ -128,13 +128,7 @@ pub(super) fn structure_dir(root: &Path) -> anyhow::Result<std::path::PathBuf> {
 }
 
 /// Cache key of the indexer whose documents a language reuses.
-fn scip_cache_tag(lang: Language) -> String {
-    match lang {
-        Language::Java => format!("scip-java-{SCIP_JAVA_VERSION}"),
-        Language::TypeScript => format!("scip-typescript-{SCIP_TS_VERSION}"),
-        Language::Pharo => "none".to_string(),
-    }
-}
+pub(super) use crate::lang::scip_cache_tag;
 
 fn project_name(root: &Path) -> String {
     let canon = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
@@ -230,16 +224,11 @@ pub(super) fn analyze_in(
 
     step("parsing", 35);
     let t = Instant::now();
-    let graph = if lang == Language::Pharo {
-        let p = crate::pharo::parse_project_full(root, &mut warnings)
-            .with_context(|| format!("parsing {}", root.display()))?;
-        metrics.sends = Some((p.stats.resolved, p.stats.unresolved));
-        p.graph
-    } else {
-        crate::lang::frontend(lang)
-            .parse_project_warned(root, &mut warnings)
-            .with_context(|| format!("parsing {}", root.display()))?
-    };
+    let parsed = crate::lang::frontend(lang)
+        .parse_project(root, &mut warnings)
+        .with_context(|| format!("parsing {}", root.display()))?;
+    metrics.parse_stats = parsed.stats;
+    let graph = parsed.graph;
     metrics.phase("parse", t, None);
 
     step("linking", 60);

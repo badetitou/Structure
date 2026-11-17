@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::java;
-use structure_ir::ir::{Graph, Language};
+use structure_ir::ir::Language;
 
-use super::{Frontend, LanguageFrontend, find_on_path};
+use super::{Frontend, Indexer, LanguageFrontend, ParseOutput, find_on_path};
 
 pub const SCIP_JAVA_VERSION: &str = "0.12.3";
 
@@ -38,7 +38,28 @@ impl LanguageFrontend for JavaFrontend {
         "pom.xml/build.gradle/build.gradle.kts/settings.gradle/settings.gradle.kts (Java)"
     }
 
-    fn indexer_command(&self, _root: &Path) -> Option<Command> {
+    fn indexer(&self) -> Option<&dyn Indexer> {
+        Some(&ScipJava)
+    }
+
+    fn parse_project(
+        &self,
+        root: &Path,
+        warnings: &mut Vec<String>,
+    ) -> anyhow::Result<ParseOutput> {
+        java::parse_project_with_warnings(root, warnings).map(ParseOutput::new)
+    }
+}
+
+/// `scip-java`, from `PATH` or launched through Coursier (`cs`).
+pub struct ScipJava;
+
+impl Indexer for ScipJava {
+    fn cache_tag(&self) -> String {
+        format!("scip-java-{SCIP_JAVA_VERSION}")
+    }
+
+    fn command(&self, _root: &Path) -> Option<Command> {
         if let Some(p) = find_on_path("scip-java") {
             let mut c = Command::new(p);
             c.args(["index", "--output", "index.scip"]);
@@ -56,7 +77,7 @@ impl LanguageFrontend for JavaFrontend {
         }
     }
 
-    fn indexer_hint(&self, root: &Path) -> Option<String> {
+    fn hint(&self, root: &Path) -> Option<String> {
         let has = |n: &str| root.join(n).is_file();
         if has("pom.xml") {
             return Some("Maven project: check ~/.m2/settings.xml (unreachable repository?) and try `mvn -q compile` in the project".into());
@@ -72,17 +93,5 @@ impl LanguageFrontend for JavaFrontend {
             ));
         }
         None
-    }
-
-    fn parse_project(&self, root: &Path) -> anyhow::Result<Graph> {
-        java::parse_project(root)
-    }
-
-    fn parse_project_warned(
-        &self,
-        root: &Path,
-        warnings: &mut Vec<String>,
-    ) -> anyhow::Result<Graph> {
-        java::parse_project_with_warnings(root, warnings)
     }
 }
