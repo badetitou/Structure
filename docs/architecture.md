@@ -96,7 +96,8 @@ Cible :
 
 ## 4. Vues
 
-Acquis : registre de panneaux + dockview.
+Acquis : registre de panneaux + dockview ; `ViewContext` (`app/ui/src/workspace/context.ts`,
+façade sur les stores et `session.ts`) fourni par contexte Svelte, les vues ne lisent plus les stores (#74, PR 1).
 
 Cible :
 - contrat `ViewContext { lens, overlays, selection, actions }` passé à chaque

@@ -8,7 +8,7 @@
   import Workspace from "./workspace/Workspace.svelte";
   import { analysis } from "../../stores/analysis.svelte";
   import { load, reset, runImpact, watchRules } from "../../stores/session";
-  import { shown } from "../../stores/shown";
+  import { createViewContext, setViewContext } from "../../workspace/context";
 
   // Analyses `paths`, shows the progress, then the workspace of panels (matrix, details, history, …)
   // between one compact top bar and a status bar.
@@ -19,6 +19,9 @@
     onExit,
     embedded = false,
   }: { paths: string[]; onExit: (error?: string) => void; embedded?: boolean } = $props();
+
+  // The view context of this screen: the toolbar, status bar and every panel read and act through it.
+  const ctx = setViewContext(createViewContext());
 
   const matrix = $derived(matrixControl.current);
 
@@ -52,12 +55,12 @@
       {embedded}
     />
     {#if analysis.phase === "ready" && analysis.work}
-      {#if analysis.rulesError}
-        <div class="flex-none border-b px-4 py-1 text-[13px] text-destructive" role="alert">{analysis.rulesError}</div>
+      {#if ctx.rules.error}
+        <div class="flex-none border-b px-4 py-1 text-[13px] text-destructive" role="alert">{ctx.rules.error}</div>
       {/if}
-      {#if shown.warnings.length > 0}
+      {#if ctx.lens.warnings.length > 0}
         <div class="flex-none border-b border-(--warn-border) bg-(--warn-bg) px-4 py-1 text-[13px] text-(--warn-fg)">
-          {#each shown.warnings as w}<div>⚠ {w}</div>{/each}
+          {#each ctx.lens.warnings as w}<div>⚠ {w}</div>{/each}
         </div>
       {/if}
       <Workspace />

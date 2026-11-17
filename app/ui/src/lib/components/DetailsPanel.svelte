@@ -8,10 +8,10 @@
   import { symbolName } from "../../symbolname";
   import { cellOverlayRows, overlayViews } from "../../multioverlay";
   import { cellCountsLabel } from "../../statusbar";
-  import { impact } from "../../stores/impact.svelte";
-  import { options } from "../../stores/options.svelte";
-  import { selection } from "../../stores/selection.svelte";
-  import { shown } from "../../stores/shown";
+  import { getViewContext } from "../../workspace/context";
+
+  const { lens, overlays: impact, selection, actions } = getViewContext();
+  const options = lens.display;
 
   const impacted = $derived(
     impact.current ? [...impact.current.impacted_symbols].sort((a, b) => a.distance - b.distance) : [],
@@ -30,7 +30,7 @@
   );
   const viewName = (id: string) => {
     const c = selection.view?.cells.find((x) => x.id === id);
-    return c ? `${layerLabel(shown.matrix?.layers, c.layer)} / ${c.label}` : id;
+    return c ? `${layerLabel(lens.matrix?.layers, c.layer)} / ${c.label}` : id;
   };
   // Several overlays drawn together: how each one hits the selected cell.
   const overlayRows = $derived.by(() => {
@@ -97,7 +97,7 @@
     {/if}
     {#if selection.selected}
       {@const c = selection.selected}
-      {@render heading(`${layerLabel(shown.matrix?.layers, c.layer)}/${c.label} — ${c.size} symbols`)}
+      {@render heading(`${layerLabel(lens.matrix?.layers, c.layer)}/${c.label} — ${c.size} symbols`)}
       {#if overlayRows}
         <ul class="m-0 mb-2 list-none pl-0">
           {#each overlayRows as r (r.id)}
@@ -141,7 +141,7 @@
       {:else if !list || list.loading}
         <div class="text-muted-foreground">Loading...</div>
       {:else if hasMore(list)}
-        <Button variant="outline" size="sm" onclick={() => void selection.loadSymbols(true)}>
+        <Button variant="outline" size="sm" onclick={() => void actions.loadMoreSymbols()}>
           Show more ({list.items.length} / {list.total})
         </Button>
       {/if}

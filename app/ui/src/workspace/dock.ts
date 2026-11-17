@@ -22,18 +22,25 @@ export const dockDnd = {
   dndStrategy: "pointer",
 } as const satisfies Pick<DockviewOptions, "dndStrategy">;
 
-/** Mounts a Svelte component (no props) as a dockview panel's content. */
+/**
+ * Mounts a Svelte component (no props) as a dockview panel's content. A panel is its own
+ * Svelte root, so the Svelte context it reads (the view context, see context.ts) is handed
+ * over explicitly as `context`.
+ */
 export class SvelteRenderer implements IContentRenderer {
   readonly element: HTMLElement;
   private instance: ReturnType<typeof mount> | null = null;
 
-  constructor(private readonly component: Component) {
+  constructor(
+    private readonly component: Component,
+    private readonly context?: Map<unknown, unknown>,
+  ) {
     this.element = document.createElement("div");
     this.element.className = "dock-panel";
   }
 
   init(): void {
-    if (!this.instance) this.instance = mount(this.component, { target: this.element });
+    if (!this.instance) this.instance = mount(this.component, { target: this.element, context: this.context });
   }
 
   dispose(): void {

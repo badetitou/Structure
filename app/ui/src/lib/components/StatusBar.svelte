@@ -1,20 +1,18 @@
 <script lang="ts">
-  import { analysis } from "../../stores/analysis.svelte";
-  import { impact } from "../../stores/impact.svelte";
-  import { selection } from "../../stores/selection.svelte";
-  import { shown } from "../../stores/shown";
+  import { getViewContext } from "../../workspace/context";
   import { MAX_BANDS } from "../../multioverlay";
   import { impactLabel, multiImpactLabel, selectionLabel, snapshotLabel, statsLabel } from "../../statusbar";
 
   // Context of the analysis, one line at the bottom of the window.
-  const m = $derived(shown.matrix);
+  const { lens, overlays: impact, selection } = getViewContext();
+  const m = $derived(lens.matrix);
   // Several overlays drawn together: how many, and the cells they hit that the working tree lacks.
   const impactText = $derived(
     impact.multi && !impact.progress
-      ? multiImpactLabel(impact.selectedIds.length, shown.missingCells)
+      ? multiImpactLabel(impact.selectedIds.length, lens.missingCells)
       : impactLabel(impact.current, impact.progress),
   );
-  const selectionText = $derived(selectionLabel(selection.selected, shown.matrix?.layers));
+  const selectionText = $derived(selectionLabel(selection.selected, lens.matrix?.layers));
 </script>
 
 {#snippet sep()}<span class="text-border" aria-hidden="true">|</span>{/snippet}
@@ -23,7 +21,7 @@
   class="flex h-6 flex-none items-center gap-2 overflow-hidden border-t bg-card px-3 text-xs whitespace-nowrap text-muted-foreground"
   aria-label="Status bar"
 >
-  <span class="min-w-16 truncate" title={analysis.paths.join("\n")}>{analysis.paths.join(" + ")}</span>
+  <span class="min-w-16 truncate" title={lens.paths.join("\n")}>{lens.paths.join(" + ")}</span>
   {#if m}
     {@render sep()}
     <span class="flex-none">{m.projects?.length ? `${m.projects.length} projects` : m.language}</span>
