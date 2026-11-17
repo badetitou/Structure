@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DOCK_KEY, loadDock, parseDock, pruneUnknown, setTabHiddenIn, syncVisibility } from "./dock";
+import { DOCK_KEY, byComponent, loadDock, parseDock, pruneUnknown, setTabHiddenIn, syncVisibility } from "./dock";
 import type { DockLike } from "./dock";
 
 function group(ids: string[], visible = true, active?: string) {
@@ -115,5 +115,16 @@ describe("loadDock", () => {
       },
     });
     expect(loadDock()).toBeNull();
+  });
+});
+
+describe("byComponent", () => {
+  it("asks a panel's contribution, instances included, the id when unknown", () => {
+    const components = new Map([
+      ["matrix", "matrix"],
+      ["matrix-2", "matrix"],
+    ]);
+    const known = byComponent((id) => components.get(id), (c) => c === "matrix" || c === "details");
+    expect(["matrix", "matrix-2", "details", "gone"].map(known)).toEqual([true, true, true, false]);
   });
 });

@@ -1,8 +1,9 @@
 <script lang="ts" module>
+  import { SvelteMap } from "svelte/reactivity";
   import type { MatrixHandle } from "./MatrixView.svelte";
 
-  /** The mounted matrix, for the toolbar's zoom / fit buttons (null while not shown). */
-  export const matrixControl = $state<{ current: MatrixHandle | null }>({ current: null });
+  /** The mounted matrices by panel id ("" outside a panel), for the toolbar's zoom / fit buttons on the active one. */
+  export const matrixControl = new SvelteMap<string, MatrixHandle>();
 </script>
 
 <script lang="ts">
@@ -15,11 +16,13 @@
   // the matrix covered by the impact progress while one runs.
   const ctx = getViewContext();
   let view = $state<MatrixHandle | null>(null);
+  const key = ctx.panel ?? "";
   $effect(() => {
     const v = view;
-    matrixControl.current = v;
+    if (!v) return;
+    matrixControl.set(key, v);
     return () => {
-      if (matrixControl.current === v) matrixControl.current = null;
+      if (matrixControl.get(key) === v) matrixControl.delete(key);
     };
   });
 </script>

@@ -8,6 +8,12 @@
 // `overlays`, so a cell selected in the matrix is the one the details panel lists, and an
 // overlay picked in the selector is the one the history and diff follow.
 //
+// Display options are per panel instance: each matrix panel gets its own context
+// (`forPanel`), whose `lens.display` and display setters are that panel's (stored in its
+// dockview params, see displays.svelte.ts). The base context (toolbar, status bar, the other
+// panels) reads and sets the active matrix panel's (the focused one, else the last focused),
+// falling back to the global defaults while no matrix panel is open.
+//
 // Provided once per analysis screen (`AnalysisScreen.svelte` calls `setViewContext`); the
 // dockview panels, mounted as separate Svelte roots, receive it through `mount`'s `context`
 // option (see `SvelteRenderer` in dock.ts), so a panel and its children all call
@@ -28,8 +34,10 @@ import { options } from "../stores/options.svelte";
 import { selection } from "../stores/selection.svelte";
 import * as session from "../stores/session";
 import { shown } from "../stores/shown";
+import { PanelDisplays } from "./displays.svelte";
+import type { PanelDisplay } from "./paneldisplay";
 
-/** How the matrix is drawn (global today, saved in localStorage). */
+/** How the matrix is drawn: the panel's own options (see `forPanel`), angled labels app-wide. */
 export interface DisplayView {
   readonly mode: Mode;
   readonly transposed: boolean;
@@ -145,57 +153,40 @@ export interface ViewContext {
   /** What the backend supports. */
   readonly capabilities: Capabilities;
   readonly actions: ViewActions;
+  /** The dockview panel this context belongs to (`forPanel`), null for the base context. */
+  readonly panel: string | null;
+  /** Display options of the panel instances (workspace glue: focus / close, the active panel). */
+  readonly displays: PanelDisplays;
+  /**
+   * The context of panel `id`, which owns its display options: read from its dockview
+   * `params` (the global defaults when it has none), written back with `persist`. Selection
+   * and overlays stay the shared ones.
+   */
+  forPanel(id: string, params: unknown, persist: (d: PanelDisplay) => void): ViewContext;
 }
 
 /** The view context backed by the app's stores and session functions. */
 export function createViewContext(): ViewContext {
-  const display: DisplayView = {
-    get mode() {
-      return options.mode;
+  const displays = new PanelDisplays(
+    () => ({
+      mode: options.mode,
+      transposed: options.transposed,
+      aligned: options.aligned,
+      showHttp: options.showHttp,
+      showRpc: options.showRpc,
+    }),
+    (patch) => {
+      if (patch.mode !== undefined) options.setMode(patch.mode);
+      if (patch.transposed !== undefined) options.setTransposed(patch.transposed);
+      if (patch.aligned !== undefined) options.setAligned(patch.aligned);
+      if (patch.showHttp !== undefined) options.setShowHttp(patch.showHttp);
+      if (patch.showRpc !== undefined) options.setShowRpc(patch.showRpc);
     },
-    get transposed() {
-      return options.transposed;
-    },
-    get aligned() {
-      return options.aligned;
-    },
-    get showHttp() {
-      return options.showHttp;
-    },
-    get showRpc() {
-      return options.showRpc;
-    },
-    get angledLabels() {
-      return options.angledLabels;
-    },
-  };
-  const lens: LensView = {
-    get paths() {
-      return analysis.paths;
-    },
-    get project() {
-      return analysis.project;
-    },
-    get multi() {
-      return analysis.multi;
-    },
-    get work() {
-      return analysis.work;
-    },
-    get matrix() {
-      return shown.matrix;
-    },
-    get head() {
-      return shown.head;
-    },
-    get warnings() {
-      return shown.warnings;
-    },
-    get missingCells() {
-      return shown.missingCells;
-    },
-    display,
-  };
+  );
+  // The base context's display: the active matrix panel's, else the global defaults.
+  const own = (): PanelDisplay => displays.active ?? options;
+  const display = displayOf(own);
+  const lens = lensOf(display);
   const overlays: OverlaysView = {
     get list() {
       return impact.overlays;
@@ -236,7 +227,8 @@ export function createViewContext(): ViewContext {
       return selection.symbols;
     },
     get view() {
-      return selection.view;
+      // A matrix panel publishes its view per panel: the active one names the cells.
+      return displays.activeId !== null ? displays.activeView : selection.view;
     },
   };
   const gitView: GitView = {
@@ -281,14 +273,14 @@ export function createViewContext(): ViewContext {
     runImpact: (base, head) => session.runTypedImpact(base, head),
     pickHistory: (s) => session.pickHistory(s),
     reloadRules: () => session.reloadRules(),
-    setMode: (mode) => options.setMode(mode),
-    setTransposed: (on) => options.setTransposed(on),
-    setAligned: (on) => options.setAligned(on),
-    setShowHttp: (on) => options.setShowHttp(on),
-    setShowRpc: (on) => options.setShowRpc(on),
+    setMode: (mode) => displays.set({ mode }),
+    setTransposed: (on) => displays.set({ transposed: on }),
+    setAligned: (on) => displays.set({ aligned: on }),
+    setShowHttp: (on) => displays.set({ showHttp: on }),
+    setShowRpc: (on) => displays.set({ showRpc: on }),
     setAngledLabels: (on) => options.setAngledLabels(on),
   };
-  return {
+  const make = (panel: string | null, lens: LensView, actions: ViewActions): ViewContext => ({
     lens,
     overlays,
     selection: sel,
@@ -298,6 +290,84 @@ export function createViewContext(): ViewContext {
       return api.capabilities();
     },
     actions,
+    panel,
+    displays,
+    forPanel,
+  });
+  function forPanel(id: string, params: unknown, persist: (d: PanelDisplay) => void): ViewContext {
+    const state = displays.attach(id, params, persist);
+    const set = (patch: Partial<PanelDisplay>) => displays.set(patch, id);
+    const panelActions: ViewActions = {
+      ...actions,
+      // Each matrix panel draws its own view; the active one's is the shared `selection.view`,
+      // and only the active one keeps the shared selection in step with its cells.
+      publishView: (view) => displays.publishView(id, view),
+      syncSelection: (cells) => {
+        if (displays.activeId === id) selection.sync(cells);
+      },
+      setMode: (mode) => set({ mode }),
+      setTransposed: (on) => set({ transposed: on }),
+      setAligned: (on) => set({ aligned: on }),
+      setShowHttp: (on) => set({ showHttp: on }),
+      setShowRpc: (on) => set({ showRpc: on }),
+    };
+    return make(id, lensOf(displayOf(() => state)), panelActions);
+  }
+  return make(null, lens, actions);
+}
+
+/** Display read through `own` (a panel's options, or the active / global ones), angled labels app-wide. */
+function displayOf(own: () => PanelDisplay): DisplayView {
+  return {
+    get mode() {
+      return own().mode;
+    },
+    get transposed() {
+      return own().transposed;
+    },
+    get aligned() {
+      return own().aligned;
+    },
+    get showHttp() {
+      return own().showHttp;
+    },
+    get showRpc() {
+      return own().showRpc;
+    },
+    get angledLabels() {
+      return options.angledLabels;
+    },
+  };
+}
+
+/** The lens read from the stores, with `display` as its display options. */
+function lensOf(display: DisplayView): LensView {
+  return {
+    get paths() {
+      return analysis.paths;
+    },
+    get project() {
+      return analysis.project;
+    },
+    get multi() {
+      return analysis.multi;
+    },
+    get work() {
+      return analysis.work;
+    },
+    get matrix() {
+      return shown.matrix;
+    },
+    get head() {
+      return shown.head;
+    },
+    get warnings() {
+      return shown.warnings;
+    },
+    get missingCells() {
+      return shown.missingCells;
+    },
+    display,
   };
 }
 

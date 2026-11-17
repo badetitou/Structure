@@ -9,7 +9,14 @@ import { panels } from "./registry";
 
 // The panels Structure ships with. A new panel is one more `register` call
 // (here or in its own module imported once at startup).
-panels.register({ id: "matrix", title: "Matrix", component: MatrixPanel, available: () => shown.matrix !== null });
+panels.register({
+  id: "matrix",
+  title: "Matrix",
+  component: MatrixPanel,
+  available: () => shown.matrix !== null,
+  multi: true,
+  display: true,
+});
 panels.register({ id: "details", title: "Details", component: DetailsPanel });
 panels.register({ id: "history", title: "History", component: HistorySidebar, available: () => git.historyAvailable });
 panels.register({ id: "diff", title: "Diff", component: DiffPanel, available: () => git.diffAvailable });

@@ -179,3 +179,84 @@ describe("view context, actions", () => {
     expect(options.mode).toBe("normal");
   });
 });
+
+describe("view context, per panel display", () => {
+  const persisted = () => {
+    const writes: unknown[] = [];
+    return { writes, persist: (d: unknown) => void writes.push(d) };
+  };
+
+  it("give each matrix panel its own options; the base context follows the active one", () => {
+    const ctx = createViewContext();
+    options.setMode("normal");
+    options.setTransposed(false);
+    options.setShowHttp(true);
+    expect(ctx.panel).toBeNull();
+    const a = persisted();
+    const b = persisted();
+    const pa = ctx.forPanel("matrix", undefined, a.persist);
+    const pb = ctx.forPanel("matrix-2", { display: { mode: "dense", transposed: true } }, b.persist);
+    expect(pa.panel).toBe("matrix");
+    expect(pb.panel).toBe("matrix-2");
+    // Migration: the first panel adopts the global options and stores them once.
+    expect(a.writes).toEqual([{ mode: "normal", transposed: false, aligned: options.aligned, showHttp: options.showHttp, showRpc: options.showRpc }]);
+    expect(b.writes).toEqual([]);
+    expect([pa.lens.display.mode, pb.lens.display.mode]).toEqual(["normal", "dense"]);
+    expect([pa.lens.display.transposed, pb.lens.display.transposed]).toEqual([false, true]);
+
+    pb.actions.setMode("flame");
+    expect([pa.lens.display.mode, pb.lens.display.mode]).toEqual(["normal", "flame"]);
+    expect(b.writes.at(-1)).toMatchObject({ mode: "flame", transposed: true });
+    // The global defaults keep the last choice (a new view or a reset layout starts from it).
+    expect(options.mode).toBe("flame");
+
+    // The base context (toolbar, other panels) reads and sets the active panel's.
+    expect(ctx.displays.activeId).toBe("matrix");
+    expect(ctx.lens.display.mode).toBe("normal");
+    ctx.actions.setTransposed(true);
+    expect(pa.lens.display.transposed).toBe(true);
+    ctx.displays.focus("matrix-2");
+    expect(ctx.lens.display.mode).toBe("flame");
+    ctx.actions.setShowHttp(false);
+    expect([pa.lens.display.showHttp, pb.lens.display.showHttp]).toEqual([true, false]);
+
+    // Angled labels stay app-wide.
+    pa.actions.setAngledLabels(true);
+    expect([ctx.lens.display.angledLabels, pb.lens.display.angledLabels]).toEqual([true, true]);
+    pa.actions.setAngledLabels(false);
+
+    // No matrix panel left: the global options.
+    ctx.displays.drop("matrix");
+    ctx.displays.drop("matrix-2");
+    expect(ctx.lens.display.mode).toBe(options.mode);
+    ctx.actions.setMode("dense");
+    expect(options.mode).toBe("dense");
+    ctx.actions.setMode("normal");
+  });
+
+  it("share the selection and overlays, the active panel naming the cells", async () => {
+    const ctx = createViewContext();
+    await loaded();
+    const pa = ctx.forPanel("matrix", undefined, () => {});
+    const pb = ctx.forPanel("matrix-2", undefined, () => {});
+    expect(pa.overlays).toBe(ctx.overlays);
+    expect(pb.selection).toBe(ctx.selection);
+    const va = { cells: [cell] } as unknown as ViewMatrix;
+    const vb = { cells: [] } as unknown as ViewMatrix;
+    pa.actions.publishView(va);
+    pb.actions.publishView(vb);
+    expect(ctx.selection.view).toBe(va);
+    mocked.cellSymbols.mockResolvedValue({ total: 2, offset: 0, symbols: [] });
+    pb.actions.selectCell(cell);
+    expect(ctx.selection.selected).toBe(cell);
+    // Only the active panel keeps the selection in step with its cells.
+    pb.actions.syncSelection([]);
+    expect(ctx.selection.selected).toBe(cell);
+    ctx.displays.focus("matrix-2");
+    expect(pa.selection.view).toBe(vb);
+    pb.actions.syncSelection([]);
+    expect(ctx.selection.selected).toBeNull();
+    pb.actions.publishView(null);
+    expect(ctx.selection.view).toBeNull();
+  });
+});

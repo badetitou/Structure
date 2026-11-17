@@ -98,6 +98,13 @@ Cible :
 
 Acquis : registre de panneaux + dockview ; `ViewContext` (`app/ui/src/workspace/context.ts`,
 façade sur les stores et `session.ts`) fourni par contexte Svelte, les vues ne lisent plus les stores (#74, PR 1).
+Options d'affichage par instance de panneau (#74, PR 2) : chaque panneau matrice a ses options
+(mode, transposé, aligné, liens HTTP/RPC) dans ses paramètres dockview (`params.display`, sauvés
+avec la disposition) et son propre `ViewContext` (`forPanel`) ; la barre d'outils agit sur le
+panneau matrice actif (focalisé, sinon le dernier focalisé). Un panneau sans paramètres adopte une
+fois les valeurs globales (localStorage), qui gardent le dernier choix ; les étiquettes à 45° restent
+une préférence globale. Le registre accepte des panneaux multi-instances (`multi`) : « New matrix
+view » dans le menu Views.
 
 Cible :
 - contrat `ViewContext { lens, overlays, selection, actions }` passé à chaque
@@ -106,7 +113,7 @@ Cible :
   packages, projet × couche) du *rendu* (front : matrice, dense, graphe de
   voisinage, liste) ;
 - options d'affichage (dense, transposé, aligné) par instance de panneau
-  (paramètres dockview) et non globales : deux matrices côte à côte possibles.
+  (paramètres dockview) et non globales : deux matrices côte à côte possibles — fait (PR 2).
 
 ## 5. Highlights (overlays)
 
