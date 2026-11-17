@@ -78,7 +78,8 @@ export function selectionAfterRemoval(list: readonly Overlay[], selected: string
   return list.at(-1)?.id ?? null;
 }
 
-/** The selector is shown only when there is a choice to make. */
-export function selectorVisible(list: readonly Overlay[]): boolean {
-  return list.length >= 2;
+/** The selector is shown only when there is a choice to make: two overlays or more, or kept
+ * overlays left with none shown (after "Clear impact"), which would otherwise be unreachable. */
+export function selectorVisible(list: readonly Overlay[], selected: string | null): boolean {
+  return list.length >= 2 || (list.length === 1 && selected === null);
 }

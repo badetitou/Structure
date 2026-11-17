@@ -4,12 +4,13 @@
   import { impact } from "../../stores/impact.svelte";
   import { removeOverlay, selectOverlay } from "../../stores/session";
 
-  // Chips of the loaded highlight overlays, shown only when there is a choice (two or more):
+  // Chips of the loaded highlight overlays, shown only when there is a choice (two or more, or
+  // a kept one left unselected by "Clear impact"):
   // a click shows that overlay, the x removes it. Locked while an impact runs.
   const list = $derived(impact.overlays);
 </script>
 
-{#if selectorVisible(list)}
+{#if selectorVisible(list, impact.selectedId)}
   <div class="flex flex-none items-center gap-1" role="group" aria-label="Highlight overlays">
     {#each list as o (o.id)}
       {@const on = o.id === impact.selectedId}

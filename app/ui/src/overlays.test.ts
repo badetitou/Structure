@@ -71,8 +71,14 @@ describe("overlay list", () => {
 
   it("the selector is shown only with two overlays or more", () => {
     const one = addOverlay([], r("a"), imp("a"), null, "o1").list;
-    expect(selectorVisible([])).toBe(false);
-    expect(selectorVisible(one)).toBe(false);
-    expect(selectorVisible(addOverlay(pin(one, "o1"), r("b"), imp("b"), null, "o2").list)).toBe(true);
+    expect(selectorVisible([], null)).toBe(false);
+    expect(selectorVisible(one, "o1")).toBe(false);
+    expect(selectorVisible(addOverlay(pin(one, "o1"), r("b"), imp("b"), null, "o2").list, "o2")).toBe(true);
+  });
+
+  it("the selector shows a single overlay left unselected so that it stays reachable", () => {
+    const kept = pin(addOverlay([], r("a"), imp("a"), null, "o1").list, "o1");
+    expect(selectorVisible(kept, null)).toBe(true);
+    expect(selectorVisible(kept, "o1")).toBe(false);
   });
 });
