@@ -151,13 +151,17 @@ interface Matrix {
   cells: Cell[];     // non-empty cells only, sorted by (layer, domain)
   edges: EdgeGroup[]; // cell-to-cell calls/uses, grouped by source cell
   // Only with >= 2 roots and when non-empty: same shape as `edges`, built from
-  // `http` edges (TS caller symbol -> Java handler method, `EdgeKind::Http`,
-  // serde `http`) lifted to cells, so front `api_client` cells reach back `entry` cells.
+  // HTTP edges (TS caller symbol -> Java handler method, IR
+  // `EdgeKind::Remote { protocol: "http" }`) lifted to cells, so front
+  // `api_client` cells reach back `entry` cells. Linked by `http_link` from the
+  // `http` ports of the symbols (Java `Provides`, TS `Requires`).
   http_edges?: EdgeGroup[];
   // Only when non-empty, one or several roots: same shape as `edges`, built from
-  // `rpc` edges (GWT RPC: client caller method -> server implementation method,
-  // `EdgeKind::Rpc`, serde `rpc`) lifted to cells. Linked by `rpc_link` from
-  // `Symbol.rpc_calls` (calls on `XAsync` receivers, `X extends RemoteService`).
+  // GWT RPC edges (client caller method -> server implementation method, IR
+  // `EdgeKind::Remote { protocol: "gwt-rpc" }`) lifted to cells. Linked by
+  // `rpc_link` from the `gwt-rpc` `Requires` ports of the symbols (calls on
+  // `XAsync` receivers, `X extends RemoteService`).
+  // The IR edge kind is generic; the wire keeps one field per known protocol.
   rpc_edges?: EdgeGroup[];
   stats: Stats;
   generation?: number; // set by the app: id of the cached analysis; pass to `cell_symbols`

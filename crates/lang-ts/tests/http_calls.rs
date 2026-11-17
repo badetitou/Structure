@@ -1,14 +1,26 @@
 use std::path::PathBuf;
 
 use structure_ir::ir::HttpVerb::{self, *};
+use structure_ir::ir::{HttpEndpoint, PortKey, PortRole, Symbol, protocol};
+
+fn http_calls(s: &Symbol) -> Vec<&HttpEndpoint> {
+    s.ports(protocol::HTTP, PortRole::Requires)
+        .filter_map(PortKey::as_endpoint)
+        .collect()
+}
 use structure_lang_ts::{parse_project, parse_source};
 
 fn calls(src: &str, sym: &str) -> Vec<(HttpVerb, String)> {
     let f = parse_source("a.ts", src, false).unwrap();
     let s = f.symbols.iter().find(|s| s.id.ends_with(sym)).unwrap();
-    assert!(s.http.is_empty());
-    s.http_calls
-        .iter()
+    assert!(
+        s.ports(protocol::HTTP, PortRole::Provides)
+            .filter_map(PortKey::as_endpoint)
+            .next()
+            .is_none()
+    );
+    s.ports(protocol::HTTP, PortRole::Requires)
+        .filter_map(PortKey::as_endpoint)
         .map(|e| (e.verb, e.path.clone()))
         .collect()
 }
@@ -102,7 +114,11 @@ fn non_http_receivers_are_ignored() {
     assert_eq!(
         f.symbols
             .iter()
-            .filter(|s| !s.http_calls.is_empty())
+            .filter(|s| s
+                .ports(protocol::HTTP, PortRole::Requires)
+                .filter_map(PortKey::as_endpoint)
+                .next()
+                .is_some())
             .count(),
         1
     );
@@ -123,8 +139,8 @@ fn angular_realworld_services() {
         .symbols
         .iter()
         .flat_map(|s| {
-            s.http_calls
-                .iter()
+            s.ports(protocol::HTTP, PortRole::Requires)
+                .filter_map(PortKey::as_endpoint)
                 .map(move |c| (s.id.as_str(), c.verb, c.path.as_str()))
         })
         .collect();
@@ -284,12 +300,17 @@ fn calls_in_callbacks_belong_to_the_enclosing_method() {
     let got: Vec<_> = f
         .symbols
         .iter()
-        .filter(|s| !s.http_calls.is_empty())
+        .filter(|s| {
+            s.ports(protocol::HTTP, PortRole::Requires)
+                .filter_map(PortKey::as_endpoint)
+                .next()
+                .is_some()
+        })
         .map(|s| {
             (
                 s.id.as_str(),
-                s.http_calls[0].verb,
-                s.http_calls[0].path.as_str(),
+                http_calls(s)[0].verb,
+                http_calls(s)[0].path.as_str(),
             )
         })
         .collect();

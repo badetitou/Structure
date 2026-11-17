@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::scip::ScipIndex;
-use structure_ir::ir::{EdgeKind, Graph, ParseStat};
+use structure_ir::ir::{EdgeKind, Graph, ParseStat, protocol};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PhaseTiming {
@@ -18,23 +18,25 @@ pub struct Metrics {
     pub phases: Vec<PhaseTiming>,
     pub scip_documents: usize,
     pub scip_occurrences: usize,
-    /// Final edges by kind name, excluding targets `ext:*`.
-    pub edges_by_kind: BTreeMap<&'static str, usize>,
+    /// Final edges by kind name (a `Remote` edge: its protocol, `gwt-rpc`
+    /// keeping its historical label `rpc`), excluding targets `ext:*`.
+    pub edges_by_kind: BTreeMap<String, usize>,
     /// Final edges whose target is `ext:*`, by kind name.
-    pub ext_edges_by_kind: BTreeMap<&'static str, usize>,
+    pub ext_edges_by_kind: BTreeMap<String, usize>,
     /// Counters reported by the language parser (e.g. Pharo's sends), in
     /// parser order.
     pub parse_stats: Vec<ParseStat>,
 }
 
-fn kind_name(k: EdgeKind) -> &'static str {
+fn kind_name(k: &EdgeKind) -> &str {
     match k {
         EdgeKind::Call => "call",
         EdgeKind::Implements => "implements",
         EdgeKind::Extends => "extends",
         EdgeKind::Uses => "uses",
-        EdgeKind::Http => "http",
-        EdgeKind::Rpc => "rpc",
+        // Keeps the CLI `edges:` line as it was before `Remote` edges.
+        EdgeKind::Remote { protocol: p } if p == protocol::GWT_RPC => "rpc",
+        EdgeKind::Remote { protocol: p } => p,
     }
 }
 
@@ -79,7 +81,13 @@ impl Metrics {
             } else {
                 &mut self.edges_by_kind
             };
-            *map.entry(kind_name(e.kind)).or_default() += 1;
+            let name = kind_name(&e.kind);
+            match map.get_mut(name) {
+                Some(n) => *n += 1,
+                None => {
+                    map.insert(name.to_string(), 1);
+                }
+            }
         }
     }
 }
@@ -124,12 +132,14 @@ mod tests {
                 e("b", EdgeKind::Call),
                 e("ext:List", EdgeKind::Uses),
                 e("ext:Map", EdgeKind::Uses),
+                e("c", EdgeKind::remote("gwt-rpc")),
             ],
         };
         let mut m = Metrics::default();
         m.record_edges(&g);
         assert_eq!(m.edges_by_kind["call"], 1);
         assert_eq!(m.ext_edges_by_kind["uses"], 2);
+        assert_eq!(m.edges_by_kind["rpc"], 1);
     }
 
     #[test]

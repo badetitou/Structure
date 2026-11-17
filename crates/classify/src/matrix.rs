@@ -2,7 +2,7 @@
 
 use crate::layers::Layers;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use structure_ir::ir::{EdgeKind, Graph};
+use structure_ir::ir::{EdgeKind, Graph, protocol};
 use structure_ir::model::{
     Cell, CellSymbol, CellSymbols, Classification, EdgeGroup, LayerDef, LayerId, Matrix, Stats,
 };
@@ -19,9 +19,9 @@ pub fn cell_of(graph: &Graph, cls: &Classification, symbol_id: &str) -> Option<S
 pub fn class_edges(graph: &Graph) -> Vec<(String, String, EdgeKind, u32)> {
     let id = |i: usize| graph.symbols[i].id.as_str();
     let mut out = class_edge_indices(graph);
-    out.sort_unstable_by(|a, b| (id(a.0), id(a.1), a.2).cmp(&(id(b.0), id(b.1), b.2)));
+    out.sort_unstable_by(|a, b| (id(a.0), id(a.1), &a.2).cmp(&(id(b.0), id(b.1), &b.2)));
     out.into_iter()
-        .map(|(f, t, _, k, n)| (id(f).to_string(), id(t).to_string(), k, n))
+        .map(|(f, t, k, n)| (id(f).to_string(), id(t).to_string(), k, n))
         .collect()
 }
 
@@ -57,13 +57,13 @@ pub(crate) fn top_level_indices(graph: &Graph, by_id: &HashMap<&str, usize>) -> 
 }
 
 /// `class_edges` on symbol indices (into `graph.symbols`) as
-/// (from, to, kind rank, kind, count), unordered.
-fn class_edge_indices(graph: &Graph) -> Vec<(usize, usize, u8, EdgeKind, u32)> {
+/// (from, to, kind, count), unordered.
+fn class_edge_indices(graph: &Graph) -> Vec<(usize, usize, EdgeKind, u32)> {
     let by_id = id_index(graph);
     let top = top_level_indices(graph, &by_id);
     let lift = |id: &str| -> Option<usize> { top[*by_id.get(id)?] };
     // Counted on indices; ids are only ordered and cloned once per distinct edge.
-    let mut counts: HashMap<(usize, usize, u8), (EdgeKind, u32)> = HashMap::new();
+    let mut counts: HashMap<(usize, usize, &EdgeKind), u32> = HashMap::new();
     for e in &graph.edges {
         let (Some(f), Some(t)) = (lift(&e.from), lift(&e.to)) else {
             continue;
@@ -71,11 +71,11 @@ fn class_edge_indices(graph: &Graph) -> Vec<(usize, usize, u8, EdgeKind, u32)> {
         if f == t {
             continue;
         }
-        counts.entry((f, t, e.kind.rank())).or_insert((e.kind, 0)).1 += 1;
+        *counts.entry((f, t, &e.kind)).or_insert(0) += 1;
     }
     counts
         .into_iter()
-        .map(|((f, t, r), (k, n))| (f, t, r, k, n))
+        .map(|((f, t, k), n)| (f, t, k.clone(), n))
         .collect()
 }
 
@@ -186,9 +186,9 @@ pub fn build(
         })
         .collect();
     let class_edges = class_edge_indices(graph);
-    let group = |keep: fn(EdgeKind) -> bool| -> Vec<EdgeGroup> {
+    let group = |keep: &dyn Fn(&EdgeKind) -> bool| -> Vec<EdgeGroup> {
         let mut weights: BTreeMap<(usize, usize), u32> = BTreeMap::new();
-        for &(f, t, _, kind, n) in &class_edges {
+        for &(f, t, ref kind, n) in &class_edges {
             if !keep(kind) {
                 continue;
             }
@@ -211,9 +211,10 @@ pub fn build(
         }
         groups
     };
-    let edges = group(|k| matches!(k, EdgeKind::Call | EdgeKind::Uses));
-    let http_edges = group(|k| k == EdgeKind::Http);
-    let rpc_edges = group(|k| k == EdgeKind::Rpc);
+    let edges = group(&|k| matches!(k, EdgeKind::Call | EdgeKind::Uses));
+    // The wire keeps one field per known protocol (see docs/api.md).
+    let http_edges = group(&|k| k.protocol() == Some(protocol::HTTP));
+    let rpc_edges = group(&|k| k.protocol() == Some(protocol::GWT_RPC));
 
     let files: BTreeSet<&str> = graph.symbols.iter().map(|s| s.file.as_str()).collect();
     Matrix {
@@ -261,9 +262,7 @@ mod tests {
             name_range: r,
             annotations: vec![],
             supertypes: vec![],
-            http: vec![],
-            http_calls: vec![],
-            rpc_calls: vec![],
+            ports: vec![],
             package: None,
         }
     }
@@ -496,9 +495,9 @@ mod tests {
     fn http_edges_are_kept_apart_from_edges() {
         let (mut g, cls) = fixture();
         g.edges = vec![
-            edge("Ctl#a", "Repo#q", EdgeKind::Http),
-            edge("Ctl#a", "Aaa", EdgeKind::Http),
-            edge("Svc#m", "Aaa", EdgeKind::Http), // intra-cell
+            edge("Ctl#a", "Repo#q", EdgeKind::remote(protocol::HTTP)),
+            edge("Ctl#a", "Aaa", EdgeKind::remote(protocol::HTTP)),
+            edge("Svc#m", "Aaa", EdgeKind::remote(protocol::HTTP)), // intra-cell
         ];
         let m = build(&g, &cls, &java_layers(), "p", 0);
         assert!(m.edges.is_empty());

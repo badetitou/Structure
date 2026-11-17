@@ -1,12 +1,15 @@
 use std::path::PathBuf;
 
-use structure_ir::ir::{HttpVerb, SymbolKind};
+use structure_ir::ir::{HttpVerb, PortKey, PortRole, SymbolKind, protocol};
 use structure_lang_java::{parse_project, parse_source};
 
 fn eps(src: &str, method: &str) -> Vec<(HttpVerb, String)> {
     let f = parse_source("A.java", src).unwrap();
     let m = f.symbols.iter().find(|s| s.name == method).unwrap();
-    m.http.iter().map(|e| (e.verb, e.path.clone())).collect()
+    m.ports(protocol::HTTP, PortRole::Provides)
+        .filter_map(PortKey::as_endpoint)
+        .map(|e| (e.verb, e.path.clone()))
+        .collect()
 }
 
 #[test]
@@ -110,8 +113,18 @@ fn realworld_controller_methods_have_endpoints() {
                 .is_some_and(|c| controllers.contains(&c))
     }) {
         methods += 1;
-        assert!(!s.http.is_empty(), "{} has no endpoint", s.id);
-        n += s.http.len();
+        assert!(
+            s.ports(protocol::HTTP, PortRole::Provides)
+                .filter_map(PortKey::as_endpoint)
+                .next()
+                .is_some(),
+            "{} has no endpoint",
+            s.id
+        );
+        n += s
+            .ports(protocol::HTTP, PortRole::Provides)
+            .filter_map(PortKey::as_endpoint)
+            .count();
     }
     assert!(methods > 0, "filter matched no controller method");
     assert_eq!(n, 19);
@@ -120,8 +133,8 @@ fn realworld_controller_methods_have_endpoints() {
             .iter()
             .find(|s| s.id == id)
             .unwrap_or_else(|| panic!("missing {id}"))
-            .http
-            .iter()
+            .ports(protocol::HTTP, PortRole::Provides)
+            .filter_map(PortKey::as_endpoint)
             .map(|e| (e.verb, e.path.clone()))
             .collect()
     };
@@ -164,8 +177,8 @@ fn http_of(g: &structure_ir::ir::Graph, id: &str) -> Vec<(HttpVerb, String)> {
         .iter()
         .find(|s| s.id == id)
         .unwrap_or_else(|| panic!("missing {id}"))
-        .http
-        .iter()
+        .ports(protocol::HTTP, PortRole::Provides)
+        .filter_map(PortKey::as_endpoint)
         .map(|e| (e.verb, e.path.clone()))
         .collect()
 }

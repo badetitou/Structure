@@ -355,9 +355,7 @@ pub fn parse_source(file: &str, src: &str, dir_package: &str) -> FileSymbols {
         annotations: vec![],
         supertypes,
         package: package.clone(),
-        http: vec![],
-        http_calls: vec![],
-        rpc_calls: vec![],
+        ports: vec![],
     };
 
     let mut class_id = None;

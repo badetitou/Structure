@@ -1,14 +1,17 @@
-//! Links HTTP calls (`Symbol::http_calls`, frontend) to the endpoints that
-//! serve them (`Symbol::http`, backend) over a merged graph.
+//! The HTTP linker: links HTTP calls (`Requires` ports of protocol `http`,
+//! frontend) to the endpoints that serve them (`Provides` ports, backend)
+//! over a merged graph.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
-use crate::ir::{Edge, EdgeKind, Graph, HttpVerb, Symbol};
+use crate::ir::{Edge, EdgeKind, Graph, HttpEndpoint, HttpVerb, PortRole, Symbol, protocol};
+use crate::linker::{Linker, LinkerStats};
 
 /// Outcome of [`link_http`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HttpLinkStats {
-    /// Calls found (every `http_calls` entry).
+    /// Calls found (every `http` `Requires` port).
     pub calls: usize,
     /// Calls that became an edge.
     pub linked: usize,
@@ -18,6 +21,46 @@ pub struct HttpLinkStats {
     pub ambiguous: usize,
     /// Calls with no matching endpoint, as "caller VERB path".
     pub unmatched: Vec<String>,
+}
+
+impl LinkerStats for HttpLinkStats {
+    /// Always: HTTP only runs on several roots, where the line is expected.
+    fn reported(&self) -> bool {
+        true
+    }
+
+    fn summary(&self) -> Vec<String> {
+        let mut out = vec![format!(
+            "http: {}/{} linked, {} unknown path, {} ambiguous",
+            self.linked, self.calls, self.unknown_path, self.ambiguous
+        )];
+        out.extend(self.unmatched.iter().map(|u| format!("  unmatched: {u}")));
+        out
+    }
+}
+
+/// [`link_http`] as a [`Linker`]; merged graphs only.
+pub struct HttpLinker;
+
+impl Linker for HttpLinker {
+    fn protocol(&self) -> &'static str {
+        protocol::HTTP
+    }
+
+    fn single_root(&self) -> bool {
+        false
+    }
+
+    fn link(&self, graph: &Graph) -> (Vec<Edge>, Arc<dyn LinkerStats>) {
+        let (edges, stats) = link_http(graph);
+        (edges, Arc::new(stats))
+    }
+}
+
+/// HTTP endpoints of `s` with `role`.
+fn http_ports(s: &Symbol, role: PortRole) -> impl Iterator<Item = &HttpEndpoint> {
+    s.ports(protocol::HTTP, role)
+        .filter_map(|k| k.as_endpoint())
 }
 
 fn segments(path: &str) -> Vec<&str> {
@@ -71,7 +114,7 @@ fn overridden_endpoints(graph: &Graph) -> HashSet<&str> {
     let with_http: HashMap<&str, &Symbol> = graph
         .symbols
         .iter()
-        .filter(|s| !s.http.is_empty())
+        .filter(|s| http_ports(s, PortRole::Provides).next().is_some())
         .map(|s| (s.id.as_str(), s))
         .collect();
     let mut out = HashSet::new();
@@ -95,7 +138,7 @@ fn overridden_endpoints(graph: &Graph) -> HashSet<&str> {
     out
 }
 
-/// `Http` edges from each calling symbol to the handler it reaches, plus stats.
+/// `Remote { http }` edges from each calling symbol to the handler it reaches, plus stats.
 pub fn link_http(graph: &Graph) -> (Vec<Edge>, HttpLinkStats) {
     let shadowed = overridden_endpoints(graph);
     let endpoints: Vec<(&str, HttpVerb, Vec<&str>)> = graph
@@ -103,8 +146,7 @@ pub fn link_http(graph: &Graph) -> (Vec<Edge>, HttpLinkStats) {
         .iter()
         .flat_map(|s| {
             let shadowed = &shadowed;
-            s.http
-                .iter()
+            http_ports(s, PortRole::Provides)
                 .filter(move |_| !shadowed.contains(s.id.as_str()))
                 .map(move |h| (s.id.as_str(), h.verb, segments(&h.path)))
         })
@@ -112,7 +154,7 @@ pub fn link_http(graph: &Graph) -> (Vec<Edge>, HttpLinkStats) {
     let mut stats = HttpLinkStats::default();
     let mut pairs: BTreeSet<(&str, &str)> = BTreeSet::new();
     for caller in &graph.symbols {
-        for call in &caller.http_calls {
+        for call in http_ports(caller, PortRole::Requires) {
             stats.calls += 1;
             if call.path == "?" {
                 stats.unknown_path += 1;
@@ -162,7 +204,7 @@ pub fn link_http(graph: &Graph) -> (Vec<Edge>, HttpLinkStats) {
         .map(|(f, t)| Edge {
             from: f.to_string(),
             to: t.to_string(),
-            kind: EdgeKind::Http,
+            kind: EdgeKind::remote(protocol::HTTP),
         })
         .collect();
     (edges, stats)
@@ -171,7 +213,7 @@ pub fn link_http(graph: &Graph) -> (Vec<Edge>, HttpLinkStats) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{HttpEndpoint, Language, Range, Symbol, SymbolKind};
+    use crate::ir::{Language, Port, PortKey, Range, Symbol, SymbolKind};
 
     fn ep(verb: HttpVerb, path: &str) -> HttpEndpoint {
         HttpEndpoint {
@@ -198,9 +240,12 @@ mod tests {
             annotations: vec![],
             supertypes: vec![],
             package: None,
-            http,
-            http_calls: calls,
-            rpc_calls: vec![],
+            ports: http
+                .into_iter()
+                .map(|e| (PortRole::Provides, e))
+                .chain(calls.into_iter().map(|e| (PortRole::Requires, e)))
+                .map(|(r, e)| Port::new(protocol::HTTP, r, PortKey::Endpoint(e)))
+                .collect(),
         }
     }
 
@@ -357,6 +402,47 @@ mod tests {
         assert!(e.is_empty());
         assert_eq!((s.calls, s.unknown_path, s.linked), (1, 1, 0));
         assert!(s.unmatched.is_empty());
+    }
+
+    #[test]
+    fn edges_are_remote_http_and_ports_of_other_protocols_are_ignored() {
+        let mut c = sym("c", vec![], vec![ep(Get, "/a")]);
+        c.ports.push(Port::new(
+            "other",
+            PortRole::Requires,
+            PortKey::Endpoint(ep(Get, "/b")),
+        ));
+        let mut h = sym("h", vec![ep(Get, "/a")], vec![]);
+        h.ports.push(Port::new(
+            "other",
+            PortRole::Provides,
+            PortKey::Endpoint(ep(Get, "/b")),
+        ));
+        let (e, s) = link_http(&graph(vec![h, c]));
+        assert_eq!(pairs(&e), [("c", "h")]);
+        assert_eq!(e[0].kind, EdgeKind::remote(protocol::HTTP));
+        assert_eq!((s.calls, s.linked), (1, 1));
+    }
+
+    #[test]
+    fn summary_matches_the_cli_lines() {
+        let g = graph(vec![
+            sym("h", vec![ep(Get, "/a")], vec![]),
+            sym(
+                "c",
+                vec![],
+                vec![ep(Get, "/a"), ep(Post, "/z"), ep(Get, "?")],
+            ),
+        ]);
+        let (_, s) = link_http(&g);
+        assert!(s.reported());
+        assert_eq!(
+            s.summary(),
+            [
+                "http: 1/3 linked, 1 unknown path, 0 ambiguous",
+                "  unmatched: c POST /z"
+            ]
+        );
     }
 
     #[test]

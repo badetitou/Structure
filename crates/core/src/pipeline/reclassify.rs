@@ -9,7 +9,7 @@ use anyhow::{Context, bail};
 use super::multi::{MergedClassification, merge_layers};
 use super::{Analysis, rules_for};
 use crate::classify::classify;
-use crate::ir::{Edge, EdgeKind, Graph, Language};
+use crate::ir::{Edge, Graph, Language};
 use crate::layers::Layers;
 use crate::matrix;
 use crate::model::{Classification, Matrix};
@@ -64,8 +64,7 @@ pub fn reclassify(a: &Analysis) -> anyhow::Result<Analysis> {
         classification,
         matrix: m,
         link_stats: a.link_stats,
-        http_stats: a.http_stats.clone(),
-        rpc_stats: a.rpc_stats.clone(),
+        remote_links: a.remote_links.clone(),
         metrics: a.metrics.clone(),
         warnings: a.warnings.clone(),
         layers,
@@ -113,12 +112,12 @@ fn root_graph(graph: &Graph, name: &str, root: &Path, language: Language) -> Gra
     let edges = graph
         .edges
         .iter()
-        .filter(|e| !matches!(e.kind, EdgeKind::Http | EdgeKind::Rpc))
+        .filter(|e| !e.kind.is_remote())
         .filter_map(|e| {
             Some(Edge {
                 from: e.from.strip_prefix(&pre)?.to_string(),
                 to: local(&e.to)?,
-                kind: e.kind,
+                kind: e.kind.clone(),
             })
         })
         .collect();

@@ -373,7 +373,7 @@ pub fn link(graph: Graph, index: &ScipIndex) -> (Graph, LinkStats) {
             EdgeKind::Call => stats.call_edges += 1,
             EdgeKind::Uses => stats.uses_edges += 1,
             EdgeKind::Implements => stats.implements_edges += 1,
-            EdgeKind::Extends | EdgeKind::Http | EdgeKind::Rpc => {}
+            EdgeKind::Extends | EdgeKind::Remote { .. } => {}
         }
         if e.to.starts_with("ext:") {
             stats.ext_edges += 1;
@@ -408,9 +408,7 @@ mod tests {
             name_range: nr,
             annotations: vec![],
             supertypes: vec![],
-            http: vec![],
-            http_calls: vec![],
-            rpc_calls: vec![],
+            ports: vec![],
             package: None,
         }
     }

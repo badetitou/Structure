@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use structure_core::ir::EdgeKind;
+use structure_core::ir::{EdgeKind, protocol};
 use structure_core::pipeline::{self, Options};
 
 fn write(dir: &Path, rel: &str, content: &str) {
@@ -54,13 +54,13 @@ const SERVER: (&str, &str) = (
 fn single_root_produces_rpc_edges_and_matrix_groups() {
     let dir = project("single", &[SERVICE, ASYNC, CLIENT, SERVER]);
     let a = pipeline::analyze(&dir, &offline(), &|_| {}).expect("analyze");
-    let s = a.rpc_stats.as_ref().expect("rpc stats");
+    let s = a.rpc_stats().expect("rpc stats");
     assert_eq!((s.calls, s.linked), (1, 1), "{s:?}");
     let rpc: Vec<_> = a
         .graph
         .edges
         .iter()
-        .filter(|e| e.kind == EdgeKind::Rpc)
+        .filter(|e| e.kind == EdgeKind::remote(protocol::GWT_RPC))
         .map(|e| (e.from.as_str(), e.to.as_str()))
         .collect();
     assert_eq!(rpc, [("c.Page#run(0)", "s.SvcImpl#go(1)")]);
@@ -79,7 +79,7 @@ fn no_rpc_calls_leave_the_output_untouched() {
         &[("a/A.java", "package a; class A { void f() {} }")],
     );
     let a = pipeline::analyze(&dir, &offline(), &|_| {}).expect("analyze");
-    assert!(a.rpc_stats.is_none());
+    assert!(a.rpc_stats().is_none());
     let json = serde_json::to_string(&a.matrix).expect("serialize");
     assert!(!json.contains("rpc"));
     let _ = std::fs::remove_dir_all(&dir);
@@ -92,13 +92,13 @@ fn two_roots_link_once_across_projects() {
     let back = project("back", &[SERVER]);
     let a = pipeline::analyze_many(&[front.clone(), back.clone()], &offline(), &|_| {})
         .expect("analyze");
-    let s = a.rpc_stats.as_ref().expect("rpc stats");
+    let s = a.rpc_stats().expect("rpc stats");
     assert_eq!((s.calls, s.linked), (1, 1), "{s:?}");
     let rpc: Vec<_> = a
         .graph
         .edges
         .iter()
-        .filter(|e| e.kind == EdgeKind::Rpc)
+        .filter(|e| e.kind == EdgeKind::remote(protocol::GWT_RPC))
         .collect();
     assert_eq!(rpc.len(), 1, "{rpc:?}");
     assert!(rpc[0].from.ends_with("::c.Page#run(0)"), "{rpc:?}");
