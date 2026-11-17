@@ -4,6 +4,7 @@
 import { SvelteMap } from "svelte/reactivity";
 import type { ViewMatrix } from "../domaintree";
 import type { Mode } from "../layout";
+import { DEFAULT_LENS } from "../lens";
 import { activeOf, enlist, forget, parseDisplay, snapshot, touch } from "./paneldisplay";
 import type { PanelDisplay } from "./paneldisplay";
 
@@ -14,6 +15,7 @@ export class PanelDisplayState implements PanelDisplay {
   aligned = $state(true);
   showHttp = $state(true);
   showRpc = $state(true);
+  lens = $state(DEFAULT_LENS);
 
   constructor(
     d: PanelDisplay,
@@ -28,6 +30,7 @@ export class PanelDisplayState implements PanelDisplay {
     if (d.aligned !== undefined) this.aligned = d.aligned;
     if (d.showHttp !== undefined) this.showHttp = d.showHttp;
     if (d.showRpc !== undefined) this.showRpc = d.showRpc;
+    if (d.lens !== undefined) this.lens = d.lens;
   }
 
   /** The panel was mounted again (same id): writes go to its new params. */

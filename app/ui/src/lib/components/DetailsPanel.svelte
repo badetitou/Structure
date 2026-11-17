@@ -21,12 +21,14 @@
     void impact.current;
     caps = initialCaps();
   });
-  // Links between view cells (collapsed domains merged), only while the toolbar toggle is on.
+  // Links between view cells (collapsed domains merged), only while the toolbar toggle is on and
+  // the selection is a cell of the active panel's lens (the view's cells).
+  const ownCell = $derived(!!selection.selected && !!selection.view && selection.lens === lens.id);
   const http = $derived(
-    options.showHttp && selection.selected && selection.view ? remoteLinks(selection.view.httpEdges, [selection.selected.id]) : null,
+    options.showHttp && ownCell && selection.selected && selection.view ? remoteLinks(selection.view.httpEdges, [selection.selected.id]) : null,
   );
   const rpc = $derived(
-    options.showRpc && selection.selected && selection.view ? remoteLinks(selection.view.rpcEdges, [selection.selected.id]) : null,
+    options.showRpc && ownCell && selection.selected && selection.view ? remoteLinks(selection.view.rpcEdges, [selection.selected.id]) : null,
   );
   const viewName = (id: string) => {
     const c = selection.view?.cells.find((x) => x.id === id);
@@ -34,7 +36,8 @@
   };
   // Several overlays drawn together: how each one hits the selected cell.
   const overlayRows = $derived.by(() => {
-    if (!impact.multi || !selection.selected || !selection.view) return null;
+    // The view (and the overlays' cells) are the active panel's lens: only its own cells match.
+    if (!impact.multi || !selection.selected || !selection.view || selection.lens !== lens.id) return null;
     const views = overlayViews(impact.selectedOverlays, selection.view.cellMap);
     return cellOverlayRows(impact.selectedOverlays, views.hits.get(selection.selected.id));
   });

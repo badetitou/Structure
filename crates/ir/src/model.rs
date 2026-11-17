@@ -302,6 +302,26 @@ pub struct ImpactedSymbol {
     pub distance: u32,
 }
 
+/// A lens: one way of quotienting the graph into matrix cells (rows are
+/// layers in every lens; columns differ). See `structure_classify::lens`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LensInfo {
+    /// Stable id, e.g. `layer-domain` (the default) or `layer-package`.
+    pub id: String,
+    /// Text shown for the lens.
+    pub label: String,
+}
+
+/// The cells of an impact in one lens: `changed_cells` and `impacted_cells`
+/// of [`Impact`], recomputed from its symbols with that lens' cell mapping.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LensCells {
+    pub changed_cells: Vec<String>,
+    pub impacted_cells: Vec<ImpactedCell>,
+}
+
 /// Textual diff of `base..head` (or the working tree), file by file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

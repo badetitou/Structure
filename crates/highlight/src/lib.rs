@@ -227,12 +227,24 @@ pub fn propagate(
 /// A cell takes the strongest role and the smallest distance of its symbols;
 /// unplaced symbols have no cell. Sorted by (distance, role, id).
 pub fn aggregate(cls: &Classification, symbols: &[HighlightedSymbol]) -> Vec<HighlightedCell> {
+    aggregate_by(symbols, |id| {
+        cls.placements
+            .get(id)
+            .map(|p| Cell::id_for(&p.layer, &p.domain))
+    })
+}
+
+/// [`aggregate`] with any cell mapping (a lens' cells, see
+/// `structure_classify::lens`): `cell_of` gives the cell of a top-level
+/// symbol id, `None` when it has none.
+pub fn aggregate_by(
+    symbols: &[HighlightedSymbol],
+    cell_of: impl Fn(&str) -> Option<String>,
+) -> Vec<HighlightedCell> {
     let mut cells: BTreeMap<String, (Role, u32)> = BTreeMap::new();
     for s in symbols {
-        if let Some(p) = cls.placements.get(&s.id) {
-            let e = cells
-                .entry(Cell::id_for(&p.layer, &p.domain))
-                .or_insert((s.role, s.distance));
+        if let Some(cell) = cell_of(&s.id) {
+            let e = cells.entry(cell).or_insert((s.role, s.distance));
             *e = (e.0.min(s.role), e.1.min(s.distance));
         }
     }

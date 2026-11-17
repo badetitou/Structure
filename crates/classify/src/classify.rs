@@ -527,16 +527,70 @@ pub fn classify(graph: &Graph, rules: &RuleSet, module_separator: char) -> Class
 
 /// Module of a symbol: its package (Java) or file directory (TS).
 fn module_path(s: &Symbol, sep: char) -> Vec<String> {
-    // Java, Pharo: the package (a class without one is in the default, empty
-    // module); TS: the file's directory. Split on that language's separator only.
+    module_path_of(s.package.as_deref(), &s.file, sep)
+}
+
+/// Module path of a symbol with `package` declared in `file`, as the
+/// frontend wrote it: Java, Pharo: the package (a class without one is in the
+/// default, empty module); TS: the file's directory. Split on that language's
+/// separator `sep` only.
+pub fn module_path_of(package: Option<&str>, file: &str, sep: char) -> Vec<String> {
     let raw = match sep {
-        '.' | '-' => s.package.as_deref().unwrap_or(""),
-        _ => s.file.rsplit_once('/').map(|(d, _)| d).unwrap_or(""),
+        '.' | '-' => package.unwrap_or(""),
+        _ => file.rsplit_once('/').map(|(d, _)| d).unwrap_or(""),
     };
     raw.split(sep)
         .filter(|x| !x.is_empty())
         .map(str::to_string)
         .collect()
+}
+
+/// Classification whose domains are raw module paths: each member (top-level
+/// symbol id, its module path, its layer) is placed on its layer and in the
+/// domain `<path joined by sep>` (`default_label` for the empty path), no
+/// inference. The domain tree nests the paths (chains of single-child
+/// modules collapsed, as for module domains), so its leaves are the domains.
+pub fn path_classification<'a>(
+    members: impl IntoIterator<Item = (&'a str, Vec<String>, LayerId)>,
+    sep: char,
+    default_label: &str,
+) -> Classification {
+    let mut root = Trie::default();
+    let mut placements = BTreeMap::new();
+    for (id, path, layer) in members {
+        let domain = if path.is_empty() {
+            default_label.to_string()
+        } else {
+            path.join(&sep.to_string())
+        };
+        let mut node = &mut root;
+        for seg in path {
+            node = node.children.entry(seg).or_default();
+        }
+        node.own += 1;
+        node.domain = Some(domain.clone());
+        placements.insert(id.to_string(), Placement { layer, domain });
+    }
+    let mut tree: Vec<DomainNode> = root
+        .children
+        .iter()
+        .map(|(l, c)| convert(l.clone(), c, sep))
+        .collect();
+    if root.own > 0 {
+        tree.insert(
+            0,
+            DomainNode {
+                label: default_label.to_string(),
+                domain: root.domain.clone(),
+                size: root.own,
+                children: vec![],
+            },
+        );
+    }
+    Classification {
+        placements,
+        domain_tree: Some(tree),
+    }
 }
 
 /// A module's last segment found under at least this many distinct parents is

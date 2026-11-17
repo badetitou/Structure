@@ -8,6 +8,9 @@ vi.mock("../api", () => ({
   rulesStamp: vi.fn(),
   impact: vi.fn(),
   cellSymbols: vi.fn(),
+  lenses: vi.fn(),
+  matrix: vi.fn(),
+  impactCells: vi.fn(),
   history: vi.fn(),
   diff: vi.fn(),
 }));
@@ -199,7 +202,7 @@ describe("view context, per panel display", () => {
     expect(pa.panel).toBe("matrix");
     expect(pb.panel).toBe("matrix-2");
     // Migration: the first panel adopts the global options and stores them once.
-    expect(a.writes).toEqual([{ mode: "normal", transposed: false, aligned: options.aligned, showHttp: options.showHttp, showRpc: options.showRpc }]);
+    expect(a.writes).toEqual([{ mode: "normal", transposed: false, aligned: options.aligned, showHttp: options.showHttp, showRpc: options.showRpc, lens: "layer-domain" }]);
     expect(b.writes).toEqual([]);
     expect([pa.lens.display.mode, pb.lens.display.mode]).toEqual(["normal", "dense"]);
     expect([pa.lens.display.transposed, pb.lens.display.transposed]).toEqual([false, true]);
@@ -239,7 +242,12 @@ describe("view context, per panel display", () => {
     await loaded();
     const pa = ctx.forPanel("matrix", undefined, () => {});
     const pb = ctx.forPanel("matrix-2", undefined, () => {});
-    expect(pa.overlays).toBe(ctx.overlays);
+    // Each panel reads the overlays through its own lens; on the default lens, the store's own.
+    mocked.impact.mockResolvedValue(imp());
+    await runImpact(null, null);
+    expect(pa.overlays.list).toBe(ctx.overlays.list);
+    expect(pa.overlays.selectedIds).toBe(ctx.overlays.selectedIds);
+    expect(pa.overlays.current).toBe(ctx.overlays.current);
     expect(pb.selection).toBe(ctx.selection);
     const va = { cells: [cell] } as unknown as ViewMatrix;
     const vb = { cells: [] } as unknown as ViewMatrix;

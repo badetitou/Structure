@@ -361,6 +361,7 @@ fn merge(units: &[Unit], parts: Vec<Analysis>) -> Analysis {
         warnings,
         layers,
         impact_index: Default::default(),
+        lenses: Default::default(),
     }
 }
 

@@ -14,6 +14,9 @@ fn main() {
             commands::impact,
             commands::history,
             commands::cell_symbols,
+            commands::lenses,
+            commands::matrix,
+            commands::impact_cells,
             commands::diff
         ])
         .run(tauri::generate_context!());

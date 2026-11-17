@@ -375,6 +375,37 @@ fn aggregate_maps_symbols_to_cells() {
 }
 
 #[test]
+fn aggregate_by_takes_any_cell_mapping() {
+    // Two symbols in one coarse cell: changed wins, then the smallest distance.
+    let coarse = |id: &str| (id != "Lonely").then(|| format!("all:{}", id.len() % 2));
+    let got = aggregate_by(
+        &[
+            hs("Impl", Role::Reached, 2),
+            hs("Iface", Role::Reached, 4),
+            hs("Mapper", Role::Changed, 0),
+            hs("Lonely", Role::Changed, 0),
+        ],
+        coarse,
+    );
+    assert_eq!(
+        got,
+        [hc("all:0", Role::Changed, 0), hc("all:1", Role::Reached, 4)]
+    );
+    // The placement mapping gives `aggregate`.
+    let (_, c) = fixture();
+    let syms = [
+        hs("Mapper", Role::Changed, 0),
+        hs("Service", Role::Reached, 1),
+    ];
+    let by_placement = aggregate_by(&syms, |id| {
+        c.placements
+            .get(id)
+            .map(|p| Cell::id_for(&p.layer, &p.domain))
+    });
+    assert_eq!(by_placement, aggregate(&c, &syms));
+}
+
+#[test]
 fn highlight_composes_the_steps() {
     let (g, c) = fixture();
     let index = HighlightIndex::new(&g);

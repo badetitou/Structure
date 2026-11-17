@@ -105,13 +105,28 @@ panneau matrice actif (focalisé, sinon le dernier focalisé). Un panneau sans p
 fois les valeurs globales (localStorage), qui gardent le dernier choix ; les étiquettes à 45° restent
 une préférence globale. Le registre accepte des panneaux multi-instances (`multi`) : « New matrix
 view » dans le menu Views.
+Lens choisie par panneau (#74, PR 3) : registre `structure_classify::lens` (`layer-domain`, défaut,
+matrice et ids inchangés ; `layer-package`, chemin de module brut — package Java/Pharo, dossier TS —
+sans inférence, en arbre comme `DomainNode`, ids `package/<layer>:<chemin>`). Le back construit la
+lens à la demande depuis le graphe et la classification et la met en cache avec l'analyse
+(`Analysis::lens`) ; `Session::matrix(paths, head, generation, lens)`, `cell_symbols` prend la lens,
+`impact_cells` recalcule les cellules d'un impact depuis ses symboles (étape d'agrégation avec la
+correspondance de la lens, `aggregate_by`) : c'est le back qui fait la correspondance, l'UI ne
+reçoit pas de table symbole → cellule. Côté UI, la lens est une option d'affichage du panneau
+(`params.display.lens`, défaut `layer-domain`, non reprise des préférences globales), choisie dans la
+barre d'outils pour le panneau actif (sélecteur visible seulement si le back en offre plusieurs :
+`capabilities.lenses`, `Backend.lenses`) ; `stores/lenses.svelte.ts` met en cache matrices et
+cellules d'impact par lens, et le `ViewContext` du panneau expose matrice et overlays dans sa lens.
+La sélection reste partagée mais retient sa lens : un panneau d'une autre lens ne la dessine pas
+(« not in this view ») et ne la synchronise pas.
 
 Cible :
 - contrat `ViewContext { lens, overlays, selection, actions }` passé à chaque
   vue, au lieu de lire les stores globaux ; sélection et overlays forment un bus partagé ;
 - séparer la *lens* (back : manière de quotienter — layer × domaine, arbre de
   packages, projet × couche) du *rendu* (front : matrice, dense, graphe de
-  voisinage, liste) ;
+  voisinage, liste) — fait pour layer × domaine et layer × package (PR 3) ; projet × couche
+  reste à ajouter au registre ;
 - options d'affichage (dense, transposé, aligné) par instance de panneau
   (paramètres dockview) et non globales : deux matrices côte à côte possibles — fait (PR 2).
 
@@ -176,5 +191,5 @@ Issue parente : #68 (une sous-issue par étape, une case = une PR).
    fichier de projet ; `reclassify`.
 6. #73 Langages : crate `structure-lang` pur (le wasm l'utilise) ; trait
    `Indexer` ; ports et linkers ; dépôts multi-langages.
-7. #74 Vues : `ViewContext` ; options par panneau ; lens configurables.
+7. #74 Vues : `ViewContext` ; options par panneau ; lens configurables — fait.
 8. #75 Plus tard : source stack trace (coller), vue Trace ; MCP ensuite.

@@ -2,20 +2,31 @@
 // (`params.display`) so they are saved with the layout, and the rules that pick the panel the
 // toolbar acts on. Pure helpers: the reactive side is `displays.svelte.ts`.
 import type { Mode } from "../layout";
+import { parseLens } from "../lens";
 import { parseMode } from "../mode";
 
-/** How one matrix panel is drawn. Angled labels are an app-wide preference, not part of it. */
+/** How one matrix panel is drawn, and through which lens (the backend's quotient, see
+ * `lens.ts`). Angled labels are an app-wide preference, not part of it. */
 export interface PanelDisplay {
   mode: Mode;
   transposed: boolean;
   aligned: boolean;
   showHttp: boolean;
   showRpc: boolean;
+  /** Lens id; the default lens unless the panel picked another. */
+  lens: string;
 }
 
 /** Copy of the display fields of `d` (drops anything else). */
 export function snapshot(d: PanelDisplay): PanelDisplay {
-  return { mode: d.mode, transposed: d.transposed, aligned: d.aligned, showHttp: d.showHttp, showRpc: d.showRpc };
+  return {
+    mode: d.mode,
+    transposed: d.transposed,
+    aligned: d.aligned,
+    showHttp: d.showHttp,
+    showRpc: d.showRpc,
+    lens: d.lens,
+  };
 }
 
 const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
@@ -37,6 +48,7 @@ export function parseDisplay(params: unknown, fallback: PanelDisplay): { display
       aligned: bool(o.aligned, fallback.aligned),
       showHttp: bool(o.showHttp, fallback.showHttp),
       showRpc: bool(o.showRpc, fallback.showRpc),
+      lens: o.lens === undefined ? fallback.lens : parseLens(o.lens),
     },
     stored: true,
   };

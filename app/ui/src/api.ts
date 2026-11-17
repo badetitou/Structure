@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { expandMatrix } from "./expand";
+import { DEFAULT_LENSES } from "./lens";
 
 // Wire types are generated from crates/ir (ts-rs) into ./generated: do not
 // redeclare them here, regenerate them (see CLAUDE.md, Commands).
@@ -24,6 +25,8 @@ import type { ImpactedSymbol } from "./generated/ImpactedSymbol";
 import type { Language } from "./generated/Language";
 import type { LayerDef } from "./generated/LayerDef";
 import type { LayerId } from "./generated/LayerId";
+import type { LensCells } from "./generated/LensCells";
+import type { LensInfo } from "./generated/LensInfo";
 import type { LineKind } from "./generated/LineKind";
 import type { Progress } from "./generated/Progress";
 import type { Stats } from "./generated/Stats";
@@ -48,6 +51,8 @@ export type {
   Language,
   LayerDef,
   LayerId,
+  LensCells,
+  LensInfo,
   LineKind,
   Progress,
   Stats,
@@ -171,7 +176,8 @@ async function default_impact(
 }
 
 /** One page of the symbols of `cells` (sorted by name); `head` = commit whose
- * matrix is shown, null for the working tree. */
+ * matrix is shown, null for the working tree; `lens` = the lens of the cell ids (default lens
+ * when absent). */
 async function default_cellSymbols(
   paths: string[],
   head: string | null,
@@ -179,13 +185,35 @@ async function default_cellSymbols(
   cells: string[],
   offset: number,
   limit: number,
+  lens?: string,
 ): Promise<CellSymbols> {
   if (!inTauri) {
     const all = await fetchSample<Record<string, CellSymbol[]>>("cell-symbols");
     const list = cells.flatMap((c) => all[c] ?? []);
     return { total: list.length, offset, symbols: list.slice(offset, offset + limit) };
   }
-  return invoke<CellSymbols>("cell_symbols", { paths, head, generation, cells, offset, limit });
+  return invoke<CellSymbols>("cell_symbols", { paths, head, generation, lens: lens ?? null, cells, offset, limit });
+}
+
+/** The lenses the desktop backend offers, the default first. */
+async function tauri_lenses(): Promise<LensInfo[]> {
+  return invoke<LensInfo[]>("lenses");
+}
+
+/** The matrix of the analysis shown (`paths`, `head`, `generation` as for `cellSymbols`) through `lens`. */
+async function tauri_matrix(paths: string[], head: string | null, generation: number, lens: string): Promise<Matrix> {
+  return expandMatrix(await invoke<WireMatrix>("matrix", { paths, head, generation, lens }));
+}
+
+/** The cells of an impact (of `path`, `head` = its `head`) in `lens`, from its symbols. */
+async function tauri_impactCells(
+  path: string,
+  head: string | null,
+  lens: string,
+  changed: string[],
+  impacted: ImpactedSymbol[],
+): Promise<LensCells> {
+  return invoke<LensCells>("impact_cells", { path, head, lens, changed, impacted });
 }
 
 async function default_history(path: string, limit?: number): Promise<History> {
@@ -211,6 +239,10 @@ export interface Capabilities {
   reclassify: boolean;
   /** Sources of highlighted cells the backend computes ("git-diff": `Backend.impact` of a git range). */
   highlightSources: string[];
+  /** Lenses a matrix can be shown in, the default first; more than one needs `Backend.matrix` and
+   * `Backend.impactCells`. A backend with `Backend.lenses` reports the full list there (asked once
+   * a project is loaded); this one is what is known before. */
+  lenses: readonly LensInfo[];
 }
 
 /** Where the data comes from: Tauri or samples (default), or a host page (viewer). A method
@@ -237,27 +269,57 @@ export interface Backend {
     cells: string[],
     offset: number,
     limit: number,
+    lens?: string,
   ): Promise<CellSymbols>;
+  /** The lenses offered, the default first (absent: `capabilities.lenses`). */
+  lenses?(): Promise<LensInfo[]>;
+  /** The matrix of a loaded analysis through a non-default lens. */
+  matrix?(paths: string[], head: string | null, generation: number, lens: string): Promise<Matrix>;
+  /** The cells of an impact in a non-default lens, from its changed and impacted symbols. */
+  impactCells?(
+    path: string,
+    head: string | null,
+    lens: string,
+    changed: string[],
+    impacted: ImpactedSymbol[],
+  ): Promise<LensCells>;
   history?(path: string, limit?: number): Promise<History>;
   diff?(path: string, base: string | null, head: string | null): Promise<Diff>;
 }
 
 /** The desktop app: everything. */
 const tauriBackend: Backend = {
-  capabilities: { history: true, diff: true, pickFolder: true, reclassify: true, highlightSources: ["git-diff"] },
+  capabilities: {
+    history: true,
+    diff: true,
+    pickFolder: true,
+    reclassify: true,
+    highlightSources: ["git-diff"],
+    lenses: DEFAULT_LENSES,
+  },
   pickFolder: default_pickFolder,
   analyze: default_analyze,
   reclassify: tauri_reclassify,
   rulesStamp: tauri_rulesStamp,
   impact: default_impact,
   cellSymbols: default_cellSymbols,
+  lenses: tauri_lenses,
+  matrix: tauri_matrix,
+  impactCells: tauri_impactCells,
   history: default_history,
   diff: default_diff,
 };
 
 /** A plain browser: the sample files, no rules to reload. */
 const samplesBackend: Backend = {
-  capabilities: { history: true, diff: true, pickFolder: true, reclassify: false, highlightSources: ["git-diff"] },
+  capabilities: {
+    history: true,
+    diff: true,
+    pickFolder: true,
+    reclassify: false,
+    highlightSources: ["git-diff"],
+    lenses: DEFAULT_LENSES,
+  },
   pickFolder: default_pickFolder,
   analyze: default_analyze,
   impact: default_impact,
@@ -295,5 +357,11 @@ export const reclassify: Fn<"reclassify"> = async (...a) => supported("reclassif
 export const rulesStamp: Fn<"rulesStamp"> = async (...a) => supported("rulesStamp")(...a);
 export const impact: Backend["impact"] = (...a) => current.impact(...a);
 export const cellSymbols: Backend["cellSymbols"] = (...a) => current.cellSymbols(...a);
+/** The lenses offered by the current backend (its `lenses` method, else `capabilities.lenses`). */
+export async function lenses(): Promise<readonly LensInfo[]> {
+  return current.lenses ? current.lenses() : current.capabilities.lenses;
+}
+export const matrix: Fn<"matrix"> = async (...a) => supported("matrix")(...a);
+export const impactCells: Fn<"impactCells"> = async (...a) => supported("impactCells")(...a);
 export const history: Fn<"history"> = async (...a) => supported("history")(...a);
 export const diff: Fn<"diff"> = async (...a) => supported("diff")(...a);

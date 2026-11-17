@@ -3,6 +3,7 @@
 
 mod history;
 mod indexer;
+mod lens;
 mod multi;
 mod process;
 mod progress;
@@ -16,6 +17,7 @@ pub use crate::lang::{DEFAULT_NODE_HEAP_MB, discover_tsconfigs, node_options, ts
 pub use crate::lang::{SCIP_JAVA_VERSION, SCIP_TS_VERSION};
 pub use history::{history, impact};
 pub use indexer::{ensure_index, ensure_index_with_progress};
+pub use lens::{LensData, LensView, lens_cells};
 pub use multi::{analyze_many, expand_roots};
 pub use reclassify::{reclassify, rules_stamp, rules_stamp_of};
 pub use snapshot::{MAX_SNAPSHOTS, analyze_snapshot, impact_at, impact_in_snapshot, snapshot};
@@ -98,6 +100,9 @@ pub struct Analysis {
     /// Built from `graph` on the first impact (see [`Analysis::impact_index`]);
     /// shared with every analysis holding the same `graph` ([`reclassify`]).
     impact_index: Arc<OnceLock<ImpactIndex>>,
+    /// Non-default lenses built from this analysis (see [`Analysis::lens`]);
+    /// never shared with a reclassified analysis.
+    lenses: Arc<lens::LensCache>,
 }
 
 impl Analysis {
@@ -348,6 +353,7 @@ fn analyze_unit(
         warnings,
         layers,
         impact_index: Default::default(),
+        lenses: Default::default(),
     })
 }
 
