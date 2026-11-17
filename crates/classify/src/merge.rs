@@ -1,7 +1,8 @@
 //! Several projects' graphs and classifications merged into one (pure): the
 //! symbol ids of project `p` become `p::<id>` (external `ext:` types are
 //! shared), its files `p/<file>` and its domains `p/<domain>`. Used by the
-//! multi-root and multi-language pipeline of `structure-core`.
+//! multi-root and multi-language pipeline of `structure-core` and by the
+//! multi-language pull-request analysis of `structure-wasm`.
 
 use std::collections::BTreeMap;
 
