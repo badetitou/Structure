@@ -59,10 +59,10 @@ impl Indexer for ScipJava {
         format!("scip-java-{SCIP_JAVA_VERSION}")
     }
 
-    fn command(&self, _root: &Path) -> Option<Command> {
+    fn command(&self, _root: &Path, output: &str) -> Option<Command> {
         if let Some(p) = find_on_path("scip-java") {
             let mut c = Command::new(p);
-            c.args(["index", "--output", "index.scip"]);
+            c.args(["index", "--output", output]);
             Some(c)
         } else if let Some(cs) = find_cs() {
             let mut c = Command::new(cs);
@@ -70,7 +70,7 @@ impl Indexer for ScipJava {
                 .arg(format!(
                     "com.sourcegraph:scip-java_2.13:{SCIP_JAVA_VERSION}"
                 ))
-                .args(["--", "index", "--output", "index.scip"]);
+                .args(["--", "index", "--output", output]);
             Some(c)
         } else {
             None

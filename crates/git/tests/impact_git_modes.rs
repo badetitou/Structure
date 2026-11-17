@@ -113,6 +113,8 @@ fn untracked_scip_index_is_skipped_and_lines_counted_in_chunks() {
     std::fs::create_dir_all(d.join("sub")).unwrap();
     std::fs::write(d.join("index.scip"), "x\n").unwrap();
     std::fs::write(d.join("sub/index.scip"), "x\n").unwrap();
+    std::fs::write(d.join("index.java.scip"), "x\n").unwrap();
+    std::fs::write(d.join("sub/index.typescript.scip"), "x\n").unwrap();
     // Larger than one read chunk, last line without '\n'.
     std::fs::write(d.join("big.txt"), format!("{}tail", "abc\n".repeat(20_000))).unwrap();
     std::fs::write(d.join("no_nl.txt"), "a\nb").unwrap();

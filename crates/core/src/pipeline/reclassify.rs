@@ -144,7 +144,8 @@ fn domain_sizes(graph: &Graph, cls: &Classification) -> BTreeMap<String, usize> 
 /// Changes whenever the rules [`reclassify`] reads for `roots` may have
 /// changed: each analysed root (after [`super::expand_roots`]) with the size
 /// and modification time of its `.structure/rules.toml`, or `-` when it has
-/// none. Opaque; compare stamps for equality only.
+/// none. A root holding several languages counts once. Opaque; compare stamps
+/// for equality only.
 pub fn rules_stamp(roots: &[PathBuf]) -> anyhow::Result<String> {
     Ok(rules_stamp_of(&super::expand_roots(roots)?))
 }
@@ -152,8 +153,11 @@ pub fn rules_stamp(roots: &[PathBuf]) -> anyhow::Result<String> {
 /// [`rules_stamp`] of roots already expanded, e.g. an [`Analysis::roots`]:
 /// no detection, no directory listing, one `stat` per root.
 pub fn rules_stamp_of(roots: &[PathBuf]) -> String {
-    let lines: Vec<String> = roots
-        .iter()
+    // One analysis unit per language: a root's units are adjacent.
+    let mut unique: Vec<&PathBuf> = roots.iter().collect();
+    unique.dedup();
+    let lines: Vec<String> = unique
+        .into_iter()
         .map(|r| {
             let file = r.join(super::PROJECT_RULES);
             let state = match std::fs::metadata(&file) {

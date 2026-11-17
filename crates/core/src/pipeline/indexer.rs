@@ -42,26 +42,29 @@ fn newer_sources(root: &Path, lang: Language, index: &Path) -> usize {
         .count()
 }
 
-/// Returns the path of an up-to-date `index.scip`, or `Ok(None)` (with a
-/// warning through `warn`) if it could not be produced.
+/// Returns the path of an up-to-date SCIP index `root/<index_name>` (see
+/// [`crate::lang::index_file`]), or `Ok(None)` (with a warning through
+/// `warn`) if it could not be produced.
 pub fn ensure_index(
     root: &Path,
     lang: Language,
+    index_name: &str,
     opts: &Options,
     warn: &mut dyn FnMut(String),
 ) -> anyhow::Result<Option<PathBuf>> {
-    ensure_index_with_progress(root, lang, opts, warn, &mut |_, _| {})
+    ensure_index_with_progress(root, lang, index_name, opts, warn, &mut |_, _| {})
 }
 
 /// Like [`ensure_index`], reporting `(pct, detail)` while the indexer runs.
 pub fn ensure_index_with_progress(
     root: &Path,
     lang: Language,
+    index_name: &str,
     opts: &Options,
     warn: &mut dyn FnMut(String),
     progress: &mut dyn FnMut(u8, String),
 ) -> anyhow::Result<Option<PathBuf>> {
-    let index = root.join("index.scip");
+    let index = root.join(index_name);
     if index.is_file() && !opts.reindex {
         let stale = newer_sources(root, lang, &index);
         if stale == 0 {
@@ -69,12 +72,14 @@ pub fn ensure_index_with_progress(
         }
         if !opts.reindex_if_stale {
             warn(format!(
-                "index.scip is older than {stale} source file(s); call edges in those files may be off until the project is re-analyzed"
+                "{index_name} is older than {stale} source file(s); call edges in those files may be off until the project is re-analyzed"
             ));
             return Ok(Some(index));
         }
     }
-    let cmd = frontend(lang).indexer().and_then(|i| i.command(root));
+    let cmd = frontend(lang)
+        .indexer()
+        .and_then(|i| i.command(root, index_name));
     let Some(cmd) = cmd else {
         warn("no SCIP indexer found (scip-java/cs/npx); using tree-sitter only".into());
         return Ok(None);
@@ -88,7 +93,9 @@ pub fn ensure_index_with_progress(
     ) {
         Ok(()) if index.is_file() => Ok(Some(index)),
         Ok(()) => {
-            warn("indexer succeeded but produced no index.scip; using tree-sitter only".into());
+            warn(format!(
+                "indexer succeeded but produced no {index_name}; using tree-sitter only"
+            ));
             Ok(None)
         }
         Err(e) => {
@@ -196,7 +203,9 @@ mod tests {
             ..Options::default()
         };
         let mut warnings = vec![];
-        let got = ensure_index(&dir, Language::TypeScript, &opts, &mut |w| warnings.push(w));
+        let got = ensure_index(&dir, Language::TypeScript, "index.scip", &opts, &mut |w| {
+            warnings.push(w)
+        });
         assert_eq!(got.unwrap(), Some(index));
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(warnings[0].contains("older than 1 source file"));

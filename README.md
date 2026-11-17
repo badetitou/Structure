@@ -242,7 +242,7 @@ flowchart LR
 ```
 
 1. **Parse.** Tree-sitter (Java, TypeScript) or the Tonel reader (Pharo) extracts classes, ranges, annotations and supertypes.
-2. **Index.** The SCIP indexer runs as a subprocess. An existing `<project>/index.scip` is reused. Pharo has no SCIP step: its call edges come from the Tonel reader.
+2. **Index.** The SCIP indexer runs as a subprocess. An existing `<project>/index.scip` is reused (`index.<language>.scip` per language in a root holding several). Pharo has no SCIP step: its call edges come from the Tonel reader.
 3. **Link.** SCIP occurrences are joined to tree-sitter symbols to produce `Call`, `Uses` and `Implements` edges.
 4. **Classify.** TOML rules assign each class a layer and a domain.
 5. **Quotient.** Symbols collapse into cells; edges are aggregated between cells.
@@ -339,7 +339,7 @@ indexer. See [scripts/README.md](scripts/README.md).
 - **Class-level granularity.** Classification is heuristic and driven by the rules.
 - **Without `index.scip`** (or if indexing fails), only tree-sitter edges are used, so call edges are far fewer.
 - **Impact follows reverse edges only.** No dynamic dispatch, reflection or DI wiring beyond what SCIP sees.
-- **Language detection** uses `pom.xml` / `build.gradle*` (Java) or `tsconfig.json` / `package.json` (TypeScript), or a Tonel `src/` folder (Pharo). One language per root.
+- **Language detection** uses `pom.xml` / `build.gradle*` (Java) or `tsconfig.json` / `package.json` (TypeScript), or a Tonel `src/` folder (Pharo). A root whose markers match several languages that all have sources (e.g. a Java backend and a TypeScript frontend side by side) is analysed as one project per language, named `<dir> (java)`, `<dir> (typescript)`, merged as several roots are (HTTP links included); each indexer then writes its own `index.<language>.scip`. A marker without sources (a `package.json` kept for tooling next to a `pom.xml`) is ignored.
 - **First indexing can take minutes** (Maven build, `npm install`).
 - **scip-java runs the project's Maven build.** A `~/.m2/settings.xml` that points to an unreachable private repository makes it hang; the app gives up after 10 minutes and falls back to tree-sitter.
 - **Gradle projects** are indexed through their own wrapper, which must support the JDK in use.

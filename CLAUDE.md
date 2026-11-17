@@ -58,14 +58,16 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     trait: marker detection, parse from disk → `ParseOutput`, optional native
     `Indexer` (command, hint, SCIP cache tag; `None` for Pharo = no SCIP step);
     `pure()` gives the `structure-lang` frontend; registry `all()`/`frontend()`) and `pipeline/` (`mod`
-    analyze/detect + `<root>/.structure/rules.toml` merged over the defaults,
-    `multi` several roots — first root's layers win, `reclassify` rules
+    analyze/`detect_languages` + `<root>/.structure/rules.toml` merged over the defaults,
+    `multi` analysis units `(root, language)` — several roots, or one root per
+    language named `<dir> (<language>)` with its own `index.<language>.scip` —
+    merged, first unit's layers win, `reclassify` rules
     re-applied to a cached graph + `rules_stamp`, `indexer`, `process`,
     `progress`, `snapshot`, `history`) and
     `linker` (`Linker` trait + registry `all()`, `run()`: turns symbol `ports`
     — `Port { protocol, role: Provides|Requires, key }` — into
     `EdgeKind::Remote { protocol }` edges) with its two linkers `http_link`
-    (TS `http` `Requires` ports to Java `Provides` endpoints, multi-root only)
+    (TS `http` `Requires` ports to Java `Provides` endpoints, several units only)
     and `rpc_link` (GWT `gwt-rpc` `Requires` ports to the classes implementing
     the sync service, found from the type hierarchy; one or several roots) and
     `session` (`Session`: owns cached analyses — working trees by canonical

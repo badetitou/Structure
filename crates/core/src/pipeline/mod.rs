@@ -19,7 +19,7 @@ pub use indexer::{ensure_index, ensure_index_with_progress};
 pub use multi::{analyze_many, expand_roots};
 pub use reclassify::{reclassify, rules_stamp, rules_stamp_of};
 pub use snapshot::{MAX_SNAPSHOTS, analyze_snapshot, impact_at, impact_in_snapshot, snapshot};
-pub use structure_git::{resolve_base, resolve_commit, worktree_fingerprint};
+pub use structure_git::{is_scip_index, resolve_base, resolve_commit, worktree_fingerprint};
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -78,9 +78,10 @@ impl Default for Options {
 pub struct Analysis {
     /// Shared with the analyses [`reclassify`] makes from this one.
     pub graph: Arc<Graph>,
-    /// The analysed roots, in matrix order: the project itself, or each root
-    /// of a multi-root analysis after [`expand_roots`] (named as in
-    /// `matrix.projects`).
+    /// The analysed roots, in matrix order: the project itself, or the root
+    /// of each analysis unit after [`expand_roots`] (named as in
+    /// `matrix.projects`): a root holding several languages appears once
+    /// per language, next to itself.
     pub roots: Vec<PathBuf>,
     pub classification: Classification,
     pub matrix: Matrix,
@@ -118,16 +119,47 @@ impl Analysis {
     }
 }
 
-pub fn detect_language(root: &Path) -> anyhow::Result<Language> {
-    if let Some(f) = crate::lang::all().iter().find(|f| f.detect(root)) {
-        return Ok(f.language());
+/// The languages of `root`, in registry priority order: those whose marker
+/// files are there. When several match, those without a single source file
+/// are left out (e.g. a `package.json` kept for tooling next to a `pom.xml`),
+/// unless none has any (then the first one stays). Error when no marker matches.
+pub fn detect_languages(root: &Path) -> anyhow::Result<Vec<Language>> {
+    let found: Vec<Language> = crate::lang::all()
+        .iter()
+        .filter(|f| f.detect(root))
+        .map(|f| f.language())
+        .collect();
+    match found.as_slice() {
+        [] => {
+            let markers: Vec<&str> = crate::lang::all().iter().map(|f| f.markers()).collect();
+            bail!(
+                "cannot detect language in {}: expected {}",
+                root.display(),
+                markers.join(" or ")
+            )
+        }
+        [_] => Ok(found),
+        [first, ..] => {
+            let with_sources: Vec<Language> = found
+                .iter()
+                .copied()
+                .filter(|&l| crate::lang::has_sources(root, l))
+                .collect();
+            Ok(if with_sources.is_empty() {
+                vec![*first]
+            } else {
+                with_sources
+            })
+        }
     }
-    let markers: Vec<&str> = crate::lang::all().iter().map(|f| f.markers()).collect();
-    bail!(
-        "cannot detect language in {}: expected {}",
-        root.display(),
-        markers.join(" or ")
-    )
+}
+
+/// The first of [`detect_languages`].
+pub fn detect_language(root: &Path) -> anyhow::Result<Language> {
+    detect_languages(root)?
+        .into_iter()
+        .next()
+        .with_context(|| format!("cannot detect language in {}", root.display()))
 }
 
 /// `<git-common-dir>/structure` of the repository containing `root`, shared
@@ -156,10 +188,26 @@ pub fn analyze(
     analyze_in(root, opts, progress, false)
 }
 
-/// [`analyze`]; with `from_cache` (a clean checkout without its own
-/// `index.scip`), the SCIP index is first composed from cached documents.
+/// [`analyze`]; with `from_cache` (a clean checkout without its own SCIP
+/// index), the SCIP index is first composed from cached documents. A root
+/// holding several languages is analysed as one unit per language, merged as
+/// [`analyze_many`] merges roots.
 pub(super) fn analyze_in(
     root: &Path,
+    opts: &Options,
+    progress: &dyn Fn(Progress),
+    from_cache: bool,
+) -> anyhow::Result<Analysis> {
+    if !root.is_dir() {
+        bail!("not a directory: {}", root.display());
+    }
+    let units = multi::units(std::slice::from_ref(&root.to_path_buf()))?;
+    multi::analyze_units(&units, opts, progress, from_cache)
+}
+
+/// One `(root, language)` unit through the whole pipeline.
+fn analyze_unit(
+    unit: &multi::Unit,
     opts: &Options,
     progress: &dyn Fn(Progress),
     from_cache: bool,
@@ -172,10 +220,11 @@ pub(super) fn analyze_in(
             detail: None,
         })
     };
+    let root = unit.root.as_path();
     if !root.is_dir() {
         bail!("not a directory: {}", root.display());
     }
-    let lang = detect_language(root)?;
+    let lang = unit.language;
     let mut warnings: Vec<String> = Vec::new();
     let mut metrics = Metrics::default();
     let ran_indexer = std::cell::Cell::new(false);
@@ -184,7 +233,7 @@ pub(super) fn analyze_in(
     let t = Instant::now();
     let exts = crate::lang::pure(lang).extensions();
     let tag = scip_cache_tag(lang);
-    let reuse = opts.use_scip && !opts.reindex && from_cache && !root.join("index.scip").is_file();
+    let reuse = opts.use_scip && !opts.reindex && from_cache && !root.join(&unit.index).is_file();
     let composed = if reuse {
         // The cache is only a shortcut: on error, index as usual.
         scip_cache::compose(root, exts, &tag).unwrap_or_else(|e| {
@@ -200,6 +249,7 @@ pub(super) fn analyze_in(
         ensure_index_with_progress(
             root,
             lang,
+            &unit.index,
             opts,
             &mut |w| warnings.push(w),
             &mut |pct, detail| {
@@ -228,7 +278,7 @@ pub(super) fn analyze_in(
         (true, Some((_, c)), ..) => format!("cached documents for {}/{} files", c.covered, c.total),
         (true, None, false, _) => "no index (tree-sitter only)".into(),
         (true, None, true, true) => "ran indexer".into(),
-        (true, None, true, false) => "reused index.scip".into(),
+        (true, None, true, false) => format!("reused {}", unit.index),
     };
     metrics.phase("indexer", t, Some(&note));
 
@@ -282,13 +332,7 @@ pub(super) fn analyze_in(
     let layers = rules.layers();
     let t = Instant::now();
     let elapsed = started.elapsed().as_millis() as u64;
-    let mut matrix = matrix::build(
-        &graph,
-        &classification,
-        &layers,
-        &project_name(root),
-        elapsed,
-    );
+    let mut matrix = matrix::build(&graph, &classification, &layers, &unit.name, elapsed);
     matrix.warnings = warnings.clone();
     metrics.phase("matrix", t, None);
     step("done", 100);

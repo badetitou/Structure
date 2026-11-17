@@ -45,7 +45,7 @@ fn snapshot_bounded(root: &Path, rev: &str, max: usize) -> anyhow::Result<PathBu
         && impact::git(&dir, &["rev-parse", "--show-toplevel"])
             .is_ok_and(|t| Path::new(t.trim()).canonicalize().ok() == dir.canonicalize().ok())
         && impact::git(&dir, &["rev-parse", "HEAD"]).is_ok_and(|h| h.trim() == sha)
-        // Tracked files deleted from the checkout; untracked ones (index.scip, builds) are fine.
+        // Tracked files deleted from the checkout; untracked ones (SCIP indexes, builds) are fine.
         && impact::git(&dir, &["ls-files", "-d"]).is_ok_and(|d| d.trim().is_empty());
     if !valid {
         let _ = impact::git(root, &["worktree", "remove", "--force", &dir_str]);
@@ -125,17 +125,14 @@ pub fn impact_in_snapshot(
     base_sha: Option<&str>,
     head: &str,
 ) -> anyhow::Result<Impact> {
-    let mut changes = impact::changed_lines(snap, base_sha, Some(head))?;
-    changes.retain(|c| c.file != "index.scip");
-    let mut result = impact::compute_with(
-        &analysis.graph,
-        &analysis.classification,
-        analysis.impact_index(),
-        &changes,
+    let changes = impact::changed_lines(snap, base_sha, Some(head))?;
+    let mut result = super::history::compute(
+        snap,
+        analysis,
+        changes,
         base_sha.unwrap_or("HEAD"),
         Some(head),
     );
-    result.warnings = analysis.warnings.clone();
     result.matrix = Some(analysis.matrix.clone());
     Ok(result)
 }
