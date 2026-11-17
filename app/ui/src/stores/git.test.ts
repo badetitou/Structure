@@ -7,6 +7,9 @@ vi.mock("../api", () => ({
   rulesStamp: vi.fn(),
   impact: vi.fn(),
   cellSymbols: vi.fn(),
+  lenses: vi.fn(),
+  matrix: vi.fn(),
+  impactCells: vi.fn(),
   history: vi.fn(),
   diff: vi.fn(),
 }));

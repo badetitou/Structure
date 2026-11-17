@@ -14,22 +14,31 @@
 // panels) reads and sets the active matrix panel's (the focused one, else the last focused),
 // falling back to the global defaults while no matrix panel is open.
 //
+// The lens (the backend's quotient, `lens.ts`) is one of those per-panel options: a context's
+// `lens.matrix` is the matrix shown through its lens, and its `overlays` carry the impacts'
+// cells in that lens (the backend maps the impacts' symbols, see `stores/lenses.svelte.ts`),
+// so a view draws them as it always did. The selection remembers the lens it was made in: a
+// panel showing another lens does not draw it (and says so) nor keeps it in step.
+//
 // Provided once per analysis screen (`AnalysisScreen.svelte` calls `setViewContext`); the
 // dockview panels, mounted as separate Svelte roots, receive it through `mount`'s `context`
 // option (see `SvelteRenderer` in dock.ts), so a panel and its children all call
 // `getViewContext()` and need no props.
 import { getContext, setContext } from "svelte";
 import * as api from "../api";
-import type { Capabilities, Impact, Matrix, Progress } from "../api";
+import type { Capabilities, Impact, LensInfo, Matrix, Progress } from "../api";
 import type { SymbolList } from "../cellsymbols";
 import type { ViewCell, ViewMatrix } from "../domaintree";
 import type { Selection } from "../history";
 import type { Mode } from "../layout";
+import { DEFAULT_LENS, lensLabel, resolveLens } from "../lens";
+import { cellsNotIn } from "../multioverlay";
 import type { Overlay, Range } from "../overlays";
 import { analysis } from "../stores/analysis.svelte";
 import { git } from "../stores/git.svelte";
 import type { DiffState } from "../stores/git.svelte";
 import { impact } from "../stores/impact.svelte";
+import { lenses } from "../stores/lenses.svelte";
 import { options } from "../stores/options.svelte";
 import { selection } from "../stores/selection.svelte";
 import * as session from "../stores/session";
@@ -49,15 +58,23 @@ export interface DisplayView {
 
 /** The lens: the analysis and the matrix shown, with what a view needs to derive its view model. */
 export interface LensView {
+  /** Id of the lens drawn (the panel's, or the active panel's): one the backend offers. */
+  readonly id: string;
+  readonly label: string;
+  /** The lenses the backend offers, the default first. */
+  readonly available: readonly LensInfo[];
+  /** The lens matrix could not be loaded ("" when fine or still loading). */
+  readonly error: string;
   /** Folders analysed together. */
   readonly paths: readonly string[];
   /** First folder: the project for single-project code. */
   readonly project: string;
   /** Several distinct roots analysed together (no git views). */
   readonly multi: boolean;
-  /** Working-tree matrix (the base a commit snapshot is compared to), null until analysed. */
+  /** Working-tree matrix (the base a commit snapshot is compared to) through the lens, null
+   * until analysed (or while the lens matrix loads). */
   readonly work: Matrix | null;
-  /** Matrix shown: the impact's commit snapshot, else the working tree. */
+  /** Matrix shown, through the lens: the impact's commit snapshot, else the working tree. */
   readonly matrix: Matrix | null;
   /** Commit whose snapshot is shown, null for the working tree. */
   readonly head: string | null;
@@ -67,7 +84,7 @@ export interface LensView {
   readonly display: DisplayView;
 }
 
-/** The highlight overlays (shared by every view). */
+/** The highlight overlays (shared by every view), their impacts' cells in the context's lens. */
 export interface OverlaysView {
   /** Loaded overlays, oldest first. */
   readonly list: readonly Overlay[];
@@ -92,6 +109,8 @@ export interface OverlaysView {
 /** The selected cell (shared by every view) and its symbols. */
 export interface SelectionView {
   readonly selected: ViewCell | null;
+  /** Lens the selected cell belongs to (its ids are that lens' cells). */
+  readonly lens: string;
   readonly symbols: SymbolList | null;
   /** The aggregated matrix drawn by the matrix view (names the visible cells). */
   readonly view: ViewMatrix | null;
@@ -140,6 +159,8 @@ export interface ViewActions {
   setAligned(on: boolean): void;
   setShowHttp(on: boolean): void;
   setShowRpc(on: boolean): void;
+  /** Shows the panel (the active one, for the base context) through lens `id`. */
+  setLens(id: string): void;
   setAngledLabels(on: boolean): void;
 }
 
@@ -174,6 +195,8 @@ export function createViewContext(): ViewContext {
       aligned: options.aligned,
       showHttp: options.showHttp,
       showRpc: options.showRpc,
+      // A new panel starts on the default lens: the lens is not a global preference.
+      lens: DEFAULT_LENS,
     }),
     (patch) => {
       if (patch.mode !== undefined) options.setMode(patch.mode);
@@ -184,44 +207,17 @@ export function createViewContext(): ViewContext {
     },
   );
   // The base context's display: the active matrix panel's, else the global defaults.
-  const own = (): PanelDisplay => displays.active ?? options;
+  const own = (): Omit<PanelDisplay, "lens"> => displays.active ?? options;
   const display = displayOf(own);
-  const lens = lensOf(display);
-  const overlays: OverlaysView = {
-    get list() {
-      return impact.overlays;
-    },
-    get selectedIds() {
-      return impact.selectedIds;
-    },
-    get selected() {
-      return impact.selected;
-    },
-    get selectedOverlays() {
-      return impact.selectedOverlays;
-    },
-    get multi() {
-      return impact.multi;
-    },
-    get current() {
-      return impact.current;
-    },
-    get range() {
-      return impact.range;
-    },
-    get busy() {
-      return impact.busy;
-    },
-    get progress() {
-      return impact.progress;
-    },
-    get error() {
-      return impact.error;
-    },
-  };
+  const baseLens = () => resolveLens(displays.active?.lens ?? DEFAULT_LENS, lenses.available);
+  const lens = lensOf(display, baseLens);
+  const overlays = overlaysOf(baseLens);
   const sel: SelectionView = {
     get selected() {
       return selection.selected;
+    },
+    get lens() {
+      return selection.lens;
     },
     get symbols() {
       return selection.symbols;
@@ -260,7 +256,7 @@ export function createViewContext(): ViewContext {
     },
   };
   const actions: ViewActions = {
-    selectCell: (cell) => selection.select(cell),
+    selectCell: (cell) => selection.select(cell, baseLens()),
     loadMoreSymbols: () => selection.loadSymbols(true),
     publishView: (view) => {
       selection.view = view;
@@ -278,9 +274,10 @@ export function createViewContext(): ViewContext {
     setAligned: (on) => displays.set({ aligned: on }),
     setShowHttp: (on) => displays.set({ showHttp: on }),
     setShowRpc: (on) => displays.set({ showRpc: on }),
+    setLens: (id) => displays.set({ lens: id }),
     setAngledLabels: (on) => options.setAngledLabels(on),
   };
-  const make = (panel: string | null, lens: LensView, actions: ViewActions): ViewContext => ({
+  const make = (panel: string | null, lens: LensView, overlays: OverlaysView, actions: ViewActions): ViewContext => ({
     lens,
     overlays,
     selection: sel,
@@ -297,27 +294,77 @@ export function createViewContext(): ViewContext {
   function forPanel(id: string, params: unknown, persist: (d: PanelDisplay) => void): ViewContext {
     const state = displays.attach(id, params, persist);
     const set = (patch: Partial<PanelDisplay>) => displays.set(patch, id);
+    const panelLens = () => resolveLens(state.lens, lenses.available);
     const panelActions: ViewActions = {
       ...actions,
+      selectCell: (cell) => selection.select(cell, panelLens()),
       // Each matrix panel draws its own view; the active one's is the shared `selection.view`,
       // and only the active one keeps the shared selection in step with its cells.
       publishView: (view) => displays.publishView(id, view),
+      // A selection made in another lens is not this panel's to drop.
       syncSelection: (cells) => {
-        if (displays.activeId === id) selection.sync(cells);
+        if (displays.activeId === id && selection.lens === panelLens()) selection.sync(cells);
       },
       setMode: (mode) => set({ mode }),
       setTransposed: (on) => set({ transposed: on }),
       setAligned: (on) => set({ aligned: on }),
       setShowHttp: (on) => set({ showHttp: on }),
       setShowRpc: (on) => set({ showRpc: on }),
+      setLens: (lens) => set({ lens }),
     };
-    return make(id, lensOf(displayOf(() => state)), panelActions);
+    return make(id, lensOf(displayOf(() => state), panelLens), overlaysOf(panelLens), panelActions);
   }
-  return make(null, lens, actions);
+  return make(null, lens, overlays, actions);
+}
+
+/** The overlays with their impacts' cells in the lens `lensId` names (the impact store's own
+ * objects for the default lens). */
+function overlaysOf(lensId: () => string): OverlaysView {
+  const lensed = (o: Overlay): Overlay => {
+    const l = lensId();
+    if (l === DEFAULT_LENS) return o;
+    const i = lenses.impact(l, o.impact);
+    return i === o.impact ? o : { ...o, impact: i };
+  };
+  const own = () => lensId() === DEFAULT_LENS;
+  return {
+    get list() {
+      return own() ? impact.overlays : impact.overlays.map(lensed);
+    },
+    get selectedIds() {
+      return impact.selectedIds;
+    },
+    get selected() {
+      const o = impact.selected;
+      return o ? lensed(o) : null;
+    },
+    get selectedOverlays() {
+      return own() ? impact.selectedOverlays : impact.selectedOverlays.map(lensed);
+    },
+    get multi() {
+      return impact.multi;
+    },
+    get current() {
+      const c = impact.current;
+      return c ? lenses.impact(lensId(), c) : null;
+    },
+    get range() {
+      return impact.range;
+    },
+    get busy() {
+      return impact.busy;
+    },
+    get progress() {
+      return impact.progress;
+    },
+    get error() {
+      return impact.error;
+    },
+  };
 }
 
 /** Display read through `own` (a panel's options, or the active / global ones), angled labels app-wide. */
-function displayOf(own: () => PanelDisplay): DisplayView {
+function displayOf(own: () => Omit<PanelDisplay, "lens">): DisplayView {
   return {
     get mode() {
       return own().mode;
@@ -340,9 +387,21 @@ function displayOf(own: () => PanelDisplay): DisplayView {
   };
 }
 
-/** The lens read from the stores, with `display` as its display options. */
-function lensOf(display: DisplayView): LensView {
+/** The lens `lensId` names read from the stores, with `display` as its display options. */
+function lensOf(display: DisplayView, lensId: () => string): LensView {
   return {
+    get id() {
+      return lensId();
+    },
+    get label() {
+      return lensLabel(lensId(), lenses.available);
+    },
+    get available() {
+      return lenses.available;
+    },
+    get error() {
+      return lenses.matrixError(lensId(), shown.matrix, shown.head);
+    },
     get paths() {
       return analysis.paths;
     },
@@ -353,10 +412,10 @@ function lensOf(display: DisplayView): LensView {
       return analysis.multi;
     },
     get work() {
-      return analysis.work;
+      return lenses.matrix(lensId(), analysis.work, null);
     },
     get matrix() {
-      return shown.matrix;
+      return lenses.matrix(lensId(), shown.matrix, shown.head);
     },
     get head() {
       return shown.head;
@@ -365,7 +424,10 @@ function lensOf(display: DisplayView): LensView {
       return shown.warnings;
     },
     get missingCells() {
-      return shown.missingCells;
+      const l = lensId();
+      if (l === DEFAULT_LENS) return shown.missingCells;
+      const m = lenses.matrix(l, shown.matrix, shown.head);
+      return impact.multi && m ? cellsNotIn(impact.selectedOverlays.map((o) => lenses.impact(l, o.impact)), m) : 0;
     },
     display,
   };

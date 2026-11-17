@@ -45,16 +45,19 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
   - `classify` (`structure-classify`): `classify` (`RuleSet`: parse, merge,
     validate rules TOML; classification by rules + module separator); `layers` (`Layers`: the
     declared `LayerDef`s sorted by order, `unknown` implicit and last);
-    `matrix` — quotient graph.
+    `matrix` — quotient graph (`build_in`/`cell_symbols_in`: ids with a lens prefix);
+    `lens` — lens registry (`Lens`: `layer-domain` default, `layer-package` raw
+    module paths as a tree; ids, labels, cell-id prefix, `all()`).
   - `highlight` (`structure-highlight`): pure (wasm-safe) highlight model over a
     graph: `HighlightIndex`, `resolve` (anchors → top-level symbols),
-    `propagate` (callers/callees BFS), `aggregate` (→ cells), `highlight`.
+    `propagate` (callers/callees BFS), `aggregate` (→ cells; `aggregate_by` with any
+    cell mapping, e.g. a lens'), `highlight`.
   - `git` (`structure-git`): `impact` (git diff → `diff_request`, a `git-diff`
     highlight → `Impact::from_highlight`; `ImpactIndex` = `HighlightIndex`) and
     ref/fingerprint helpers (`resolve_base`, `resolve_commit`, `worktree_fingerprint`).
   - `core` (`structure-core`): facade, re-exports the crates above under their old
     module names (`ir`, `model`, `java`, `ts`, `scip`, `link`, `metrics`, `classify`,
-    `layers`, `matrix`, `impact`, `highlight`). Own code: `lang/` (native `LanguageFrontend`
+    `layers`, `lens`, `matrix`, `impact`, `highlight`). Own code: `lang/` (native `LanguageFrontend`
     trait: marker detection, parse from disk → `ParseOutput`, optional native
     `Indexer` (command, hint, SCIP cache tag; `None` for Pharo = no SCIP step);
     `pure()` gives the `structure-lang` frontend; registry `all()`/`frontend()`) and `pipeline/` (`mod`
@@ -63,7 +66,9 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     language named `<dir> (<language>)` with its own `index.<language>.scip` —
     merged, first unit's layers win, `reclassify` rules
     re-applied to a cached graph + `rules_stamp`, `indexer`, `process`,
-    `progress`, `snapshot`, `history`) and
+    `progress`, `snapshot`, `history`, `lens`: `Analysis::lens` builds and caches a
+    non-default lens' classification + matrix, `lens_cells` maps an impact's
+    symbols to a lens' cells) and
     `linker` (`Linker` trait + registry `all()`, `run()`: turns symbol `ports`
     — `Port { protocol, role: Provides|Requires, key }` — into
     `EdgeKind::Remote { protocol }` edges) with its two linkers `http_link`
@@ -71,15 +76,16 @@ matrix. POC plan and task split: `docs/plan.md`. Rust (cargo), local only — no
     and `rpc_link` (GWT `gwt-rpc` `Requires` ports to the classes implementing
     the sync service, found from the type hierarchy; one or several roots) and
     `session` (`Session`: owns cached analyses — working trees by canonical
-    path + fingerprint, commit snapshots — generations and paging, `reclassify`;
-    API mirrors the Tauri commands).
+    path + fingerprint, commit snapshots — generations and paging, `reclassify`,
+    `lenses`/`matrix`/`impact_cells` per lens; API mirrors the Tauri commands).
 - `crates/cli` — bin `structure` (`analyze`, `impact`). Keep `main` thin.
 - `crates/wasm` (`structure-wasm`) — in-memory PR analysis for the browser
   extension (`analyze_pr`, JS glue in `wasm.rs`); `scripts/build-wasm.sh`.
 - `app/` — Tauri 2 app: `src-tauri` (thin commands over a managed `Session`), `ui` (Vite + Svelte
   5 + TS, vitest): `src/api.ts` backend wrappers over the generated wire types
   in `src/generated/` (never hand-edited), `src/stores/` rune stores (analysis, impact, selection,
-  git, options; cross-store actions in `session.ts`), `src/*.ts` geometry helpers, `src/workspace/` panel registry +
+  git, options, lenses; cross-store actions in `session.ts`), `src/*.ts` geometry helpers
+  (`lens.ts`: lens ids and pure rules), `src/workspace/` panel registry +
   dockview glue + `context.ts` (`ViewContext`: what views read and do, instead of the stores; per-panel display options in `displays.svelte.ts`/`paneldisplay.ts`), `src/lib/components` Svelte components (`matrix/`, `workspace/`, `ui/`). See `app/README.md`.
 - `docs/` — `plan.md`, `api.md` (Tauri API contract), `samples/*.json`.
 - `scripts/` — fetch and index fixtures; `tests/golden/` — expected classifications.

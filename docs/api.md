@@ -31,8 +31,14 @@ invoke<Impact>("impact", { path: string, base: string | null, head: string | nul
 invoke<History>("history", { path: string, limit: number | null });
 invoke<Diff>("diff", { path: string, base: string | null, head: string | null });
 invoke<CellSymbols>("cell_symbols", {
-  paths: string[], head: string | null, generation: number, cells: string[],
-  offset: number | null, limit: number | null,
+  paths: string[], head: string | null, generation: number, lens: string | null,
+  cells: string[], offset: number | null, limit: number | null,
+});
+invoke<LensInfo[]>("lenses");
+invoke<Matrix>("matrix", { paths: string[], head: string | null, generation: number, lens: string });
+invoke<LensCells>("impact_cells", {
+  path: string, head: string | null, lens: string,
+  changed: string[], impacted: ImpactedSymbol[],
 });
 ```
 
@@ -81,8 +87,9 @@ invoke<CellSymbols>("cell_symbols", {
   `index.scip`. The result then carries `matrix`, the snapshot's matrix: show
   it instead of the working-tree one (cells as of that commit; the impact ids
   refer to it). With `head = null`, `matrix` is absent.
-- `cell_symbols(paths, head, generation, cells, offset, limit)`: the top-level symbols of
-  the given cell ids (the matrix carries counts only), sorted by (name, id),
+- `cell_symbols(paths, head, generation, lens, cells, offset, limit)`: the top-level symbols of
+  the given cell ids (the matrix carries counts only) of lens `lens` (null: the
+  default lens, `layer-domain`; an unknown id is an error), sorted by (name, id),
   concatenated in the order of `cells`. `paths` is the set given to `analyze`
   (same key scheme). `head = null` reads the working-tree
   analysis, otherwise the snapshot of that commit: pass the full SHA of
@@ -96,6 +103,36 @@ invoke<CellSymbols>("cell_symbols", {
   commit snapshots (vscode: ~3.5 GB each); snapshots never evict working trees.
   `docs/samples/cell-symbols.json` maps cell ids to their symbols, the data
   the browser-only dev mode serves for `cell_symbols`.
+- `lenses()`: the lenses a matrix can be requested in (`LensInfo { id, label }`),
+  the default first. A lens is a way of quotienting the graph into cells; rows
+  are layers in every lens. `layer-domain` (default) is the matrix `analyze`
+  returns: columns are the domains inferred by the rules, cell ids
+  `<layer>:<domain>`. `layer-package`: columns are the symbol's raw module
+  path as the frontend wrote it (Java/Pharo package, TS file directory; no
+  package: `(default)`), no inference, nested into `domain_tree` (single-child
+  chains collapsed, as for module domains); cell ids are namespaced,
+  `package/<layer>:<path>`, so they never collide with another lens' ids.
+  With several projects the columns are `<project>/<path>`, one tree node per
+  project, as for domains.
+- `matrix(paths, head, generation, lens)`: the matrix of a cached analysis
+  (same `paths`, `head` and `generation` as `cell_symbols`, same errors)
+  through `lens`. It carries the analysis' `generation`, `project(s)`,
+  `layers`, `warnings` and `stats`; `edges`, `http_edges` and `rpc_edges` are
+  quotiented the same way. The default lens gives the matrix `analyze` (or the
+  impact's snapshot) returned. Another lens is built once per analysis (from
+  the cached graph and classification, no parsing) and cached with it; a
+  `reclassify` builds it again.
+- `impact_cells(path, head, lens, changed, impacted)`: the cells of an impact
+  of `path` in `lens`, from its `changed_symbols` and `impacted_symbols`
+  (`head` = `Impact.head`): a cell holding a changed symbol is changed, else
+  impacted at the smallest distance of its symbols (the highlight aggregate
+  step with the lens' cell mapping), sorted as `Impact` sorts its cells. The
+  symbols are mapped with the analysis cached now for that working tree or
+  commit (no generation check: an impact carries none). For the default lens
+  it gives the impact's own `changed_cells` / `impacted_cells`.
+  The browser-only samples and the viewer offer the default lens only
+  (`Backend.capabilities.lenses`; `Backend.lenses`, `matrix` and `impactCells`
+  are absent).
 - `impact` reuses the cached analysis instead of re-analysing: a commit
   snapshot is immutable, so `impact(path, base, head)` analyses `head` once;
   for the working tree the cached analysis is reused while the working tree
@@ -214,6 +251,11 @@ interface Impact {
 }
 interface ImpactedCell { id: string; distance: number }
 interface ImpactedSymbol { id: string; distance: number }
+interface LensInfo { id: string; label: string } // "layer-domain" (default), "layer-package"
+interface LensCells {         // an impact's cells in one lens (`impact_cells`)
+  changed_cells: string[];
+  impacted_cells: ImpactedCell[];
+}
 
 interface History { dirty: boolean; commits: Commit[] } // newest first
 interface Commit {

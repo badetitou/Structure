@@ -2,7 +2,9 @@
 //! (managed state). They run it off the async runtime, emit its progress as
 //! `analysis-progress` events and turn its errors into strings.
 
-use structure_core::model::{CellSymbols, Diff, History, Impact, Matrix, Progress};
+use structure_core::model::{
+    CellSymbols, Diff, History, Impact, ImpactedSymbol, LensCells, LensInfo, Matrix, Progress,
+};
 use structure_core::pipeline::Options;
 use structure_core::session::Session;
 use tauri::{AppHandle, Emitter, Manager};
@@ -63,19 +65,68 @@ pub async fn impact(
 
 /// Symbols of the given cells, paged. `generation` is `Matrix::generation` of
 /// the matrix on screen; `head` is the full SHA from `Impact::head`, or null
-/// for the working tree.
+/// for the working tree; `lens` the lens of the cell ids (null: the default).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn cell_symbols(
     app: AppHandle,
     paths: Vec<String>,
     head: Option<String>,
     generation: u64,
+    lens: Option<String>,
     cells: Vec<String>,
     offset: Option<usize>,
     limit: Option<usize>,
 ) -> Result<CellSymbols, String> {
     with_session(app, move |_, s| {
-        s.cell_symbols(&paths, head.as_deref(), generation, &cells, offset, limit)
+        s.cell_symbols(
+            &paths,
+            head.as_deref(),
+            generation,
+            lens.as_deref(),
+            &cells,
+            offset,
+            limit,
+        )
+    })
+    .await
+}
+
+/// The lenses a matrix can be requested in, the default first.
+#[tauri::command]
+pub fn lenses() -> Vec<LensInfo> {
+    Session::lenses()
+}
+
+/// The matrix of a cached analysis (same `paths`, `head` and `generation` as
+/// `cell_symbols`) through lens `lens`.
+#[tauri::command]
+pub async fn matrix(
+    app: AppHandle,
+    paths: Vec<String>,
+    head: Option<String>,
+    generation: u64,
+    lens: String,
+) -> Result<Matrix, String> {
+    with_session(app, move |_, s| {
+        s.matrix(&paths, head.as_deref(), generation, &lens)
+    })
+    .await
+}
+
+/// The cells of an impact of `path` (`head` = `Impact::head`) in lens `lens`,
+/// from its changed and impacted symbols.
+#[tauri::command]
+pub async fn impact_cells(
+    app: AppHandle,
+    path: String,
+    head: Option<String>,
+    lens: String,
+    changed: Vec<String>,
+    impacted: Vec<ImpactedSymbol>,
+) -> Result<LensCells, String> {
+    with_session(app, move |_, s| {
+        s.impact_cells(&path, head.as_deref(), &lens, &changed, &impacted)
     })
     .await
 }

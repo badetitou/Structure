@@ -4,7 +4,14 @@ import { PanelDisplays } from "./displays.svelte";
 import { snapshot } from "./paneldisplay";
 import type { PanelDisplay } from "./paneldisplay";
 
-const globals = (): PanelDisplay => ({ mode: "normal", transposed: false, aligned: true, showHttp: true, showRpc: true });
+const globals = (): PanelDisplay => ({
+  mode: "normal",
+  transposed: false,
+  aligned: true,
+  showHttp: true,
+  showRpc: true,
+  lens: "layer-domain",
+});
 
 function setup() {
   let defaults = globals();
@@ -34,7 +41,7 @@ describe("panel displays", () => {
 
   it("keep a panel's stored options and do not write them back", () => {
     const { d, writes, persist } = setup();
-    const display = { mode: "flame", transposed: true, aligned: false, showHttp: false, showRpc: false } as const;
+    const display = { mode: "flame", transposed: true, aligned: false, showHttp: false, showRpc: false, lens: "layer-package" } as const;
     const s = d.attach("matrix-2", { display }, persist("matrix-2"));
     expect(snapshot(s)).toEqual(display);
     expect(writes.has("matrix-2")).toBe(false);

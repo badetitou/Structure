@@ -4,12 +4,15 @@
 // store directly.
 import type { Impact, Matrix } from "../api";
 import { selectionDiff } from "../history";
+import { DEFAULT_LENS } from "../lens";
 import type { Selection } from "../history";
+import type { ViewCell } from "../domaintree";
 import { retainSelection } from "../matrixsel";
 import { clickSelection, sameSelection } from "../overlays";
 import { analysis } from "./analysis.svelte";
 import { git } from "./git.svelte";
 import { impact } from "./impact.svelte";
+import { lenses } from "./lenses.svelte";
 import { selection } from "./selection.svelte";
 import { shown } from "./shown";
 
@@ -19,6 +22,7 @@ export async function load(input: string | string[]): Promise<void> {
   reset();
   const req = analysis.loadId;
   if (!(await analysis.load(paths))) return;
+  void lenses.refresh();
   if (analysis.multi) return; // no git history across several repos
   await git.loadHistory(paths[0], () => req === analysis.loadId);
 }
@@ -29,16 +33,30 @@ export function reset() {
   impact.reset();
   selection.reset();
   git.reset();
+  lenses.reset();
 }
 
 /** Runs `change`; when it changes the matrix shown, the selection is dropped (cell ids of
- * another snapshot are not comparable) or, with `keep` (only the rules changed), carried over. */
+ * another snapshot are not comparable) or, with `keep` (only the rules changed), carried over
+ * (see `keepSelection`). */
 function changeShown(change: () => void, keep: boolean) {
   const before = shown.matrix;
   const sel = selection.selected;
+  const lens = selection.lens;
   change();
   const now = shown.matrix;
-  if (now !== before) selection.select(keep && sel && now ? retainSelection(sel, now) : null);
+  if (now === before) return;
+  if (keep && sel && now) keepSelection(sel, lens, now);
+  else selection.select(null);
+}
+
+/** Carries `sel`, selected in `lens`, over to `now` (the new matrix shown, same snapshot with
+ * reloaded rules), in its lens: retained against that lens' matrix of `now`, or kept as is
+ * while that one loads (the panel of that lens then keeps it in step, see `SelectionStore.sync`). */
+function keepSelection(sel: ViewCell, lens: string, now: Matrix) {
+  if (lens === DEFAULT_LENS) return selection.select(retainSelection(sel, now));
+  const lensed = lenses.matrix(lens, now, shown.head);
+  selection.select(lensed ? retainSelection(sel, lensed) : sel, lens);
 }
 
 /** Diff of two refs (null = HEAD / working tree); shows the commit snapshot when there is one.
@@ -133,10 +151,14 @@ export function runTypedImpact(base: string | null, head: string | null) {
  * exists and the impact shown (or running) is computed again with the new rules. */
 function applyReclassified(m: Matrix) {
   const sel = selection.selected;
+  const lens = selection.lens;
   const showsWork = shown.matrix === analysis.work;
   analysis.work = m;
   // The old generation is gone: list the kept cell's symbols again.
-  if (showsWork) selection.select(sel ? retainSelection(sel, m) : null);
+  if (showsWork) {
+    if (sel) keepSelection(sel, lens, m);
+    else selection.select(null);
+  }
   const range = impact.range;
   impact.markStale();
   if (range) {

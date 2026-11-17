@@ -14,6 +14,17 @@ pub fn cell_of(graph: &Graph, cls: &Classification, symbol_id: &str) -> Option<S
     Some(Cell::id_for(&p.layer, &p.domain))
 }
 
+/// Cell id of a placement under an id `prefix`: `<prefix><layer>:<domain>`.
+/// The empty prefix gives [`Cell::id_for`], the ids of the default lens; other
+/// lenses namespace theirs (see `crate::lens`) so ids never collide across lenses.
+pub fn prefixed_id(prefix: &str, layer: &LayerId, domain: &str) -> String {
+    if prefix.is_empty() {
+        Cell::id_for(layer, domain)
+    } else {
+        format!("{prefix}{}", Cell::id_for(layer, domain))
+    }
+}
+
 /// Symbol edges lifted to top-level ids, deduped with counts, self-loops and
 /// edges with an unresolved endpoint removed. Sorted by (from, to, kind).
 pub fn class_edges(graph: &Graph) -> Vec<(String, String, EdgeKind, u32)> {
@@ -88,13 +99,25 @@ pub fn cell_symbols(
     offset: usize,
     limit: usize,
 ) -> CellSymbols {
+    cell_symbols_in(graph, cls, "", cell_ids, offset, limit)
+}
+
+/// [`cell_symbols`] for cell ids built with `prefix` (see [`prefixed_id`]).
+pub fn cell_symbols_in(
+    graph: &Graph,
+    cls: &Classification,
+    prefix: &str,
+    cell_ids: &[String],
+    offset: usize,
+    limit: usize,
+) -> CellSymbols {
     let mut per_cell: HashMap<&str, Vec<CellSymbol>> =
         cell_ids.iter().map(|c| (c.as_str(), Vec::new())).collect();
     for s in graph.symbols.iter().filter(|s| s.container.is_none()) {
         let Some(p) = cls.placements.get(&s.id) else {
             continue;
         };
-        let id = Cell::id_for(&p.layer, &p.domain);
+        let id = prefixed_id(prefix, &p.layer, &p.domain);
         if let Some(v) = per_cell.get_mut(id.as_str()) {
             v.push(CellSymbol {
                 id: s.id.clone(),
@@ -136,6 +159,18 @@ pub fn build(
     project: &str,
     elapsed_ms: u64,
 ) -> Matrix {
+    build_in(graph, cls, layers, project, elapsed_ms, "")
+}
+
+/// [`build`] with cell ids built with `prefix` (see [`prefixed_id`]).
+pub fn build_in(
+    graph: &Graph,
+    cls: &Classification,
+    layers: &Layers,
+    project: &str,
+    elapsed_ms: u64,
+    prefix: &str,
+) -> Matrix {
     // Keyed by (layer rank, layer id, domain): rows in layer order.
     let mut sizes: BTreeMap<(usize, &str, &str), usize> = BTreeMap::new();
     for s in graph.symbols.iter().filter(|s| s.container.is_none()) {
@@ -161,7 +196,7 @@ pub fn build(
         .map(|((_, layer, domain), size)| {
             let layer = LayerId::from(layer);
             Cell {
-                id: Cell::id_for(&layer, domain),
+                id: prefixed_id(prefix, &layer, domain),
                 layer,
                 domain: domain.to_string(),
                 size,
@@ -181,7 +216,7 @@ pub fn build(
         .map(|s| {
             let p = cls.placements.get(&s.id)?;
             index
-                .get(Cell::id_for(&p.layer, &p.domain).as_str())
+                .get(prefixed_id(prefix, &p.layer, &p.domain).as_str())
                 .copied()
         })
         .collect();
@@ -513,6 +548,32 @@ mod tests {
                 (id("entry:account"), id("business:account"), 1),
                 (id("entry:account"), id("persistence:account"), 1),
             ]
+        );
+    }
+
+    #[test]
+    fn prefixed_ids_namespace_cells_and_keep_the_rest() {
+        let (g, cls) = fixture();
+        let plain = build(&g, &cls, &java_layers(), "p", 3);
+        let same = build_in(&g, &cls, &java_layers(), "p", 3, "");
+        assert_eq!(plain, same, "the empty prefix is the default lens");
+        let pre = build_in(&g, &cls, &java_layers(), "p", 3, "x/");
+        let ids: Vec<_> = pre.cells.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "x/entry:account",
+                "x/business:account",
+                "x/persistence:account",
+                "x/persistence:billing"
+            ]
+        );
+        assert_eq!(pre.edges, plain.edges, "edges are by cell index");
+        let page = cell_symbols_in(&g, &cls, "x/", &["x/business:account".into()], 0, 10);
+        assert_eq!(page.total, 2);
+        assert_eq!(
+            cell_symbols_in(&g, &cls, "x/", &["business:account".into()], 0, 10).total,
+            0
         );
     }
 

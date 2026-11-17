@@ -10,6 +10,7 @@
   import * as ToggleGroup from "$lib/components/ui/toggle-group";
   import * as Tooltip from "$lib/components/ui/tooltip";
   import { canAlign } from "../../aligned";
+  import { lensSelectorVisible } from "../../lens";
   import ThemeSwitch from "../../ThemeSwitch.svelte";
   import { parseMode } from "../../mode";
   import { getViewContext } from "../../workspace/context";
@@ -79,6 +80,21 @@
     <ToggleGroup.Item value="dense" aria-label="Dense view" class="px-2">Dense</ToggleGroup.Item>
     <ToggleGroup.Item value="flame" aria-label="Flame view: deep domains, widths by size" class="px-2">Flame</ToggleGroup.Item>
   </ToggleGroup.Root>
+  {#if lensSelectorVisible(lens.available)}
+    <!-- The lens of the active matrix panel: how the backend groups the columns. -->
+    <ToggleGroup.Root
+      type="single"
+      variant="outline"
+      size="sm"
+      aria-label="Matrix lens"
+      value={lens.id}
+      onValueChange={(v) => v && actions.setLens(v)}
+    >
+      {#each lens.available as l (l.id)}
+        <ToggleGroup.Item value={l.id} aria-label={`Lens: ${l.label}`} class="px-2">{l.label}</ToggleGroup.Item>
+      {/each}
+    </ToggleGroup.Root>
+  {/if}
   <Tooltip.Root>
     <Tooltip.Trigger>
       {#snippet child({ props })}

@@ -4,6 +4,7 @@ import { vi } from "vitest";
 import * as api from "../api";
 import type { Capabilities, Impact, Matrix } from "../api";
 import type { ViewCell } from "../domaintree";
+import { DEFAULT_LENSES } from "../lens";
 import { load, reset } from "./session";
 
 export const mocked = vi.mocked(api);
@@ -46,13 +47,14 @@ export const twoProjects = [
   { name: "back", root: "/back", language: "java" as const },
 ];
 
-export const allCaps: Capabilities = { history: true, diff: true, pickFolder: true, reclassify: true, highlightSources: ["git-diff"] };
-export const viewerCaps: Capabilities = { history: false, diff: false, pickFolder: false, reclassify: false, highlightSources: ["git-diff"] };
+export const allCaps: Capabilities = { history: true, diff: true, pickFolder: true, reclassify: true, highlightSources: ["git-diff"], lenses: DEFAULT_LENSES };
+export const viewerCaps: Capabilities = { history: false, diff: false, pickFolder: false, reclassify: false, highlightSources: ["git-diff"], lenses: DEFAULT_LENSES };
 
 /** Fresh mocks (full capabilities) and empty stores; late answers of a previous test are ignored. */
 export function setup() {
   vi.resetAllMocks();
   mocked.capabilities.mockReturnValue(allCaps);
+  mocked.lenses.mockResolvedValue(DEFAULT_LENSES);
   reset();
 }
 

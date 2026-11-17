@@ -13,8 +13,11 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, bail};
 
+use crate::lens::Lens;
 use crate::matrix;
-use crate::model::{CellSymbols, Diff, History, Impact, Matrix, Progress};
+use crate::model::{
+    CellSymbols, Diff, History, Impact, ImpactedSymbol, LensCells, LensInfo, Matrix, Progress,
+};
 use crate::pipeline::{self, Analysis, Options};
 
 /// One cached analysis: the working tree of a project (`fingerprint` set) or
@@ -480,19 +483,15 @@ impl Session {
         pipeline::impact_in_snapshot(&dir, &analysis, base_sha.as_deref(), &sha)
     }
 
-    /// Symbols of the given cells (the matrix carries counts only), paged.
-    /// `generation` is `Matrix::generation` of the matrix the caller shows;
-    /// `head` is the full SHA from `Impact::head`, or `None` for the working
-    /// tree.
-    pub fn cell_symbols(
+    /// The cached analysis a caller's matrix comes from: of the projects at
+    /// `paths` (working tree), or of commit `head` (the full SHA from
+    /// `Impact::head`); `generation` is `Matrix::generation` of that matrix.
+    fn cached(
         &self,
         paths: &[String],
         head: Option<&str>,
         generation: u64,
-        cells: &[String],
-        offset: Option<usize>,
-        limit: Option<usize>,
-    ) -> anyhow::Result<CellSymbols> {
+    ) -> anyhow::Result<Arc<Analysis>> {
         let (_, key) = canonical_many(paths)?;
         let key = match head {
             Some(h) => snapshot_key(&key, h),
@@ -503,13 +502,85 @@ impl Session {
             .get(&key)?
             .ok_or_else(|| anyhow!("analysis changed, re-run Analyze"))?;
         check_generation(cached_gen, generation)?;
-        Ok(matrix::cell_symbols(
+        Ok(a)
+    }
+
+    /// The lenses a matrix can be requested in, the default first.
+    pub fn lenses() -> Vec<LensInfo> {
+        crate::lens::all()
+    }
+
+    /// The matrix of a cached analysis (same `paths`, `head` and `generation`
+    /// as [`Session::cell_symbols`]) through lens `lens` (an id of
+    /// [`Session::lenses`]). It carries the analysis' generation; the default
+    /// lens gives the matrix [`Session::analyze`] returned. Another lens is
+    /// built once per analysis, then cached with it.
+    pub fn matrix(
+        &self,
+        paths: &[String],
+        head: Option<&str>,
+        generation: u64,
+        lens: &str,
+    ) -> anyhow::Result<Matrix> {
+        let lens = Lens::parse(lens)?;
+        let a = self.cached(paths, head, generation)?;
+        Ok(a.lens(lens)?.matrix().clone())
+    }
+
+    /// Symbols of the given cells (the matrix carries counts only), paged.
+    /// `generation` is `Matrix::generation` of the matrix the caller shows;
+    /// `head` is the full SHA from `Impact::head`, or `None` for the working
+    /// tree; `lens` the lens of the cell ids (`None`: the default lens).
+    #[allow(clippy::too_many_arguments)]
+    pub fn cell_symbols(
+        &self,
+        paths: &[String],
+        head: Option<&str>,
+        generation: u64,
+        lens: Option<&str>,
+        cells: &[String],
+        offset: Option<usize>,
+        limit: Option<usize>,
+    ) -> anyhow::Result<CellSymbols> {
+        let lens = Lens::parse_or_default(lens)?;
+        let a = self.cached(paths, head, generation)?;
+        let view = a.lens(lens)?;
+        Ok(matrix::cell_symbols_in(
             &a.graph,
-            &a.classification,
+            view.classification(),
+            lens.cell_prefix(),
             cells,
             offset.unwrap_or(0),
             page_limit(limit),
         ))
+    }
+
+    /// The cells of an impact of the project at `path` in lens `lens`, from
+    /// its `changed` and `impacted` symbols (`Impact::changed_symbols` and
+    /// `impacted_symbols`); `head` is `Impact::head`. The symbols are mapped
+    /// with the analysis cached now for that working tree or commit (no
+    /// generation: an impact carries none). The default lens gives the
+    /// impact's own cells.
+    pub fn impact_cells(
+        &self,
+        path: &str,
+        head: Option<&str>,
+        lens: &str,
+        changed: &[String],
+        impacted: &[ImpactedSymbol],
+    ) -> anyhow::Result<LensCells> {
+        let lens = Lens::parse(lens)?;
+        let (_, key) = canonical(path)?;
+        let key = match head {
+            Some(h) => snapshot_key(&key, h),
+            None => key,
+        };
+        let (_, _, _, a) = self
+            .cache
+            .get(&key)?
+            .ok_or_else(|| anyhow!("analysis changed, re-run Analyze"))?;
+        let view = a.lens(lens)?;
+        Ok(pipeline::lens_cells(&view, changed, impacted))
     }
 
     /// Commits of the project at `path`, newest first (200 by default).
@@ -667,13 +738,13 @@ mod tests {
         assert!(m.generation > 0 && !m.cells.is_empty());
         let cells: Vec<String> = m.cells.iter().map(|c| c.id.clone()).collect();
         let syms = s
-            .cell_symbols(&paths, None, m.generation, &cells, None, None)
+            .cell_symbols(&paths, None, m.generation, None, &cells, None, None)
             .unwrap();
         assert!(syms.total >= 2, "A and B (and their methods)");
         let m2 = s.analyze(&paths, &no_scip(), &|_| {}).unwrap();
         assert!(m2.generation > m.generation);
         let e = s
-            .cell_symbols(&paths, None, m.generation, &cells, None, None)
+            .cell_symbols(&paths, None, m.generation, None, &cells, None, None)
             .unwrap_err();
         assert_eq!(format!("{e:#}"), "analysis changed, re-run Analyze");
 
@@ -686,7 +757,7 @@ mod tests {
             vec!["computing impact".to_string(), "done".to_string()]
         );
         assert!(
-            s.cell_symbols(&paths, None, m2.generation, &cells, None, None)
+            s.cell_symbols(&paths, None, m2.generation, None, &cells, None, None)
                 .is_ok(),
             "unchanged tree keeps the analysis"
         );
@@ -694,7 +765,7 @@ mod tests {
         std::fs::write(repo.join("app/src/C.java"), "class C {}\n").unwrap();
         s.impact(&root, Some(&c1), None, &|_| {}).unwrap();
         assert!(
-            s.cell_symbols(&paths, None, m2.generation, &cells, None, None)
+            s.cell_symbols(&paths, None, m2.generation, None, &cells, None, None)
                 .is_err()
         );
 
@@ -713,7 +784,7 @@ mod tests {
         assert_eq!(*steps.lock().unwrap(), vec!["done".to_string()]);
         // Snapshot cells are found under the snapshot key only.
         let e = s
-            .cell_symbols(&paths, Some(&c1), 1, &cells, None, None)
+            .cell_symbols(&paths, Some(&c1), 1, None, &cells, None, None)
             .unwrap_err();
         assert!(format!("{e:#}").contains("re-run Analyze"));
 
@@ -730,6 +801,127 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&repo);
     }
+
+    #[test]
+    fn lenses_matrices_symbols_and_impact_cells() {
+        use crate::pipeline::test_support::git_ok;
+        let (repo, c1, _) = temp_repo("lens");
+        let root = repo.join("app");
+        let dir = root.join("src/com/shop/account");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Acc.java"),
+            "package com.shop.account;\nclass Acc { void m() {} }\n",
+        )
+        .unwrap();
+        git_ok(&repo, &["add", "."]);
+        git_ok(&repo, &["commit", "-q", "-m", "c3"]);
+        let path = root.to_string_lossy().into_owned();
+        let paths = vec![path.clone()];
+        let s = Session::with_impact_options(no_scip());
+        let ids: Vec<String> = Session::lenses().into_iter().map(|l| l.id).collect();
+        assert_eq!(ids, ["layer-domain", "layer-package"]);
+
+        let m = s.analyze(&paths, &no_scip(), &|_| {}).unwrap();
+        let g = m.generation;
+        // The default lens is the analysed matrix itself.
+        assert_eq!(s.matrix(&paths, None, g, "layer-domain").unwrap(), m);
+        let p = s.matrix(&paths, None, g, "layer-package").unwrap();
+        assert_eq!(
+            (p.generation, &p.layers, &p.stats),
+            (g, &m.layers, &m.stats)
+        );
+        assert!(
+            p.cells.iter().all(|c| c.id.starts_with("package/")),
+            "{p:?}"
+        );
+        let mut domains = p.domains.clone();
+        domains.sort();
+        assert_eq!(domains, ["(default)", "com.shop.account"]);
+        assert!(p.domain_tree.is_some());
+        let size = |m: &Matrix| m.cells.iter().map(|c| c.size).sum::<usize>();
+        assert_eq!(size(&p), size(&m));
+
+        // Built once per analysis, then cached with it.
+        let a = s.cached(&paths, None, g).unwrap();
+        assert_eq!(a.lenses_built(), 1);
+        assert_eq!(s.matrix(&paths, None, g, "layer-package").unwrap(), p);
+        assert_eq!(a.lenses_built(), 1);
+        let e = s.matrix(&paths, None, g, "nope").unwrap_err();
+        assert_eq!(format!("{e:#}"), "unknown lens nope");
+        assert!(s.matrix(&paths, None, g + 100, "layer-package").is_err());
+
+        // Symbols of a lens' cells.
+        let pcells: Vec<String> = p.cells.iter().map(|c| c.id.clone()).collect();
+        let acc: Vec<String> = p
+            .cells
+            .iter()
+            .filter(|c| c.domain == "com.shop.account")
+            .map(|c| c.id.clone())
+            .collect();
+        let syms = s
+            .cell_symbols(&paths, None, g, Some("layer-package"), &acc, None, None)
+            .unwrap();
+        let names: Vec<&str> = syms.symbols.iter().map(|x| x.name.as_str()).collect();
+        assert_eq!(names, ["Acc"]);
+        let all = s
+            .cell_symbols(&paths, None, g, Some("layer-package"), &pcells, None, None)
+            .unwrap();
+        assert_eq!(all.total, size(&m));
+        // Ids of one lens mean nothing in another.
+        let none = s
+            .cell_symbols(&paths, None, g, None, &pcells, None, None)
+            .unwrap();
+        assert_eq!(none.total, 0);
+
+        // Impact cells per lens: the default lens gives the impact's own.
+        let i = s.impact(&path, Some(&c1), None, &|_| {}).unwrap();
+        let own = s
+            .impact_cells(
+                &path,
+                None,
+                "layer-domain",
+                &i.changed_symbols,
+                &i.impacted_symbols,
+            )
+            .unwrap();
+        assert_eq!(own.changed_cells, i.changed_cells);
+        assert_eq!(own.impacted_cells, i.impacted_cells);
+        let pk = s
+            .impact_cells(
+                &path,
+                None,
+                "layer-package",
+                &i.changed_symbols,
+                &i.impacted_symbols,
+            )
+            .unwrap();
+        assert!(!pk.changed_cells.is_empty());
+        assert!(
+            pk.changed_cells.iter().all(|c| pcells.contains(c)),
+            "{pk:?}"
+        );
+        assert!(
+            pk.changed_cells
+                .iter()
+                .any(|c| c.ends_with(":com.shop.account"))
+        );
+
+        // Reclassify: a fresh analysis, its lenses built again.
+        let r = s.reclassify(&paths).unwrap();
+        assert_eq!(
+            s.cached(&paths, None, r.generation).unwrap().lenses_built(),
+            0
+        );
+        assert_eq!(
+            s.matrix(&paths, None, r.generation, "layer-package")
+                .unwrap()
+                .cells,
+            p.cells
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
     const VIEW_RULES: &str = "[[layer]]\nid = \"view\"\nlabel = \"Views\"\norder = 0\n\
                               [[rule]]\nlayer = \"view\"\nname_suffix = [\"A\"]\n";
 
@@ -781,12 +973,12 @@ mod tests {
         // A fresh generation: the old matrix's requests fail, the new one's work.
         assert!(r.generation > m.generation);
         let e = s
-            .cell_symbols(&paths, None, m.generation, &old_cells, None, None)
+            .cell_symbols(&paths, None, m.generation, None, &old_cells, None, None)
             .unwrap_err();
         assert_eq!(format!("{e:#}"), "analysis changed, re-run Analyze");
         let view_cells: Vec<String> = view.iter().map(|c| c.to_string()).collect();
         let syms = s
-            .cell_symbols(&paths, None, r.generation, &view_cells, None, None)
+            .cell_symbols(&paths, None, r.generation, None, &view_cells, None, None)
             .unwrap();
         assert_eq!(
             syms.symbols
@@ -808,8 +1000,16 @@ mod tests {
         let e = format!("{:#}", s.reclassify(&paths).unwrap_err());
         assert!(e.contains(".structure/rules.toml"), "{e}");
         assert!(
-            s.cell_symbols(&paths, None, again.generation, &view_cells, None, None)
-                .is_ok()
+            s.cell_symbols(
+                &paths,
+                None,
+                again.generation,
+                None,
+                &view_cells,
+                None,
+                None
+            )
+            .is_ok()
         );
         let _ = std::fs::remove_dir_all(&repo);
     }
@@ -849,7 +1049,7 @@ mod tests {
             vec!["computing impact".to_string(), "done".to_string()]
         );
         assert!(
-            s.cell_symbols(&paths, None, r.generation, &[], None, None)
+            s.cell_symbols(&paths, None, r.generation, None, &[], None, None)
                 .is_ok()
         );
         // The commit snapshot was dropped: analysed again.

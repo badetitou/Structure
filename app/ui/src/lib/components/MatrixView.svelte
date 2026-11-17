@@ -144,7 +144,10 @@
   const shownImpact = $derived(
     multiView ? multiView.union : impact.current ? aggregateImpact(impact.current, vm.cellMap) : null,
   );
-  const selTile = $derived(selection.selected ? tileById.get(selection.selected.id) : undefined);
+  // A cell selected through another lens has no tile here (the panel says so).
+  const selTile = $derived(
+    selection.selected && selection.lens === lens.id ? tileById.get(selection.selected.id) : undefined,
+  );
   const selWidth = $derived((mode === "dense" ? STROKE_DENSE : STROKE_NORMAL)[1]);
 
   // Publish the aggregated view so the details panel names visible cells.

@@ -69,6 +69,8 @@ pub fn reclassify(a: &Analysis) -> anyhow::Result<Analysis> {
         warnings: a.warnings.clone(),
         layers,
         impact_index: a.impact_index.clone(),
+        // Built with the old classification: not carried over.
+        lenses: Default::default(),
     })
 }
 

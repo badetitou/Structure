@@ -51,8 +51,10 @@ describe("viewerBackend", () => {
       pickFolder: false,
       reclassify: false,
       highlightSources: ["git-diff"],
+      lenses: [{ id: "layer-domain", label: "Layer × domain" }],
     });
-    for (const m of ["history", "diff", "pickFolder", "reclassify", "rulesStamp"] as const) expect(b[m]).toBeUndefined();
+    for (const m of ["history", "diff", "pickFolder", "reclassify", "rulesStamp", "lenses", "matrix", "impactCells"] as const)
+      expect(b[m]).toBeUndefined();
   });
 
   it("refuses an impact without matrix", () => {
@@ -77,7 +79,7 @@ describe("api backend seam", () => {
 
   it("delegates the exported functions to the current backend", async () => {
     const fake: Backend = {
-      capabilities: { history: true, diff: true, pickFolder: true, reclassify: true, highlightSources: [] },
+      capabilities: { history: true, diff: true, pickFolder: true, reclassify: true, highlightSources: [], lenses: [] },
       pickFolder: vi.fn(async () => "f"),
       analyze: vi.fn(async () => ({}) as never),
       reclassify: vi.fn(async () => ({}) as never),
@@ -111,6 +113,7 @@ describe("api backend seam", () => {
       pickFolder: true,
       reclassify: false,
       highlightSources: ["git-diff"],
+      lenses: [{ id: "layer-domain", label: "Layer × domain" }],
     });
     expect(b.reclassify).toBeUndefined();
     expect(b.rulesStamp).toBeUndefined();

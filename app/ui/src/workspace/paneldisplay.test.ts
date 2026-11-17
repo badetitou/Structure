@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import { activeOf, displayParams, enlist, forget, nextInstanceId, parseDisplay, touch } from "./paneldisplay";
 import type { PanelDisplay } from "./paneldisplay";
 
-const defaults: PanelDisplay = { mode: "dense", transposed: true, aligned: false, showHttp: false, showRpc: true };
+const defaults: PanelDisplay = {
+  mode: "dense",
+  transposed: true,
+  aligned: false,
+  showHttp: false,
+  showRpc: true,
+  lens: "layer-domain",
+};
 
 describe("panel display params", () => {
   it("adopt the global defaults when the params hold no display", () => {
@@ -14,14 +21,26 @@ describe("panel display params", () => {
   });
 
   it("read a stored display, field by field", () => {
-    const display = { mode: "flame", transposed: false, aligned: true, showHttp: true, showRpc: false };
+    const display = { mode: "flame", transposed: false, aligned: true, showHttp: true, showRpc: false, lens: "layer-package" };
     expect(parseDisplay({ display }, defaults)).toEqual({ display, stored: true });
     // Missing or malformed fields take the defaults'; an unknown mode is the normal view.
     expect(parseDisplay({ display: { mode: "weird", transposed: "yes", showRpc: false } }, defaults)).toEqual({
-      display: { mode: "normal", transposed: true, aligned: false, showHttp: false, showRpc: false },
+      display: { mode: "normal", transposed: true, aligned: false, showHttp: false, showRpc: false, lens: "layer-domain" },
       stored: true,
     });
     expect(parseDisplay({ display: {} }, defaults).display).toEqual(defaults);
+  });
+
+  it("read the lens: a stored id is kept, a missing one is the fallback's, a malformed one the default", () => {
+    const fallback = { ...defaults, lens: "layer-package" };
+    const lens = (display: Record<string, unknown>) => parseDisplay({ display }, fallback).display.lens;
+    expect(lens({ lens: "layer-package" })).toBe("layer-package");
+    expect(lens({ lens: "some-future-lens" })).toBe("some-future-lens");
+    expect(lens({})).toBe("layer-package");
+    expect(lens({ lens: 3 })).toBe("layer-domain");
+    expect(lens({ lens: "" })).toBe("layer-domain");
+    // A panel saved before lenses existed adopts the defaults' lens (the default lens).
+    expect(parseDisplay({ display: { mode: "dense" } }, defaults).display.lens).toBe("layer-domain");
   });
 
   it("store only the display fields", () => {

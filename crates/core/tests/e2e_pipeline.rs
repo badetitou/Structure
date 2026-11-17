@@ -80,6 +80,7 @@ fn check_with(name: &str, root: &Path, opts: &Options, expect_scip: bool) {
         assert!(a.link_stats.is_none(), "{name}: unexpected SCIP link");
     }
     assert!(total.as_secs() < 10, "{name}: analysis too slow: {total:?}");
+    check_lenses(name, &a);
 
     let Some(g) = golden(name) else {
         return;
@@ -160,6 +161,38 @@ fn check_with(name: &str, root: &Path, opts: &Options, expect_scip: bool) {
             );
         }
     }
+}
+
+/// The default lens is the analysed matrix, byte for byte; the package lens
+/// keeps every placed symbol on its layer.
+fn check_lenses(name: &str, a: &Analysis) {
+    use structure_core::lens::Lens;
+    let own = a.lens(Lens::LayerDomain).expect("lens");
+    assert_eq!(
+        serde_json::to_string(own.matrix()).unwrap(),
+        serde_json::to_string(&a.matrix).unwrap(),
+        "{name}: layer-domain lens differs from the matrix"
+    );
+    let pk = a.lens(Lens::LayerPackage).expect("lens");
+    let per_layer = |m: &structure_core::model::Matrix| {
+        let mut out: std::collections::BTreeMap<String, usize> = Default::default();
+        for c in &m.cells {
+            *out.entry(c.layer.to_string()).or_default() += c.size;
+        }
+        out
+    };
+    assert_eq!(
+        per_layer(pk.matrix()),
+        per_layer(&a.matrix),
+        "{name}: layer-package moved symbols across layers"
+    );
+    assert!(
+        pk.matrix()
+            .cells
+            .iter()
+            .all(|c| c.id.starts_with("package/"))
+    );
+    assert!(pk.matrix().domain_tree.is_some());
 }
 
 #[test]

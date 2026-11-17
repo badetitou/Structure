@@ -2,6 +2,7 @@
 // in by the host page. No Tauri, no project, no git history, no diff.
 import type { Backend, CellSymbols, Impact, WireImpact } from "../api";
 import { expandMatrix } from "../expand";
+import { DEFAULT_LENSES } from "../lens";
 
 export interface ViewerData {
   /** Wire impact; its `matrix` is required (it is what gets displayed). */
@@ -17,7 +18,7 @@ export function viewerBackend(data: ViewerData): Backend {
   const impact: Impact = { ...rest, matrix };
   // No folder picker, rules reload, history or diff: those methods are absent.
   return {
-    capabilities: { history: false, diff: false, pickFolder: false, reclassify: false, highlightSources: ["git-diff"] },
+    capabilities: { history: false, diff: false, pickFolder: false, reclassify: false, highlightSources: ["git-diff"], lenses: DEFAULT_LENSES },
     analyze: async () => matrix,
     impact: async () => impact,
     cellSymbols: (_paths, _head, _generation, cells, offset, limit) => data.cellSymbols(cells, offset, limit),

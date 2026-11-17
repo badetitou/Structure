@@ -227,3 +227,33 @@ fn impact_maps_changed_files_to_their_unit() {
     assert_eq!(imp.matrix.map(|m| m.projects.len()), Some(2));
     let _ = std::fs::remove_dir_all(&repo);
 }
+
+#[test]
+fn package_lens_uses_each_language_s_own_modules() {
+    use structure_core::lens::Lens;
+    let (repo, root) = mixed_repo("lens");
+    let a = pipeline::analyze(&root, &offline(), &|_| {}).expect("analyze");
+    let own = a.lens(Lens::LayerDomain).unwrap();
+    assert_eq!(own.matrix(), &a.matrix, "the default lens is the analysis");
+    let view = a.lens(Lens::LayerPackage).unwrap();
+    let m = view.matrix();
+    let mut domains = m.domains.clone();
+    domains.sort();
+    assert_eq!(
+        domains,
+        ["app (java)/com.x.web", "app (typescript)/web/src/app"]
+    );
+    assert_eq!(m.projects, a.matrix.projects);
+    assert!(m.cells.iter().all(|c| c.id.starts_with("package/")));
+    // One tree node per project, as for domains.
+    let tops: Vec<&str> = m
+        .domain_tree
+        .iter()
+        .flatten()
+        .map(|n| n.label.as_str())
+        .collect();
+    assert_eq!(tops, ["app (java)", "app (typescript)"]);
+    // Remote links are quotiented too.
+    assert_eq!(m.http_edges.len(), 1);
+    let _ = std::fs::remove_dir_all(&repo);
+}

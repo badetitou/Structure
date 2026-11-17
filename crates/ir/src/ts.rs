@@ -5,7 +5,7 @@
 //! `UPDATE_TS_TYPES=1 cargo test -p structure-ir generated_ts_types`
 
 use crate::highlight::{Highlight, HighlightRequest};
-use crate::model::{CellSymbols, Diff, History, Impact, Matrix, Progress};
+use crate::model::{CellSymbols, Diff, History, Impact, LensCells, LensInfo, Matrix, Progress};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,6 +25,8 @@ fn export(dir: &Path) -> Result<(), ts_rs::ExportError> {
     Diff::export_all(&cfg)?;
     CellSymbols::export_all(&cfg)?;
     Progress::export_all(&cfg)?;
+    LensInfo::export_all(&cfg)?;
+    LensCells::export_all(&cfg)?;
     HighlightRequest::export_all(&cfg)?;
     Highlight::export_all(&cfg)?;
     Ok(())
