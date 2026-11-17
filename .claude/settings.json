@@ -13,7 +13,9 @@
       "Bash(git diff:*)",
       "Bash(git log:*)",
       "Bash(git branch:*)",
-      "Bash(git show:*)"
+      "Bash(git show:*)",
+      "Bash(scripts/verify.sh:*)",
+      "Bash(gh pr merge:*)"
     ]
   }
 }
