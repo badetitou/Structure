@@ -15,10 +15,11 @@
   import { analysis } from "../../stores/analysis.svelte";
   import { impact } from "../../stores/impact.svelte";
   import { options } from "../../stores/options.svelte";
-  import { clearImpact } from "../../stores/session";
+  import { clearImpact, keepOverlay } from "../../stores/session";
   import { shown } from "../../stores/shown";
   import { folderName } from "../../recent";
   import ImpactRange from "./ImpactRange.svelte";
+  import OverlaySelector from "./OverlaySelector.svelte";
   import OptionsButton from "./OptionsButton.svelte";
   import ViewsMenu from "./workspace/ViewsMenu.svelte";
 
@@ -133,6 +134,16 @@
   <Button variant="outline" size="sm" disabled={!impact.current || impact.busy} onclick={() => clearImpact()}
     >Clear impact</Button
   >
+  {#if impact.selected && !impact.selected.pinned}
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={impact.busy}
+      title="Keep this impact as an overlay: the next impact is added next to it"
+      onclick={() => keepOverlay()}>Keep</Button
+    >
+  {/if}
+  <OverlaySelector />
   {/if}
   {/if}
   <span class="ml-auto flex flex-none items-center gap-1.5">

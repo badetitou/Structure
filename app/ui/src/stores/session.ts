@@ -25,7 +25,7 @@ export async function load(input: string | string[]): Promise<void> {
 /** Back to the empty state; late answers of a previous load are ignored. */
 export function reset() {
   analysis.reset();
-  impact.clear();
+  impact.reset();
   selection.reset();
   git.reset();
 }
@@ -41,20 +41,57 @@ function changeShown(change: () => void, keep: boolean) {
 }
 
 /** Diff of two refs (null = HEAD / working tree); shows the commit snapshot when there is one.
- * Ignored while another impact runs. With `keepSelection` (re-run after a rules reload), a
- * selected cell that still exists in the new matrix stays selected. */
+ * The result becomes the selected overlay (see `ImpactOverlays.add`). Ignored while another
+ * impact runs. With `keepSelection` (re-run after a rules reload), a selected cell that still
+ * exists in the new matrix stays selected. */
 export async function runImpact(base: string | null, head: string | null, keepSelection = false): Promise<void> {
   if (impact.busy || analysis.multi) return;
+  const historySel = git.historySel;
   await impact.run(analysis.project, { base, head }, (res: Impact) =>
-    changeShown(() => (impact.current = res), keepSelection),
+    changeShown(() => impact.add({ base, head }, res, historySel), keepSelection),
   );
 }
 
-/** Drops the impact, the history selection and the diff. */
+/** Drops the impact shown (pinned overlays stay listed), the history selection and the diff. */
 export function clearImpact() {
   git.historySel = null;
   git.clearDiff();
   changeShown(() => impact.clear(), false);
+}
+
+/** The history selection and the diff follow the overlay shown (none shown: both are
+ * dropped); one computed before a rules reload is computed again. */
+function followOverlay() {
+  const o = impact.selected;
+  if (!o) {
+    git.historySel = null;
+    git.clearDiff();
+    return;
+  }
+  git.historySel = o.historySel;
+  if (git.diff?.base !== o.range.base || git.diff?.head !== o.range.head) void git.loadDiff(o.range.base, o.range.head);
+  if (o.stale) void runImpact(o.range.base, o.range.head, true);
+}
+
+/** Shows overlay `id`: the matrix, details, history selection and diff follow it (see
+ * `followOverlay`). Ignored while an impact runs. */
+export function selectOverlay(id: string) {
+  if (impact.busy || id === impact.selectedId) return;
+  changeShown(() => impact.select(id), false);
+  followOverlay();
+}
+
+/** Keeps the overlay shown in the list when the next impact runs. */
+export function keepOverlay() {
+  if (impact.selectedId) impact.pin(impact.selectedId);
+}
+
+/** Drops overlay `id`; when it was shown, the most recent one left is shown instead. Ignored while an impact runs. */
+export function removeOverlay(id: string) {
+  if (impact.busy) return;
+  const was = impact.selectedId;
+  changeShown(() => impact.remove(id), false);
+  if (impact.selectedId !== was) followOverlay();
 }
 
 /** Select history entry `sel`; its diff drives the impact. */
@@ -84,6 +121,7 @@ function applyReclassified(m: Matrix) {
   // The old generation is gone: list the kept cell's symbols again.
   if (showsWork) selection.select(sel ? retainSelection(sel, m) : null);
   const range = impact.range;
+  impact.markStale();
   if (range) {
     // Computed with the old classification (a running one too): run it again.
     impact.abandon();
