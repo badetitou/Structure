@@ -1154,7 +1154,10 @@ mod tests {
             "one-sub",
             &[
                 ("backend/pom.xml", "<project/>"),
-                ("backend/src/A.java", "class A { void a() {} }\n"),
+                (
+                    "backend/src/A.java",
+                    "package com.acme.billing;\nclass A { void a() {} }\n",
+                ),
             ],
             "backend/src/A.java",
         );
@@ -1163,13 +1166,13 @@ mod tests {
         // Working tree (c1) against c0: B was added.
         let i = s.impact(&path, Some(&c0), None, &|_| {}).unwrap();
         assert_eq!(i.changed_files, ["backend/src/A.java"]);
-        assert_eq!(i.changed_symbols, ["B"], "{i:?}");
-        assert!(!i.changed_cells.is_empty(), "{i:?}");
+        assert_eq!(i.changed_symbols, ["com.acme.billing.B"], "{i:?}");
+        assert_eq!(i.changed_cells, ["unknown:billing"], "{i:?}");
         // The commit path expands the root as well.
         let i = s.impact(&path, Some(&c0), Some(&c1), &|_| {}).unwrap();
         assert_eq!(i.changed_files, ["backend/src/A.java"]);
-        assert_eq!(i.changed_symbols, ["B"], "{i:?}");
-        assert!(!i.changed_cells.is_empty(), "{i:?}");
+        assert_eq!(i.changed_symbols, ["com.acme.billing.B"], "{i:?}");
+        assert_eq!(i.changed_cells, ["unknown:billing"], "{i:?}");
         let _ = std::fs::remove_dir_all(&repo);
     }
 
@@ -1208,6 +1211,46 @@ mod tests {
     }
 
     #[test]
+    fn commit_impact_with_invalid_rules_keeps_the_analysis() {
+        use crate::pipeline::test_support::git_ok;
+        let (repo, c1, _) = temp_repo("commit-invalid-rules");
+        let root = repo.join("app");
+        let path = root.to_string_lossy().into_owned();
+        let paths = vec![path.clone()];
+        let s = Session::with_impact_options(no_scip());
+        let m = s.analyze(&paths, &no_scip(), &|_| {}).unwrap();
+        std::fs::create_dir_all(root.join(".structure")).unwrap();
+        std::fs::write(
+            root.join(pipeline::PROJECT_RULES),
+            "[[rule]]\nlayer = \"nope\"\n",
+        )
+        .unwrap();
+        git_ok(&repo, &["add", "."]);
+        git_ok(&repo, &["commit", "-q", "-m", "bad rules"]);
+        let bad = git_ok(&repo, &["rev-parse", "HEAD"]).trim().to_string();
+        let e = format!(
+            "{:#}",
+            s.impact(&path, Some(&c1), Some(&bad), &|_| {}).unwrap_err()
+        );
+        assert!(e.contains(".structure/rules.toml"), "{e}");
+        // No snapshot was cached, and the working-tree analysis is kept.
+        let snaps = s
+            .cache
+            .with(|v| v.iter().filter(|e| e.snapshot).count())
+            .unwrap();
+        assert_eq!(snaps, 0);
+        assert!(
+            s.cell_symbols(&paths, None, m.generation, None, &[], None, None)
+                .is_ok()
+        );
+        assert!(
+            s.matrix(&paths, None, m.generation, "layer-package")
+                .is_ok()
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
     fn rules_edited_while_reclassifying_leave_the_entry_stale() {
         let (repo, c1, _) = temp_repo("reclassify-race");
         let root = repo.join("app");
@@ -1233,10 +1276,8 @@ mod tests {
             steps.lock().unwrap().push(p.step)
         })
         .unwrap();
-        assert_ne!(
-            *steps.lock().unwrap(),
-            vec!["computing impact".to_string(), "done".to_string()]
-        );
+        let steps = steps.lock().unwrap();
+        assert!(steps.iter().any(|st| st == "parsing"), "{steps:?}");
         let _ = std::fs::remove_dir_all(&repo);
     }
 

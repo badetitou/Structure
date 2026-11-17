@@ -2,9 +2,10 @@
 //! and matrix.
 //!
 //! The analysis unit is a `(root, language)` pair ([`Unit`]): a root holding
-//! one language is one unit named after its directory, a root holding several
-//! is one unit per language named `<dir> (<language>)` (e.g. `app (java)`,
-//! `app (typescript)`), each with its own indexer and SCIP index file
+//! one language is one unit named after its base name (its directory name, or
+//! the name given to [`units_named`], e.g. the analysed project's for a commit
+//! snapshot), a root holding several is one unit per language named
+//! `<base> (<language>)` (e.g. `app (java)`, `app (typescript)`), each with its own indexer and SCIP index file
 //! (`index.<language>.scip`), its sources, and its language's default rules
 //! plus the root's project rules. Each unit runs the single-unit pipeline;
 //! with at least two units the results are merged: symbol ids become
@@ -107,9 +108,9 @@ pub fn expand_roots(roots: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
 pub(super) struct Unit {
     pub root: PathBuf,
     pub language: Language,
-    /// Project name in the matrix: the root's directory name (deduplicated
-    /// across roots), followed by ` (<language>)` when the root holds several
-    /// languages.
+    /// Project name in the matrix: the root's base name (its directory name,
+    /// or the one given to [`units_named`]; deduplicated across roots),
+    /// followed by ` (<language>)` when the root holds several languages.
     pub name: String,
     /// SCIP index file name in `root` ([`crate::lang::index_file`]).
     pub index: String,
