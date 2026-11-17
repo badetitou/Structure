@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PrError, githubError, parsePrParam, parsePrPath, parsePrShorthand } from "./github";
 import { fetchPr } from "./pipeline";
+import { SOURCE_EXTENSIONS } from "./sources.generated";
 import { readTar } from "./tar";
 
 const enc = new TextEncoder();
@@ -155,6 +156,29 @@ describe("fetchPr", () => {
       return accept.includes("diff") ? new Response("", { status: 406 }) : json({ base: { sha: "b" }, head: { sha: "h" } });
     }) as unknown as typeof fetch;
     await expect(fetchPr(ref, { fetch: f })).rejects.toMatchObject({ kind: "diff-too-large" });
+  });
+
+  it("keeps the sources of every registry language from the archive", async () => {
+    const tar = (parts: Uint8Array[]): Response => {
+      const raw = new Blob([...parts, new Uint8Array(1024)] as BlobPart[]).stream();
+      return new Response(raw.pipeThrough(new CompressionStream("gzip")), { status: 200 });
+    };
+    const sources = SOURCE_EXTENSIONS.map((e, i) => `src/f${i}${e}`);
+    const parts = [
+      ...entry("top/", "", "5"),
+      ...sources.flatMap((p) => entry(`top/${p}`, "x")),
+      ...entry("top/README.md", "x"),
+      ...entry("top/build.kt", "x"),
+    ];
+    const f = (async (url: string, init: RequestInit) => {
+      const accept = (init.headers as Record<string, string>).Accept;
+      if (url.includes("/tarball/")) return tar(parts);
+      if (accept.includes("diff")) return new Response("", { status: 200 });
+      return json({ base: { sha: "b" }, head: { sha: "h" } });
+    }) as unknown as typeof fetch;
+    const data = await fetchPr(ref, { fetch: f });
+    expect(SOURCE_EXTENSIONS).toEqual(expect.arrayContaining([".java", ".ts", ".st"]));
+    expect(data.files.map((x) => x.path)).toEqual(sources);
   });
 
   it("omits Authorization without a token", async () => {

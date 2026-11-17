@@ -14,6 +14,8 @@ use structure_ir::ir::{Graph, Language};
 use structure_ir::model::{CellSymbols, Classification, Impact, Matrix, Project};
 use structure_lang::Frontend;
 
+#[cfg(test)]
+mod sources_ts;
 mod wasm;
 
 /// Language of a set of paths (see [`structure_lang::detect_by_paths`]).
