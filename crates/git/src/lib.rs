@@ -4,5 +4,5 @@ pub mod diff;
 pub mod impact;
 mod refs;
 
-pub use impact::changes_from_diff;
+pub use impact::{changes_from_diff, is_scip_index};
 pub use refs::{resolve_base, resolve_commit, worktree_fingerprint};

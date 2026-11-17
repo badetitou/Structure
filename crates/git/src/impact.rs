@@ -120,7 +120,7 @@ pub fn changed_lines(
         for rel in untracked(project)? {
             // The SCIP index written into the project is a build artefact
             // (often ~1 GB): never read it.
-            if rel == SCIP_INDEX || rel.ends_with(&format!("/{SCIP_INDEX}")) {
+            if is_scip_index(&rel) {
                 continue;
             }
             let total = line_count(&project.join(&rel)).unwrap_or(1).max(1);
@@ -133,8 +133,16 @@ pub fn changed_lines(
     Ok(changes)
 }
 
-/// File name of the SCIP index the pipeline writes into a project root.
-const SCIP_INDEX: &str = "index.scip";
+/// Whether `path` (relative, `/`-separated) names a SCIP index the pipeline
+/// writes into a project root: `index.scip`, or `index.<language>.scip` in a
+/// root holding several languages.
+pub fn is_scip_index(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name == "index.scip"
+        || (name.starts_with("index.")
+            && name.ends_with(".scip")
+            && name.len() > "index..scip".len())
+}
 
 /// Lines of a regular file (a last line without '\n' counts), read in fixed-size
 /// chunks; `None` for anything else (symlink, directory, unreadable).
@@ -445,6 +453,27 @@ mod tests {
     use super::*;
     use structure_ir::ir::{Edge, EdgeKind, Language, Range, Symbol, SymbolKind};
     use structure_ir::model::{LayerId, Placement};
+
+    #[test]
+    fn scip_index_names() {
+        for p in [
+            "index.scip",
+            "a/index.scip",
+            "index.java.scip",
+            "b/index.typescript.scip",
+        ] {
+            assert!(is_scip_index(p), "{p}");
+        }
+        for p in [
+            "index..scip",
+            "xindex.scip",
+            "index.scip.bak",
+            "src/Index.java",
+            "my-index.scip",
+        ] {
+            assert!(!is_scip_index(p), "{p}");
+        }
+    }
 
     #[test]
     fn parse_modify_and_multiple_hunks() {

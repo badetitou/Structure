@@ -38,12 +38,16 @@ invoke<CellSymbols>("cell_symbols", {
 
 - `analyze(paths)` analyzes the Java/TypeScript/Pharo project at `paths` (one folder) and returns the matrix.
   With several paths it runs `pipeline::analyze_many` (front + back analysed
-  together; the matrix carries `projects`, and `http_edges` when found). The
+  together; the matrix carries `projects`, and `http_edges` when found). A
+  folder holding several languages (markers and sources of each) is analysed
+  the same way, one project per language named `<dir> (<language>)`; for such
+  a folder `impact`, `history` and `diff` work as for one project (changed
+  files are mapped to each language's project). The
   cache key is the sorted, deduplicated canonical paths joined with `"\n"`, so
   one path keeps its old key and the order of `paths` does not matter. An empty
   list is an error. `impact`, `history` and `diff` still take one `path` and
-  are not meant for a multi-project analysis: the UI makes no such call
-  (their panels are unavailable when `paths.length > 1`).
+  are not meant for a multi-root analysis: the UI makes no such call
+  (their panels are unavailable when the projects have several roots).
 - `reclassify(paths)`: applies the rules again (language defaults plus each
   analysed root's `.structure/rules.toml`, merged across roots as `analyze`
   does) to the analysis `analyze(paths)` cached, and returns the new matrix.
@@ -139,8 +143,10 @@ interface LayerDef {
 interface Matrix {
   project: string;   // several roots: the first root's name
   language: Language; // several roots: the first root's language
-  // Present only with >= 2 roots (CLI `analyze a b`, `pipeline::analyze_many`):
-  // symbol ids are `<name>::<id>` and domains `<name>/<domain>`.
+  // Present only with >= 2 analysis units: several roots (CLI `analyze a b`,
+  // `pipeline::analyze_many`), or one root holding several languages (then
+  // one entry per language, same `root`, `name` = `<dir> (<language>)`):
+  // symbol ids are `<name>::<id>`, files `<name>/<file>`, domains `<name>/<domain>`.
   // `link_stats` of a merged analysis are the first root's.
   projects?: { name: string; root: string; language: Language }[];
   // Definitions of the layers present, sorted by order. Several roots: a

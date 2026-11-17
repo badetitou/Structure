@@ -41,8 +41,16 @@ Cible :
   implémentations dans la hiérarchie de types du graphe (fusionné), qu'un
   frontend ne voit pas en parsant une racine. Le `Matrix` garde ses champs
   `http_edges`/`rpc_edges` (un par protocole connu) ;
-- un dépôt peut contenir plusieurs langages : la détection rend une liste,
-  `multi.rs` fusionne des unités `(racine, langage)`.
+- un dépôt peut contenir plusieurs langages : la détection rend une liste
+  (`detect_languages`, ordre du registre ; avec plusieurs marqueurs, les
+  langages sans source sont écartés), `multi.rs` fusionne des unités
+  `(racine, langage)`. Décisions : une racine mono-langage garde son nom et
+  `index.scip` (résultat identique) ; une racine multi-langage donne une
+  unité par langage nommée `<dossier> (<langage>)`, avec `index.<langage>.scip`,
+  ses sources, ses règles par défaut + le fichier de règles de la racine ;
+  l'impact projette les fichiers modifiés sur chaque unité de la racine ; l'UI
+  ne compte comme multi-projet (panneaux git indisponibles) que plusieurs
+  racines distinctes.
 
 ## 2. Couches configurables
 

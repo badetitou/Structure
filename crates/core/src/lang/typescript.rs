@@ -45,12 +45,12 @@ impl Indexer for ScipTypeScript {
         format!("scip-typescript-{SCIP_TS_VERSION}")
     }
 
-    fn command(&self, root: &Path) -> Option<Command> {
+    fn command(&self, root: &Path, output: &str) -> Option<Command> {
         find_on_path("npx").map(|p| {
             let mut c = Command::new(p);
             c.args(["-y"])
                 .arg(format!("@sourcegraph/scip-typescript@{SCIP_TS_VERSION}"))
-                .args(["index", "--output", "index.scip"])
+                .args(["index", "--output", output])
                 .args(ts_index_args(root));
             let existing = std::env::var("NODE_OPTIONS").ok();
             c.env(

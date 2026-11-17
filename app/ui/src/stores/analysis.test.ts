@@ -72,6 +72,19 @@ describe("analysis and load", () => {
     expect(git.history).not.toBeNull();
   });
 
+  it("is not multi when one root holds several languages", async () => {
+    const projects = [
+      { name: "app (java)", root: "/app", language: "java" as const },
+      { name: "app (typescript)", root: "/app", language: "typescript" as const },
+    ];
+    mocked.analyze.mockResolvedValue({ ...mx("app (java)"), projects });
+    mocked.history.mockResolvedValue({ dirty: false, commits: [] });
+    await load("/app");
+    expect(analysis.multi).toBe(false);
+    expect(mocked.history).toHaveBeenCalledTimes(1);
+    expect(git.history).not.toBeNull();
+  });
+
   it("goes single -> multi -> single with clean git state each time", async () => {
     const hist = { dirty: false, commits: [] };
     mocked.history.mockResolvedValue(hist);

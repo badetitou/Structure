@@ -1,27 +1,39 @@
-//! Several roots analysed into one graph and matrix.
+//! Several roots, or several languages of one root, analysed into one graph
+//! and matrix.
 //!
-//! Each root runs the single-root pipeline (own language, SCIP cache, rules);
-//! with at least two roots the results are merged: symbol ids become
-//! `<project>::<id>`, files `<project>/<file>` and domains `<project>/<domain>`.
+//! The analysis unit is a `(root, language)` pair ([`Unit`]): a root holding
+//! one language is one unit named after its directory, a root holding several
+//! is one unit per language named `<dir> (<language>)` (e.g. `app (java)`,
+//! `app (typescript)`), each with its own indexer and SCIP index file
+//! (`index.<language>.scip`), its sources, and its language's default rules
+//! plus the root's project rules. Each unit runs the single-unit pipeline;
+//! with at least two units the results are merged: symbol ids become
+//! `<project>::<id>`, files `<project>/<file>` and domains `<project>/<domain>`,
+//! and the linkers run on the merged graph.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::bail;
 
-use super::{Analysis, Options, analyze_in, project_name};
-use crate::ir::Graph;
+use super::{Analysis, Options, analyze_unit, project_name};
+use crate::ir::{Graph, Language};
 use crate::layers::Layers;
 use crate::matrix;
 use crate::model::{Classification, DomainNode, LayerDef, Matrix, Placement, Progress, Project};
 
 /// Root dir names, suffixed `-2`, `-3`... when they clash.
-pub(super) fn unique_names(roots: &[PathBuf]) -> Vec<String> {
+#[cfg(test)]
+fn unique_names(roots: &[PathBuf]) -> Vec<String> {
+    dedup_names(roots.iter().map(|r| project_name(r)))
+}
+
+/// `bases`, suffixed `-2`, `-3`... when they clash.
+fn dedup_names(bases: impl IntoIterator<Item = String>) -> Vec<String> {
     let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
-    roots
-        .iter()
-        .map(|r| {
-            let base = project_name(r);
+    bases
+        .into_iter()
+        .map(|base| {
             let mut name = base.clone();
             let mut n = 1;
             while !used.insert(name.clone()) {
@@ -90,8 +102,89 @@ pub fn expand_roots(roots: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
     Ok(out)
 }
 
-/// One root behaves exactly as [`super::analyze`]. Undetectable roots are
-/// first expanded to their sub-projects ([`expand_roots`]).
+/// One analysis unit: a root and one of its languages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Unit {
+    pub root: PathBuf,
+    pub language: Language,
+    /// Project name in the matrix: the root's directory name (deduplicated
+    /// across roots), followed by ` (<language>)` when the root holds several
+    /// languages.
+    pub name: String,
+    /// SCIP index file name in `root` ([`crate::lang::index_file`]).
+    pub index: String,
+}
+
+/// The analysis units of detectable `roots`, in root order then in language
+/// priority order ([`super::detect_languages`]).
+pub(super) fn units(roots: &[PathBuf]) -> anyhow::Result<Vec<Unit>> {
+    let mut raw: Vec<(PathBuf, Language, String, String)> = vec![];
+    for root in roots {
+        let langs = super::detect_languages(root)?;
+        let shared = langs.len() > 1;
+        let base = project_name(root);
+        for lang in langs {
+            let name = if shared {
+                format!("{base} ({})", crate::lang::language_id(lang))
+            } else {
+                base.clone()
+            };
+            raw.push((
+                root.clone(),
+                lang,
+                name,
+                crate::lang::index_file(lang, shared),
+            ));
+        }
+    }
+    let names = dedup_names(raw.iter().map(|(_, _, n, _)| n.clone()));
+    Ok(raw
+        .into_iter()
+        .zip(names)
+        .map(|((root, language, _, index), name)| Unit {
+            root,
+            language,
+            name,
+            index,
+        })
+        .collect())
+}
+
+/// One unit behaves exactly as the single-root pipeline; several are
+/// analysed one after the other and merged.
+pub(super) fn analyze_units(
+    units: &[Unit],
+    opts: &Options,
+    progress: &dyn Fn(Progress),
+    from_cache: bool,
+) -> anyhow::Result<Analysis> {
+    match units {
+        [] => bail!("no project root given"),
+        [one] => analyze_unit(one, opts, progress, from_cache),
+        _ => {
+            let total = units.len();
+            let mut parts = Vec::with_capacity(total);
+            for (i, unit) in units.iter().enumerate() {
+                let name = &unit.name;
+                let scaled = |p: Progress| {
+                    let pct = ((i * 100 + usize::from(p.pct)) / total) as u8;
+                    progress(Progress {
+                        step: format!("{name}: {}", p.step),
+                        pct,
+                        detail: p.detail,
+                    })
+                };
+                parts.push(analyze_unit(unit, opts, &scaled, from_cache)?);
+            }
+            Ok(merge(units, parts))
+        }
+    }
+}
+
+/// One root holding one language behaves exactly as [`super::analyze`].
+/// Undetectable roots are first expanded to their sub-projects
+/// ([`expand_roots`]); a root holding several languages gives one unit per
+/// language ([`Unit`]).
 pub fn analyze_many(
     roots: &[PathBuf],
     opts: &Options,
@@ -101,29 +194,7 @@ pub fn analyze_many(
         bail!("no project root given");
     }
     let expanded = expand_roots(roots)?;
-    let roots = expanded.as_slice();
-    match roots {
-        [] => bail!("no project root given"),
-        [one] => super::analyze(one, opts, progress),
-        _ => {
-            let names = unique_names(roots);
-            let total = roots.len();
-            let mut parts = Vec::with_capacity(total);
-            for (i, root) in roots.iter().enumerate() {
-                let name = &names[i];
-                let scaled = |p: Progress| {
-                    let pct = ((i * 100 + usize::from(p.pct)) / total) as u8;
-                    progress(Progress {
-                        step: format!("{name}: {}", p.step),
-                        pct,
-                        detail: p.detail,
-                    })
-                };
-                parts.push(analyze_in(root, opts, &scaled, false)?);
-            }
-            Ok(merge(roots, names, parts))
-        }
-    }
+    analyze_units(&units(&expanded)?, opts, progress, false)
 }
 
 fn prefix_id(project: &str, id: &str) -> String {
@@ -224,7 +295,9 @@ impl MergedClassification {
     }
 }
 
-fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysis {
+fn merge(units: &[Unit], parts: Vec<Analysis>) -> Analysis {
+    let roots: Vec<PathBuf> = units.iter().map(|u| u.root.clone()).collect();
+    let names: Vec<String> = units.iter().map(|u| u.name.clone()).collect();
     let mut graph = Graph {
         root: parts[0].graph.root.clone(),
         language: parts[0].graph.language,
@@ -279,7 +352,7 @@ fn merge(roots: &[PathBuf], names: Vec<String>, parts: Vec<Analysis>) -> Analysi
     matrix.warnings = warnings.clone();
     Analysis {
         graph: std::sync::Arc::new(graph),
-        roots: roots.to_vec(),
+        roots,
         classification,
         matrix,
         link_stats,
@@ -428,6 +501,40 @@ mod tests {
     #[test]
     fn no_root_gives_only_unknown() {
         assert_eq!(merge_layers([]), Layers::new([]));
+    }
+
+    #[test]
+    fn units_split_multi_language_roots_only() {
+        let d = tmp("units");
+        touch(&d, "both/pom.xml");
+        touch(&d, "both/package.json");
+        touch(&d, "both/src/A.java");
+        touch(&d, "both/web/a.ts");
+        touch(&d, "java/pom.xml");
+        touch(&d, "java/package.json");
+        touch(&d, "java/src/A.java");
+        // A directory literally named like a unit gets a suffix.
+        touch(&d, "both (java)/tsconfig.json");
+        let roots = [d.join("both"), d.join("java"), d.join("both (java)")];
+        let got: Vec<(String, Language, String)> = units(&roots)
+            .unwrap()
+            .into_iter()
+            .map(|u| (u.name, u.language, u.index))
+            .collect();
+        let unit = |n: &str, l, i: &str| (n.to_string(), l, i.to_string());
+        assert_eq!(
+            got,
+            [
+                unit("both (java)", Language::Java, "index.java.scip"),
+                unit(
+                    "both (typescript)",
+                    Language::TypeScript,
+                    "index.typescript.scip"
+                ),
+                unit("java", Language::Java, "index.scip"),
+                unit("both (java)-2", Language::TypeScript, "index.scip"),
+            ]
+        );
     }
 
     #[test]

@@ -32,9 +32,10 @@ export class AnalysisStore {
   get project(): string {
     return this.paths[0] ?? "";
   }
-  /** Several distinct projects analysed together (per the loaded matrix, as the backend dedups roots): git panels are unavailable. */
+  /** Several distinct roots analysed together (per the loaded matrix, as the backend dedups roots): git panels are unavailable.
+   *  One root holding several languages has one project per language but stays a single repository. */
   get multi(): boolean {
-    return (this.work?.projects?.length ?? 0) > 1;
+    return new Set((this.work?.projects ?? []).map((p) => p.root)).size > 1;
   }
   /** The rules can be reloaded (and are watched) once the analysis is there. */
   get rulesReloadable(): boolean {
