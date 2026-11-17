@@ -17,9 +17,10 @@ vi.mock("../api", () => ({
 
 import { DEFAULT_LENSES } from "../lens";
 import { createViewContext } from "../workspace/context";
+import { impact } from "./impact.svelte";
 import { lenses } from "./lenses.svelte";
 import { selection } from "./selection.svelte";
-import { reloadRules, runImpact } from "./session";
+import { clearImpact, reloadRules, runImpact } from "./session";
 import { cell, flush, imp, loaded, mocked, page, setup, withCells } from "./testing";
 
 const both = [...DEFAULT_LENSES, { id: "layer-package", label: "Layer × package" }];
@@ -192,5 +193,174 @@ describe("view context, per panel lens", () => {
     mocked.reclassify.mockResolvedValue(withCells(10, ["service:b", 4]));
     await reloadRules();
     expect(selection.selected).toBeNull();
+  });
+
+  it("leaves a selection of another panel alone when a panel expands or collapses a group", async () => {
+    const ctx = createViewContext();
+    await loaded(withCells(7, ["service:a", 3]));
+    await flush();
+    mocked.matrix.mockResolvedValue(packaged(7));
+    mocked.cellSymbols.mockResolvedValue(page);
+    const pa = ctx.forPanel("matrix", onPackages, () => {});
+    const pb = ctx.forPanel("matrix-2", undefined, () => {});
+    const pc = ctx.forPanel("matrix-3", onPackages, () => {});
+    ctx.displays.focus("matrix");
+    pa.actions.selectCell(cell);
+    // Another lens, or the same lens in a panel that is not the active one: kept.
+    pb.actions.expansionChanged();
+    pc.actions.expansionChanged();
+    expect(selection.selected).toBe(cell);
+    expect(selection.lens).toBe("layer-package");
+    // The panel it was made in (active): its cell ids changed, dropped.
+    pa.actions.expansionChanged();
+    expect(selection.selected).toBeNull();
+  });
+
+  it("names the projects from the analysis while a panel's lens matrix loads", async () => {
+    const ctx = createViewContext();
+    const work = { ...withCells(7), project: "shop" };
+    await loaded(work);
+    await flush();
+    mocked.matrix.mockReturnValue(new Promise(() => {}));
+    const pa = ctx.forPanel("matrix", onPackages, () => {});
+    ctx.displays.focus("matrix");
+    expect(ctx.lens.work).toBeNull();
+    expect(ctx.lens.analysed).toBe(work);
+    expect(pa.lens.analysed).toBe(work);
+  });
+});
+
+describe("lens failures", () => {
+  it("reports overlays a lens could not map and computes them again on retry", async () => {
+    const ctx = createViewContext();
+    await loaded(withCells(7, ["service:a", 3]));
+    await flush();
+    mocked.matrix.mockResolvedValue(packaged(7));
+    const pa = ctx.forPanel("matrix", onPackages, () => {});
+    const pb = ctx.forPanel("matrix-2", undefined, () => {});
+    mocked.impact.mockResolvedValue(imp({ head: "c1", changed_symbols: ["S"], changed_cells: ["service:a"] }));
+    // The backend dropped the commit's analysis (evicted by newer snapshots).
+    mocked.impactCells.mockRejectedValue(new Error("analysis changed, re-run Analyze"));
+    await runImpact("a", "c1");
+    void pa.overlays.current;
+    await flush();
+    expect(pa.overlays.current?.changed_cells).toEqual([]);
+    expect(pa.overlays.lensError).toContain("analysis changed");
+    expect(pa.overlays.lensError).toContain("Layer × package");
+    expect(pb.overlays.lensError).toBe("");
+    // Not asked again on every read: the failure stays until retried.
+    void pa.overlays.current;
+    await flush();
+    expect(mocked.impactCells).toHaveBeenCalledTimes(1);
+
+    mocked.impact.mockResolvedValue(imp({ head: "c1", changed_symbols: ["S"], changed_cells: ["service:a"] }));
+    mocked.impactCells.mockResolvedValue({ changed_cells: ["package/service:com.x"], impacted_cells: [] });
+    pa.actions.retryLens();
+    await flush();
+    expect(mocked.impact).toHaveBeenCalledTimes(2);
+    expect(mocked.impact).toHaveBeenLastCalledWith("/p", "a", "c1", expect.any(Function));
+    void pa.overlays.current;
+    await flush();
+    expect(pa.overlays.current?.changed_cells).toEqual(["package/service:com.x"]);
+    expect(pa.overlays.lensError).toBe("");
+  });
+
+  it("computes again an overlay whose commit snapshot a lens could not draw", async () => {
+    const ctx = createViewContext();
+    await loaded(withCells(7, ["service:a", 3]));
+    await flush();
+    const pa = ctx.forPanel("matrix", onPackages, () => {});
+    mocked.impactCells.mockResolvedValue({ changed_cells: [], impacted_cells: [] });
+    mocked.impact.mockResolvedValue(imp({ head: "c1", matrix: withCells(20) }));
+    mocked.matrix.mockRejectedValue(new Error("analysis changed, re-run Analyze"));
+    await runImpact("a", "c1");
+    void pa.lens.matrix;
+    await flush();
+    expect(pa.lens.error).toContain("analysis changed");
+
+    mocked.impact.mockResolvedValue(imp({ head: "c1", matrix: withCells(21) }));
+    mocked.matrix.mockResolvedValue(packaged(21));
+    pa.actions.retryLens();
+    await flush();
+    expect(mocked.impact).toHaveBeenCalledTimes(2);
+    void pa.lens.matrix;
+    await flush();
+    expect(mocked.matrix).toHaveBeenLastCalledWith(["/p"], "c1", 21, "layer-package");
+    expect(pa.lens.error).toBe("");
+    expect(pa.lens.matrix?.generation).toBe(21);
+  });
+
+  it("asks again for a lens matrix that failed, on retry only", async () => {
+    const ctx = createViewContext();
+    await loaded(withCells(7));
+    await flush();
+    const pa = ctx.forPanel("matrix", onPackages, () => {});
+    mocked.matrix.mockRejectedValue(new Error("boom"));
+    void pa.lens.matrix;
+    await flush();
+    expect(pa.lens.error).toContain("boom");
+    void pa.lens.matrix;
+    await flush();
+    expect(mocked.matrix).toHaveBeenCalledTimes(1);
+    const p = packaged(7);
+    mocked.matrix.mockResolvedValue(p);
+    pa.actions.retryLens();
+    expect(mocked.impact).not.toHaveBeenCalled();
+    void pa.lens.matrix;
+    await flush();
+    expect(pa.lens.matrix).toBe(p);
+    expect(pa.lens.error).toBe("");
+  });
+});
+
+describe("lens cache bounds", () => {
+  it("drops the lens matrices of older generations and the cells of overlays gone", async () => {
+    await loaded(withCells(7, ["service:a", 3]));
+    await flush();
+    mocked.matrix.mockResolvedValue(packaged(7));
+    const work7 = withCells(7);
+    lenses.matrix("layer-package", work7, null);
+    await flush();
+    expect(lenses.matrix("layer-package", work7, null)).not.toBeNull();
+    // Rules reloaded: generation 8 replaces 7, whose lens matrix is dropped.
+    mocked.reclassify.mockResolvedValue(withCells(8, ["service:a", 3]));
+    await reloadRules();
+    expect(lenses.matrix("layer-package", work7, null)).toBeNull();
+    await flush();
+    expect(mocked.matrix).toHaveBeenCalledTimes(2);
+
+    // An overlay's cells live as long as the overlay is listed.
+    const i = imp({ changed_symbols: ["S"] });
+    mocked.impact.mockResolvedValue(i);
+    mocked.impactCells.mockResolvedValue({ changed_cells: ["package/service:com.x"], impacted_cells: [] });
+    await runImpact(null, null);
+    lenses.impact("layer-package", i);
+    await flush();
+    expect(lenses.impact("layer-package", i).changed_cells).toEqual(["package/service:com.x"]);
+    clearImpact();
+    expect(lenses.impact("layer-package", i).changed_cells).toEqual([]);
+    await flush();
+    expect(mocked.impactCells).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the lens matrix of a listed overlay's commit snapshot, not once it is replaced", async () => {
+    await loaded(withCells(7, ["service:a", 3]));
+    await flush();
+    const snap = withCells(20);
+    mocked.impact.mockResolvedValue(imp({ head: "c1", matrix: snap }));
+    await runImpact("a", "c1");
+    mocked.matrix.mockResolvedValue(packaged(20));
+    lenses.matrix("layer-package", snap, "c1");
+    await flush();
+    mocked.impact.mockResolvedValue(imp({ head: "c1", matrix: snap }));
+    // Pinned, so a run of another range lists it alongside.
+    impact.pin(impact.selectedIds[0]);
+    await runImpact("b", "c1");
+    expect(lenses.matrix("layer-package", snap, "c1")).not.toBeNull();
+    impact.remove(impact.overlays[0].id);
+    mocked.impact.mockResolvedValue(imp({ head: null }));
+    // The overlay is replaced (not kept): its snapshot's lens matrix goes with it.
+    await runImpact(null, null);
+    expect(lenses.matrix("layer-package", snap, "c1")).toBeNull();
   });
 });

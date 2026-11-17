@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { Impact } from "./api";
-import { DEFAULT_LENS, DEFAULT_LENSES, lensLabel, lensSelectorVisible, parseLens, resolveLens, withLensCells } from "./lens";
+import type { Impact, Matrix } from "./api";
+import {
+  DEFAULT_LENS,
+  DEFAULT_LENSES,
+  HeldMatrix,
+  lensLabel,
+  lensSelectorVisible,
+  liveSnapshots,
+  parseLens,
+  resolveLens,
+  snapshotId,
+  withLensCells,
+} from "./lens";
 
 const both = [...DEFAULT_LENSES, { id: "layer-package", label: "Layer × package" }];
 
@@ -19,6 +30,11 @@ describe("lenses", () => {
     expect(resolveLens("layer-package", both)).toBe("layer-package");
     expect(resolveLens("layer-package", DEFAULT_LENSES)).toBe(DEFAULT_LENS);
     expect(resolveLens("gone", both)).toBe(DEFAULT_LENS);
+  });
+
+  it("keep the lens asked while the backend's list is not known (no default lens first)", () => {
+    expect(resolveLens("layer-package", DEFAULT_LENSES, false)).toBe("layer-package");
+    expect(resolveLens("layer-package", DEFAULT_LENSES, true)).toBe(DEFAULT_LENS);
   });
 
   it("show the selector only when there is a choice", () => {
@@ -46,5 +62,29 @@ describe("lenses", () => {
     expect(withLensCells(imp, cells)).toEqual({ ...imp, ...cells });
     expect(withLensCells(imp, null)).toEqual({ ...imp, changed_cells: [], impacted_cells: [] });
     expect(imp.changed_cells).toEqual(["b:x"]);
+  });
+
+  it("name the analyses still shown: the working tree's and the overlays' snapshots", () => {
+    const m = (generation: number) => ({ generation }) as Matrix;
+    const imp = (head: string | null, matrix?: Matrix) => ({ head, matrix }) as Impact;
+    const live = liveSnapshots(m(7), [imp("c1", m(9)), imp(null), imp("c2")]);
+    expect([...live].sort()).toEqual([snapshotId(null, 7), snapshotId("c1", 9)].sort());
+    expect(snapshotId("c1", 9)).not.toBe(snapshotId(null, 9));
+    expect(liveSnapshots(null, []).size).toBe(0);
+  });
+
+  it("hold the last matrix of a lens while its next one loads, not on an error or another lens", () => {
+    const a = { generation: 1 } as Matrix;
+    const b = { generation: 2 } as Matrix;
+    const h = new HeldMatrix();
+    expect(h.show("p", null, "")).toEqual({ matrix: null, loading: false });
+    expect(h.show("p", a, "")).toEqual({ matrix: a, loading: false });
+    expect(h.show("p", null, "")).toEqual({ matrix: a, loading: true });
+    expect(h.show("p", b, "")).toEqual({ matrix: b, loading: false });
+    expect(h.show("q", null, "")).toEqual({ matrix: null, loading: false });
+    expect(h.show("p", null, "")).toEqual({ matrix: null, loading: false });
+    h.show("p", a, "");
+    expect(h.show("p", null, "boom")).toEqual({ matrix: null, loading: false });
+    expect(h.show("p", null, "")).toEqual({ matrix: null, loading: false });
   });
 });

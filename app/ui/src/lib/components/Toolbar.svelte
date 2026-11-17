@@ -40,9 +40,11 @@
   const { lens, overlays: impact, actions } = getViewContext();
   const options = lens.display;
 
-  // Several projects: their names joined; else the project name or folder.
+  // Several projects: their names joined; else the project name or folder (none depends on the lens).
   const title = $derived(
-    lens.work?.projects?.length ? lens.work.projects.map((p) => p.name).join(" + ") : lens.work?.project || folderName(lens.project),
+    lens.analysed?.projects?.length
+      ? lens.analysed.projects.map((p) => p.name).join(" + ")
+      : lens.analysed?.project || folderName(lens.project),
   );
 </script>
 

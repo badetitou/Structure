@@ -38,6 +38,10 @@
     {@render sep()}
     <span class="max-w-[40%] flex-none truncate text-destructive" title={impact.error}>{impact.error}</span>
   {/if}
+  {#if impact.lensError}
+    {@render sep()}
+    <span class="max-w-[40%] flex-none truncate text-destructive" title={impact.lensError}>{impact.lensError}</span>
+  {/if}
   {#if selectionText}
     {@render sep()}
     <span class="truncate text-foreground">{selectionText}</span>

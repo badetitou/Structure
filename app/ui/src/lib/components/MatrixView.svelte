@@ -172,8 +172,8 @@
     if (on) set.add(key);
     else set.delete(key);
     if (tree) override = { base, tree, flame, set };
-    // Expand / collapse changes the cell ids: drop the selection and hover.
-    actions.selectCell(null);
+    // Expand / collapse changes the cell ids: drop this view's selection (not another panel's).
+    actions.expansionChanged();
   }
 
   // Zoom / pan. The viewport keeps the pane's aspect (see viewport.ts); the
