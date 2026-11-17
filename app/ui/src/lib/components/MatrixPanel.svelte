@@ -11,7 +11,7 @@
   import MatrixView from "./MatrixView.svelte";
   import OverlaySelector from "./OverlaySelector.svelte";
   import { Button } from "$lib/components/ui/button";
-  import { DEFAULT_LENS, HeldMatrix, lensLabel } from "../../lens";
+  import { HeldMatrix, lensLabel } from "../../lens";
   import { getViewContext } from "../../workspace/context";
 
   // The matrix as a workspace panel: the overlay selector above it (when there is a choice),
@@ -20,7 +20,9 @@
   // zoom survive picking a commit snapshot or a rules reload.
   const ctx = getViewContext();
   const hold = new HeldMatrix();
-  const drawn = $derived(hold.show(ctx.lens.id, ctx.lens.matrix, ctx.lens.error));
+  // The analysed project: a matrix held for another one (or none) is never drawn.
+  const project = $derived(ctx.lens.analysed ? ctx.lens.paths.join("\u0000") : null);
+  const drawn = $derived(hold.show(ctx.lens.id, ctx.lens.matrix, ctx.lens.error, project));
   let view = $state<MatrixHandle | null>(null);
   const key = ctx.panel ?? "";
   $effect(() => {
@@ -51,7 +53,7 @@
         <span>Cannot show {ctx.lens.label}: {ctx.lens.error}</span>
         <Button variant="outline" size="sm" onclick={() => ctx.actions.retryLens()}>Retry</Button>
       </div>
-    {:else if ctx.lens.id !== DEFAULT_LENS}
+    {:else if drawn.loading}
       <div class="m-auto text-sm text-muted-foreground">Loading {ctx.lens.label}…</div>
     {/if}
     {#if drawn.matrix && ctx.overlays.lensError}

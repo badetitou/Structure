@@ -53,21 +53,38 @@ export function liveSnapshots(work: Matrix | null, impacts: readonly Impact[]): 
 
 /**
  * The matrix a lens panel draws: the lens matrix when loaded; while the next one of the same
- * lens loads (a commit snapshot picked, rules reloaded), the last one drawn, so the matrix view
- * stays mounted and keeps its open groups and zoom; nothing on an error or another lens.
+ * lens and project loads (a commit snapshot picked, rules reloaded), the last one drawn, so the
+ * matrix view stays mounted and keeps its open groups and zoom; nothing on an error, another
+ * lens or another project (or none analysed).
  */
 export class HeldMatrix {
-  private last: { lens: string; matrix: Matrix } | null = null;
+  private last: { lens: string; project: string; matrix: Matrix } | null = null;
 
-  /** What to draw for `matrix` (null while loading) of `lens`, and whether it is a held one. */
-  show(lens: string, matrix: Matrix | null, error: string): { matrix: Matrix | null; loading: boolean } {
-    if (matrix) {
-      this.last = { lens, matrix };
-      return { matrix, loading: false };
-    }
-    if (error || this.last?.lens !== lens) {
+  /** What to draw for `matrix` (null while loading) of `lens` on `project` (the analysed
+   * project's key, null while none is analysed), and whether it is still loading: with a matrix,
+   * a held one; without, nothing drawn yet (a "Loading" message, never while no project is
+   * analysed or on an error). */
+  show(
+    lens: string,
+    matrix: Matrix | null,
+    error: string,
+    project: string | null,
+  ): { matrix: Matrix | null; loading: boolean } {
+    if (project === null) {
       this.last = null;
       return { matrix: null, loading: false };
+    }
+    if (matrix) {
+      this.last = { lens, project, matrix };
+      return { matrix, loading: false };
+    }
+    if (error) {
+      this.last = null;
+      return { matrix: null, loading: false };
+    }
+    if (this.last?.lens !== lens || this.last.project !== project) {
+      this.last = null;
+      return { matrix: null, loading: true };
     }
     return { matrix: this.last.matrix, loading: true };
   }

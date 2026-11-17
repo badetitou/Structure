@@ -77,14 +77,27 @@ describe("lenses", () => {
     const a = { generation: 1 } as Matrix;
     const b = { generation: 2 } as Matrix;
     const h = new HeldMatrix();
-    expect(h.show("p", null, "")).toEqual({ matrix: null, loading: false });
-    expect(h.show("p", a, "")).toEqual({ matrix: a, loading: false });
-    expect(h.show("p", null, "")).toEqual({ matrix: a, loading: true });
-    expect(h.show("p", b, "")).toEqual({ matrix: b, loading: false });
-    expect(h.show("q", null, "")).toEqual({ matrix: null, loading: false });
-    expect(h.show("p", null, "")).toEqual({ matrix: null, loading: false });
-    h.show("p", a, "");
-    expect(h.show("p", null, "boom")).toEqual({ matrix: null, loading: false });
-    expect(h.show("p", null, "")).toEqual({ matrix: null, loading: false });
+    expect(h.show("p", null, "", "x")).toEqual({ matrix: null, loading: true });
+    expect(h.show("p", a, "", "x")).toEqual({ matrix: a, loading: false });
+    expect(h.show("p", null, "", "x")).toEqual({ matrix: a, loading: true });
+    expect(h.show("p", b, "", "x")).toEqual({ matrix: b, loading: false });
+    expect(h.show("q", null, "", "x")).toEqual({ matrix: null, loading: true });
+    expect(h.show("p", null, "", "x")).toEqual({ matrix: null, loading: true });
+    h.show("p", a, "", "x");
+    expect(h.show("p", null, "boom", "x")).toEqual({ matrix: null, loading: false });
+    expect(h.show("p", null, "", "x")).toEqual({ matrix: null, loading: true });
+  });
+
+  it("drop the held matrix when the project closes or changes, and never load without one", () => {
+    const a = { generation: 1 } as Matrix;
+    const h = new HeldMatrix();
+    // No project analysed (closed, failed, or a saved lens before any load): no "Loading".
+    expect(h.show("p", null, "", null)).toEqual({ matrix: null, loading: false });
+    h.show("p", a, "", "x");
+    expect(h.show("p", null, "", null)).toEqual({ matrix: null, loading: false });
+    expect(h.show("p", null, "", "x")).toEqual({ matrix: null, loading: true });
+    // Another project analysed while the panel was not redrawn in between.
+    h.show("p", a, "", "x");
+    expect(h.show("p", null, "", "y")).toEqual({ matrix: null, loading: true });
   });
 });
