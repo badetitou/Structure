@@ -44,10 +44,19 @@ function changeShown(change: () => void, keep: boolean) {
   const sel = selection.selected;
   const lens = selection.lens;
   change();
+  pruneLenses();
   const now = shown.matrix;
   if (now === before) return;
   if (keep && sel && now) keepSelection(sel, lens, now);
   else selection.select(null);
+}
+
+/** Drops the lens matrices and cells no view can show any more (see `LensStore.prune`). */
+function pruneLenses() {
+  lenses.prune(
+    analysis.work,
+    impact.overlays.map((o) => o.impact),
+  );
 }
 
 /** Carries `sel`, selected in `lens`, over to `now` (the new matrix shown, same snapshot with
@@ -115,6 +124,25 @@ export function selectOverlay(id: string, toggle = false) {
   followOverlay();
 }
 
+/** Retries what lens `lens` could not load. The overlays shown whose impact it could not map
+ * (or whose commit snapshot it could not draw), typically because the backend dropped that
+ * snapshot's analysis to make room for newer ones, are computed again: the new impact comes
+ * with its snapshot analysed afresh, and is mapped in the lens once in. Else the failed lens
+ * matrices and cells are requested again. */
+export function retryLens(lens: string) {
+  const ids = impact.selectedOverlays.filter((o) => lenses.impactError(lens, o.impact) !== "").map((o) => o.id);
+  const sel = impact.selected;
+  if (sel && !impact.multi && shown.head !== null && lenses.matrixError(lens, shown.matrix, shown.head) !== "") {
+    if (!ids.includes(sel.id)) ids.push(sel.id);
+  }
+  if (ids.length === 0) {
+    lenses.retry();
+    return;
+  }
+  impact.markStale(ids);
+  refreshStale();
+}
+
 /** Keeps the overlays shown in the list when the next impact runs. */
 export function keepOverlay() {
   for (const o of impact.selectedOverlays) if (!o.pinned) impact.pin(o.id);
@@ -159,6 +187,7 @@ function applyReclassified(m: Matrix) {
     if (sel) keepSelection(sel, lens, m);
     else selection.select(null);
   }
+  pruneLenses();
   const range = impact.range;
   impact.markStale();
   if (range) {
