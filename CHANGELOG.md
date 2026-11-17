@@ -7,18 +7,64 @@ browser extension and attaches it to the GitHub release.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-17
+
+Re-architecture for stability (#68): languages, layers, views and highlight
+sources are pluggable. Target and remaining gaps: `docs/architecture.md`.
+
 ### Added
 
-- Rules files declare their layers (`[[layer]]` with `id`, `label`, `order`);
-  a project's `.structure/rules.toml` can add layers or relabel and reorder the
-  built-in ones. A rule on an undeclared layer is an error naming the file and
-  the layer.
+- **Configurable layers**: rules files declare their layers (`[[layer]]` with
+  `id`, `label`, `order`); a project's `.structure/rules.toml` can add layers
+  or relabel and reorder the built-in ones. A rule on an undeclared layer is an
+  error naming the file and the layer. Editing the rules file reloads the
+  matrix without re-indexing or re-parsing (automatic, or "Reload rules" in
+  the options); an invalid file keeps the current matrix and shows the error.
+- **Highlight overlays**: impacts are kept as named overlays with their own
+  colour. "Keep" pins the current impact; a selector above the matrix (shown
+  from two overlays) selects one, and cmd-click (macOS) / ctrl-click selects
+  several, drawn together as colour bands per cell.
+- **Several matrix views**: Views → "New matrix view" opens another matrix;
+  each matrix panel keeps its own display options (mode, transpose, align,
+  HTTP/RPC links) and its own lens: `layer × domain` (inferred domains, the
+  default) or `layer × package` (raw packages / directories).
+- **Repositories with several languages**: a root holding e.g. a Java backend
+  and a TypeScript frontend is analysed as one project per language
+  (`<dir> (java)`, `<dir> (typescript)`, with `index.<language>.scip`) and
+  merged, so HTTP calls between them are linked. The browser extension does
+  the same for a pull request.
+- CI on every pull request: Rust (fmt, clippy, tests) and UI (vitest,
+  svelte-check).
 
 ### Changed
 
 - A multi-project analysis merges the roots' layers by id: the first root's
   labels and order win, and layers only a later root declares are appended
   after them (before `unknown`), so a later root no longer overrides a label.
+- The default rules moved to `crates/lang/rules/` (error messages still name
+  `rules/<lang>.toml`).
+- A Java repository with a `package.json` and real `.ts`/`.tsx` sources is now
+  analysed as two projects (Java only before).
+- Internals: a `Session` in `structure-core` owns the analysis cache (the Tauri
+  commands are thin wrappers); the UI wire types are generated from Rust
+  (`app/ui/src/generated/`); a pure `structure-lang` registry is shared by the
+  desktop and wasm builds; an optional per-language `Indexer`; HTTP and GWT RPC
+  links go through protocol ports and linkers; a pure `structure-highlight`
+  crate computes impacts; the UI state is split into stores and views go
+  through a `ViewContext`.
+
+### Fixed
+
+- A commit impact of a multi-language project at the repository root no longer
+  names the snapshot after the commit SHA (its cells now match the working
+  tree).
+- Impact finds the changed symbols when a folder expands to a single
+  sub-project, and a commit impact on such a folder no longer fails with
+  "cannot detect language".
+- A working-tree impact with invalid project rules keeps the cached analysis.
+- Lens panels keep their zoom and open groups while a lens loads, show and
+  retry overlays they cannot map, and no longer drop a selection made in
+  another panel.
 
 ## [0.1.3] - 2026-11-16
 
@@ -83,7 +129,8 @@ First public release: a proof of concept, local only.
   GitHub release and, when the store secrets are set, submits it to Firefox
   Add-ons and the Chrome Web Store.
 
-[Unreleased]: https://github.com/badetitou/Structure/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/badetitou/Structure/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/badetitou/Structure/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/badetitou/Structure/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/badetitou/Structure/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/badetitou/Structure/compare/v0.1.0...v0.1.1
