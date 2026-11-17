@@ -133,12 +133,17 @@ struct Highlight { source, symbols: [{id, role, distance}], cells: [{id, role, d
   (`structure-ir`) en tire le JSON `Impact` inchangé (`changed_*` = rôle
   `changed`, `impacted_*` = le reste avec sa distance). Le `Highlight` lui-même
   ne passe pas encore sur le fil : #70 l'y ajoutera avec son consommateur.
-- UI : `app.highlights[]`, overlays nommés.
+- UI : `app.highlights[]`, overlays nommés — fait (#70) : `impact`
+  (`ImpactOverlays`) tient la liste et la sélection, règles pures dans
+  `overlays.ts` et `multioverlay.ts`.
 - Sélecteur d'overlays : visible seulement quand au moins deux overlays sont
-  chargés ; clic = un seul (celui par défaut), cmd/ctrl-clic = ajoute ou
-  retire. Chaque overlay a sa couleur (tokens `app.css`) ; une cellule touchée
-  par plusieurs overlays est découpée en bandes, au-delà de trois un style
-  « multiple » neutre et l'infobulle les liste.
+  chargés, dans une barre fine au-dessus de la matrice ; clic = un seul (celui
+  par défaut), cmd/ctrl-clic = ajoute ou retire. Chaque overlay a sa couleur
+  (tokens `app.css`) ; plusieurs overlays sélectionnés sont dessinés sur la
+  matrice du working tree (cellules des snapshots rapportées par id, celles
+  qui manquent comptées dans la barre d'état) ; une cellule touchée par
+  plusieurs overlays est découpée en bandes, au-delà de trois un style
+  « multiple » neutre et l'infobulle les liste — fait (#70).
 
 ### Plus tard
 
@@ -156,7 +161,7 @@ Issue parente : #68 (une sous-issue par étape, une case = une PR).
 2. #69 Highlight pur : extraire resolve / propagate / aggregate de
    `compute_with` (sans changement de comportement) ; modèle `Highlight`,
    `Impact` comme source git.
-3. #70 UI highlights : `app.highlights[]`, sélecteur, rendu multi-overlay.
+3. #70 UI highlights : `app.highlights[]`, sélecteur, rendu multi-overlay — fait.
 4. #71 Engine `Session` : sortir cache et orchestration de `commands.rs` ;
    puis `Backend` à capacités.
 5. #72 Couches : `LayerId` (sans changement de comportement) ; `[[layer]]` ;

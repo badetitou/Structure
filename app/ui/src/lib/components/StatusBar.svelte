@@ -3,11 +3,17 @@
   import { impact } from "../../stores/impact.svelte";
   import { selection } from "../../stores/selection.svelte";
   import { shown } from "../../stores/shown";
-  import { impactLabel, selectionLabel, snapshotLabel, statsLabel } from "../../statusbar";
+  import { MAX_BANDS } from "../../multioverlay";
+  import { impactLabel, multiImpactLabel, selectionLabel, snapshotLabel, statsLabel } from "../../statusbar";
 
   // Context of the analysis, one line at the bottom of the window.
   const m = $derived(shown.matrix);
-  const impactText = $derived(impactLabel(impact.current, impact.progress));
+  // Several overlays drawn together: how many, and the cells they hit that the working tree lacks.
+  const impactText = $derived(
+    impact.multi && !impact.progress
+      ? multiImpactLabel(impact.selectedIds.length, shown.missingCells)
+      : impactLabel(impact.current, impact.progress),
+  );
   const selectionText = $derived(selectionLabel(selection.selected, shown.matrix?.layers));
 </script>
 
@@ -39,7 +45,19 @@
     <span class="truncate text-foreground">{selectionText}</span>
   {/if}
   <span class="ml-auto flex flex-none items-center gap-2.5">
-    {#if impact.current}
+    {#if impact.multi}
+      <span class="flex items-center gap-1" title="One band per overlay hitting the cell, in its colour; a changed band has a mark along its top">
+        <span class="flex">
+          {#each impact.selectedOverlays.slice(0, MAX_BANDS) as o (o.id)}
+            <span class="inline-block size-2" style:background-color="var({o.colour})"></span>
+          {/each}
+        </span>solid: changed · faded: impacted
+      </span>
+      <span class="flex items-center gap-1" title={`Cells hit by more than ${MAX_BANDS} of the overlays shown`}
+        ><span class="inline-block size-2 bg-(--overlay-multiple)"></span>{MAX_BANDS + 1}+ overlays</span
+      >
+      {@render sep()}
+    {:else if impact.current}
       <span class="flex items-center gap-1"
         ><span class="inline-block size-2 border border-(--changed-outline) bg-(--changed)"></span>changed</span
       >

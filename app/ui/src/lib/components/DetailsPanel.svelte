@@ -6,6 +6,8 @@
   import { hasMore } from "../../cellsymbols";
   import { initialCaps, moreLabel, showMore } from "../../symbolcap";
   import { symbolName } from "../../symbolname";
+  import { cellOverlayRows, overlayViews } from "../../multioverlay";
+  import { cellCountsLabel } from "../../statusbar";
   import { impact } from "../../stores/impact.svelte";
   import { options } from "../../stores/options.svelte";
   import { selection } from "../../stores/selection.svelte";
@@ -30,6 +32,12 @@
     const c = selection.view?.cells.find((x) => x.id === id);
     return c ? `${layerLabel(shown.matrix?.layers, c.layer)} / ${c.label}` : id;
   };
+  // Several overlays drawn together: how each one hits the selected cell.
+  const overlayRows = $derived.by(() => {
+    if (!impact.multi || !selection.selected || !selection.view) return null;
+    const views = overlayViews(impact.selectedOverlays, selection.view.cellMap);
+    return cellOverlayRows(impact.selectedOverlays, views.hits.get(selection.selected.id));
+  });
   const list = $derived(selection.selected && selection.symbols?.cell === selection.selected.id ? selection.symbols : null);
 </script>
 
@@ -53,8 +61,26 @@
   <h3 class="mt-3 mb-1 text-sm font-semibold">{text}</h3>
 {/snippet}
 
+{#snippet dot(colour: string)}
+  <span class="mr-1.5 inline-block size-2 flex-none rounded-full" style:background-color="var({colour})"></span>
+{/snippet}
+
 <ScrollArea class="h-full">
   <div class="px-3.5 py-2.5">
+    {#if impact.multi && !selection.selected}
+      {@render heading(`Overlays (${impact.selectedOverlays.length})`)}
+      <ul class="m-0 list-none pl-0">
+        {#each impact.selectedOverlays as o (o.id)}
+          <li class="mb-1">
+            <span class="flex items-center">{@render dot(o.colour)}<code class="truncate">{o.label}</code></span>
+            <small class="block text-muted-foreground"
+              >{cellCountsLabel(o.impact)} · {o.impact.changed_symbols.length} changed symbols · {o.impact.impacted_symbols
+                .length} impacted symbols</small
+            >
+          </li>
+        {/each}
+      </ul>
+    {/if}
     {#if impact.current}
       {@render heading(`Changed symbols (${impact.current.changed_symbols.length})`)}
       {@render items(
@@ -72,6 +98,16 @@
     {#if selection.selected}
       {@const c = selection.selected}
       {@render heading(`${layerLabel(shown.matrix?.layers, c.layer)}/${c.label} — ${c.size} symbols`)}
+      {#if overlayRows}
+        <ul class="m-0 mb-2 list-none pl-0">
+          {#each overlayRows as r (r.id)}
+            <li class="flex items-center">
+              {@render dot(r.colour)}<code class="truncate">{r.label}</code>
+              <span class="ml-auto flex-none pl-2" class:text-muted-foreground={!r.hit}>{r.text}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
       {#if http && (http.out.length > 0 || http.in.length > 0)}
         {@render heading("HTTP")}
         <ul class="m-0 list-disc pl-4">
@@ -109,7 +145,7 @@
           Show more ({list.items.length} / {list.total})
         </Button>
       {/if}
-    {:else if !impact.current}
+    {:else if !impact.current && !impact.multi}
       <div class="text-muted-foreground">Click a cell to list its symbols.</div>
     {/if}
   </div>

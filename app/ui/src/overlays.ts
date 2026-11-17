@@ -71,15 +71,44 @@ export function addOverlay(
   return { list: [...kept, overlay], id: newId };
 }
 
-/** The selection once `removed` is gone from the list (now `list`): unchanged when another
- * overlay (or none) was selected, else the most recent overlay left, null when none. */
-export function selectionAfterRemoval(list: readonly Overlay[], selected: string | null, removed: string): string | null {
-  if (selected !== removed) return selected;
-  return list.at(-1)?.id ?? null;
+/** The selection once overlay `id` is clicked. A plain click selects exactly that overlay; a
+ * `toggle` click (cmd on macOS, ctrl elsewhere) adds it to the selection or takes it out, but
+ * never empties it: toggling the only selected overlay keeps it. The order is the one of the
+ * clicks, so the first selected overlay stays first (the diff follows it). */
+export function clickSelection(selected: readonly string[], id: string, toggle: boolean): string[] {
+  if (!toggle) return [id];
+  if (!selected.includes(id)) return [...selected, id];
+  return selected.length === 1 ? [...selected] : selected.filter((s) => s !== id);
+}
+
+/** Same selection, in the same order. */
+export function sameSelection(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+/** A click toggles an overlay in the selection with cmd on macOS, ctrl elsewhere. */
+export function isToggleClick(ev: { metaKey: boolean; ctrlKey: boolean }, mac: boolean): boolean {
+  return mac ? ev.metaKey : ev.ctrlKey;
+}
+
+/** macOS, from `navigator.platform` / `userAgent`. */
+export function isMacPlatform(platform: string): boolean {
+  return /mac|iphone|ipad/i.test(platform);
+}
+
+/** The selection once `removed` is gone from the list (now `list`): it only loses `removed`;
+ * when that empties it, the most recent overlay left is selected (none when the list is
+ * empty). An empty selection (nothing shown) stays empty. */
+export function selectionAfterRemoval(list: readonly Overlay[], selected: readonly string[], removed: string): string[] {
+  if (!selected.includes(removed)) return [...selected];
+  const left = selected.filter((s) => s !== removed);
+  if (left.length > 0) return left;
+  const last = list.at(-1);
+  return last ? [last.id] : [];
 }
 
 /** The selector is shown only when there is a choice to make: two overlays or more, or kept
  * overlays left with none shown (after "Clear impact"), which would otherwise be unreachable. */
-export function selectorVisible(list: readonly Overlay[], selected: string | null): boolean {
-  return list.length >= 2 || (list.length === 1 && selected === null);
+export function selectorVisible(list: readonly Overlay[], selected: readonly string[]): boolean {
+  return list.length >= 2 || (list.length === 1 && selected.length === 0);
 }

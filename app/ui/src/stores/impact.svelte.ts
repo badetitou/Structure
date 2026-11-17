@@ -2,20 +2,20 @@ import * as api from "../api";
 import type { Impact, Progress } from "../api";
 import type { Selection } from "../history";
 import { RequestGuard } from "../matrixsel";
-import { addOverlay, selectionAfterRemoval } from "../overlays";
+import { addOverlay, clickSelection, selectionAfterRemoval } from "../overlays";
 import type { Overlay, Range } from "../overlays";
 import { START } from "./progress";
 
 export type { Overlay, Range } from "../overlays";
 
 /** The highlights of the matrix: a list of named overlays (impacts of git ranges, see
- * `overlays.ts` for the list rules), the selected one, and the run state of the impact being
- * computed. Self-contained (no other store is read here). Session data: nothing persists. */
+ * `overlays.ts` for the list and selection rules), the selected ones, and the run state of the
+ * impact being computed. Self-contained (no other store is read here). Session data: nothing persists. */
 export class ImpactOverlays {
   /** Loaded overlays, oldest first. */
   overlays = $state.raw<Overlay[]>([]);
-  /** Id of the overlay shown, null when none. */
-  selectedId = $state<string | null>(null);
+  /** Ids of the overlays shown, in the order they were selected; empty when none. */
+  selectedIds = $state.raw<string[]>([]);
   /** True while an impact runs (it may analyse a commit snapshot first); new runs are ignored meanwhile. */
   busy = $state(false);
   /** Progress of the running impact, null when none runs. */
@@ -26,15 +26,27 @@ export class ImpactOverlays {
   private guard = new RequestGuard();
   private nextId = 1;
 
-  /** The overlay shown, null when none. */
+  /** Id of the first selected overlay (the one the diff and history follow), null when none. */
+  get selectedId(): string | null {
+    return this.selectedIds[0] ?? null;
+  }
+  /** The first selected overlay, null when none. */
   get selected(): Overlay | null {
     return this.overlays.find((o) => o.id === this.selectedId) ?? null;
   }
-  /** The impact shown (the selected overlay's), null when none. */
-  get current(): Impact | null {
-    return this.selected?.impact ?? null;
+  /** The selected overlays, in list order (their bands follow it). */
+  get selectedOverlays(): Overlay[] {
+    return this.overlays.filter((o) => this.selectedIds.includes(o.id));
   }
-  /** Range of the impact running, else of the one shown; null when none. */
+  /** Several overlays are drawn together (on the working-tree matrix). */
+  get multi(): boolean {
+    return this.selectedIds.length >= 2;
+  }
+  /** The impact drawn alone (the single selected overlay's); null when none or several are shown. */
+  get current(): Impact | null {
+    return this.multi ? null : (this.selected?.impact ?? null);
+  }
+  /** Range of the impact running, else of the first one shown; null when none. */
   get range(): Range | null {
     return this.pending ?? this.selected?.range ?? null;
   }
@@ -67,17 +79,19 @@ export class ImpactOverlays {
     }
   }
 
-  /** Adds `impact` of `range` to the list (see `addOverlay`) and selects it. */
+  /** Adds `impact` of `range` to the list (see `addOverlay`) and selects it alone, unless it
+   * updated an overlay already selected (a re-run): then the selection stays. */
   add(range: Range, impact: Impact, historySel: Selection | null = null) {
     const { list, id } = addOverlay(this.overlays, range, impact, historySel, `o${this.nextId}`);
     if (id === `o${this.nextId}`) this.nextId++;
     this.overlays = list;
-    this.selectedId = id;
+    if (!this.selectedIds.includes(id)) this.selectedIds = [id];
   }
 
-  /** Shows overlay `id` (ignored when unknown). */
-  select(id: string) {
-    if (this.overlays.some((o) => o.id === id)) this.selectedId = id;
+  /** Shows overlay `id` alone, or with `toggle` adds it to the overlays shown or takes it out
+   * (see `clickSelection`). Ignored when unknown. */
+  select(id: string, toggle = false) {
+    if (this.overlays.some((o) => o.id === id)) this.selectedIds = clickSelection(this.selectedIds, id, toggle);
   }
 
   /** Keeps overlay `id` in the list when the next impact runs. */
@@ -85,10 +99,10 @@ export class ImpactOverlays {
     this.overlays = this.overlays.map((o) => (o.id === id ? { ...o, pinned: true } : o));
   }
 
-  /** Drops overlay `id`; when it was shown, the most recent one left is shown instead. */
+  /** Drops overlay `id`; when it was the only one shown, the most recent one left is shown instead. */
   remove(id: string) {
     this.overlays = this.overlays.filter((o) => o.id !== id);
-    this.selectedId = selectionAfterRemoval(this.overlays, this.selectedId, id);
+    this.selectedIds = selectionAfterRemoval(this.overlays, this.selectedIds, id);
   }
 
   /** Every overlay was computed with rules that changed since. */
@@ -108,7 +122,7 @@ export class ImpactOverlays {
     this.guard.invalidate();
     this.pending = null;
     this.overlays = this.overlays.filter((o) => o.pinned);
-    this.selectedId = null;
+    this.selectedIds = [];
     this.error = "";
     this.busy = false;
     this.progress = null;

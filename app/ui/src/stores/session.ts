@@ -6,6 +6,7 @@ import type { Impact, Matrix } from "../api";
 import { selectionDiff } from "../history";
 import type { Selection } from "../history";
 import { retainSelection } from "../matrixsel";
+import { clickSelection, sameSelection } from "../overlays";
 import { analysis } from "./analysis.svelte";
 import { git } from "./git.svelte";
 import { impact } from "./impact.svelte";
@@ -43,13 +44,25 @@ function changeShown(change: () => void, keep: boolean) {
 /** Diff of two refs (null = HEAD / working tree); shows the commit snapshot when there is one.
  * The result becomes the selected overlay (see `ImpactOverlays.add`). Ignored while another
  * impact runs. With `keepSelection` (re-run after a rules reload), a selected cell that still
- * exists in the new matrix stays selected. */
+ * exists in the new matrix stays selected. Once it is in, the next stale overlay shown, if
+ * any, is computed again (see `refreshStale`). */
 export async function runImpact(base: string | null, head: string | null, keepSelection = false): Promise<void> {
   if (impact.busy || analysis.multi) return;
   const historySel = git.historySel;
-  await impact.run(analysis.project, { base, head }, (res: Impact) =>
-    changeShown(() => impact.add({ base, head }, res, historySel), keepSelection),
-  );
+  let applied = false;
+  await impact.run(analysis.project, { base, head }, (res: Impact) => {
+    applied = true;
+    changeShown(() => impact.add({ base, head }, res, historySel), keepSelection);
+  });
+  // Only after a success: a failing run would otherwise be retried forever.
+  if (applied) refreshStale();
+}
+
+/** Computes again the first overlay shown that is stale (computed with rules reloaded since),
+ * in selection order; `runImpact` then goes on with the next one. */
+function refreshStale() {
+  const o = impact.selectedIds.map((id) => impact.overlays.find((x) => x.id === id)).find((x) => x?.stale);
+  if (o) void runImpact(o.range.base, o.range.head, true);
 }
 
 /** Drops the impact shown (pinned overlays stay listed), the history selection and the diff. */
@@ -59,8 +72,8 @@ export function clearImpact() {
   changeShown(() => impact.clear(), false);
 }
 
-/** The history selection and the diff follow the overlay shown (none shown: both are
- * dropped); one computed before a rules reload is computed again. */
+/** The history selection and the diff follow the first overlay shown (none shown: both are
+ * dropped); overlays shown that were computed before a rules reload are computed again. */
 function followOverlay() {
   const o = impact.selected;
   if (!o) {
@@ -70,23 +83,27 @@ function followOverlay() {
   }
   git.historySel = o.historySel;
   if (git.diff?.base !== o.range.base || git.diff?.head !== o.range.head) void git.loadDiff(o.range.base, o.range.head);
-  if (o.stale) void runImpact(o.range.base, o.range.head, true);
+  refreshStale();
 }
 
-/** Shows overlay `id`: the matrix, details, history selection and diff follow it (see
- * `followOverlay`). Ignored while an impact runs. */
-export function selectOverlay(id: string) {
-  if (impact.busy || id === impact.selectedId) return;
-  changeShown(() => impact.select(id), false);
+/** Shows overlay `id` alone, or with `toggle` (cmd/ctrl-click) adds it to the overlays shown or
+ * takes it out (see `clickSelection`); several shown are drawn together on the working-tree
+ * matrix. The matrix, details, history selection and diff follow (see `followOverlay`).
+ * Ignored while an impact runs. */
+export function selectOverlay(id: string, toggle = false) {
+  if (impact.busy || !impact.overlays.some((o) => o.id === id)) return;
+  if (sameSelection(clickSelection(impact.selectedIds, id, toggle), impact.selectedIds)) return;
+  changeShown(() => impact.select(id, toggle), false);
   followOverlay();
 }
 
-/** Keeps the overlay shown in the list when the next impact runs. */
+/** Keeps the overlays shown in the list when the next impact runs. */
 export function keepOverlay() {
-  if (impact.selectedId) impact.pin(impact.selectedId);
+  for (const o of impact.selectedOverlays) if (!o.pinned) impact.pin(o.id);
 }
 
-/** Drops overlay `id`; when it was shown, the most recent one left is shown instead. Ignored while an impact runs. */
+/** Drops overlay `id`; when it was the only one shown, the most recent one left is shown
+ * instead. Ignored while an impact runs. */
 export function removeOverlay(id: string) {
   if (impact.busy) return;
   const was = impact.selectedId;
