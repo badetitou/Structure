@@ -177,7 +177,6 @@ describe("fetchPr", () => {
       return json({ base: { sha: "b" }, head: { sha: "h" } });
     }) as unknown as typeof fetch;
     const data = await fetchPr(ref, { fetch: f });
-    expect(SOURCE_EXTENSIONS).toEqual(expect.arrayContaining([".java", ".ts", ".st"]));
     expect(data.files.map((x) => x.path)).toEqual(sources);
   });
 

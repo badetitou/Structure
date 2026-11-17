@@ -196,6 +196,15 @@ pub fn frontend(lang: Language) -> &'static dyn Frontend {
     }
 }
 
+/// Serialized id of `lang` (`java`, `typescript`, `pharo`), as in JSON.
+pub fn language_id(lang: Language) -> &'static str {
+    match lang {
+        Language::Java => "java",
+        Language::TypeScript => "typescript",
+        Language::Pharo => "pharo",
+    }
+}
+
 /// Language of a set of paths: the one with the most sources
 /// ([`Frontend::is_source`], a path counting for the first frontend of [`all`]
 /// that accepts it); ties go to the earlier one in [`all`] (Java, then

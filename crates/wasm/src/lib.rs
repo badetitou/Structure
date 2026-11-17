@@ -94,14 +94,6 @@ fn analyze_language(
     })
 }
 
-/// Serialized id of `lang` (`java`, `typescript`, `pharo`).
-fn language_id(lang: Language) -> anyhow::Result<String> {
-    match serde_json::to_value(lang)? {
-        serde_json::Value::String(s) => Ok(s),
-        v => bail!("unexpected language id {v}"),
-    }
-}
-
 /// Analyse the sources of a PR head (`(path, content)`) against its unified
 /// `diff`, with the default rules of each language found
 /// ([`detect_languages`]). One language is analysed as one project named
@@ -143,7 +135,7 @@ pub fn analyze_pr(
     let mut names = Vec::with_capacity(langs.len());
     let mut parts = Vec::with_capacity(langs.len());
     for &lang in &langs {
-        let name = format!("{repo} ({})", language_id(lang)?);
+        let name = format!("{repo} ({})", structure_lang::language_id(lang));
         let part = analyze_language(structure_lang::frontend(lang), project, files)
             .with_context(|| format!("project {name}"))?;
         names.push(name);
