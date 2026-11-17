@@ -7,6 +7,10 @@ matrix. Current architecture and roadmap: `docs/architecture.md` (the POC plan
 
 ## Commands
 
+- `scripts/verify.sh [fmt|clippy|test|rust|tauri|ui|wasm…]` — every check a
+  change must pass (all by default), one line each; a failure prints only its
+  errors/tail and keeps the full log in a temp file. Use it instead of running
+  the checks by hand, so their output does not fill the context.
 - `cargo check --workspace` — fast typecheck
 - `cargo fmt --check` — formatting (run `cargo fmt` to fix)
 - `cargo clippy --workspace --all-targets -- -D warnings` — lints, must be clean
@@ -107,8 +111,8 @@ matrix. Current architecture and roadmap: `docs/architecture.md` (the POC plan
 
 ## Rules
 
-1. Before calling a change done: `cargo fmt --check`, clippy with
-   `-D warnings`, and `cargo test` all pass.
+1. Before calling a change done: `scripts/verify.sh` passes (fmt, clippy with
+   `-D warnings`, tests, Tauri app, UI, wasm).
 2. No `unwrap()`/`expect()` outside tests and `main` — propagate errors with `?`.
 3. No `unsafe` without a `// SAFETY:` comment and the user's agreement.
 4. New dependencies only when asked or clearly justified; say why in the report.
@@ -125,3 +129,11 @@ matrix. Current architecture and roadmap: `docs/architecture.md` (the POC plan
   `<issue>-<slug>`, PR with `Closes #N`. `.claude/issues/*.md` is the archived
   local tracker (its `remote:` field = GitHub issue number); don't add to it.
 - Commit only when asked. No Claude attribution in commits.
+- Multi-PR runs (workflows): agents work in the session's own worktree (a hook
+  blocks writes to other worktrees). Per PR: implement → a light review
+  (correctness + tests, contract when an API changes; no style lens) → fix →
+  push, PR, CI; the push/PR/CI step runs on a cheap model. `gh pr merge` is
+  allowlisted, so a workflow may merge a green PR when the user asked for
+  merging. Close each epic with one cross-cutting review of the whole diff: it
+  finds the integration bugs per-PR reviews miss. A run spanning several
+  issues gets one session per batch of issues, not one ever-growing session.
