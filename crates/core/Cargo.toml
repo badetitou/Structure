@@ -19,6 +19,7 @@ structure-git = { path = "../git" }
 structure-highlight = { path = "../highlight" }
 anyhow.workspace = true
 ignore.workspace = true
+model.workspace = true
 
 [dev-dependencies]
 toml.workspace = true

@@ -16,7 +16,7 @@ use std::time::SystemTime;
 use anyhow::Context;
 
 use crate::impact;
-use crate::scip::{self, ScipIndex};
+use model::scip::{self, ScipIndex};
 
 /// How much of a commit's source files the composed index covers.
 #[derive(Debug, Clone, PartialEq, Eq)]

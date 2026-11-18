@@ -29,15 +29,16 @@ use std::time::Instant;
 
 use anyhow::{Context, bail};
 
+use crate::bridge;
 use crate::classify::{RuleSet, classify};
 use crate::impact::ImpactIndex;
 use crate::ir::{Graph, Language};
 use crate::layers::Layers;
-use crate::link::{LinkStats, link};
+use crate::link::LinkStats;
 use crate::matrix;
 use crate::metrics::Metrics;
 use crate::model::{Classification, Matrix, Progress};
-use crate::scip;
+use model::scip;
 
 pub const DEFAULT_INDEXER_TIMEOUT_SECS: u64 = 600;
 
@@ -340,8 +341,13 @@ fn analyze_unit(
     let t = Instant::now();
     let (mut graph, link_stats) = match loaded {
         Some(Ok(idx)) => {
-            metrics.record_scip(&idx);
-            let (g, st) = link(graph, &idx);
+            metrics.scip_documents = idx.documents.len();
+            metrics.scip_occurrences = idx
+                .documents
+                .iter()
+                .map(|d| d.definitions.len() + d.references.len())
+                .sum();
+            let (g, st) = bridge::link(graph, &idx, lang);
             (g, Some(st))
         }
         Some(Err(e)) => {

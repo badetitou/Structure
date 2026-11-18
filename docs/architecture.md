@@ -197,6 +197,30 @@ struct Highlight { source, symbols: [{id, role, distance}], cells: [{id, role, d
 - Intégration MCP (une session Claude envoie la trace elle-même) seulement
   après la version « coller ».
 
+## 6. Modèle externe (Model)
+
+Structure est le premier client de
+[`model`](https://github.com/badetitou/Model) (`tag = "v0.1.1"`). Migration
+hybride : les frontends Structure restent la source des symboles (ids
+pointillés, annotations, supertypes, ports HTTP/GWT, Pharo), mais la lecture
+`index.scip` et le lien SCIP sont délégués à `model-scip` / `model-link`.
+
+`crates/core/src/bridge.rs` sème les symboles du `Graph` dans un
+`ModelBuilder` (fichier, portée, langue, parent), lance `model_link::link` en
+mode `Lift`, puis traduit les relations en `Edge` IR :
+
+- `Calls` → `Call`, `References` → `Uses`, `Implements` → `Implements` ;
+- `Inherits`, `Imports` et les relations custom sont ignorés (les frontends
+  produisent déjà `Extends`/`Implements`) ;
+- les entités externes créées par Model reprennent le nommage `ext:<type>`
+  du linker historique ;
+- la propagation des appels d'interface vers les implémentations est
+  reproduite dans le pont (c'est une analyse dérivée côté Model).
+
+`scip_cache` décode et compose aussi des documents SCIP avec `model-scip`. Le
+vieux `structure-scip` reste pour les helpers de symboles, les tests du lecteur
+historique et l'API publique ; il n'est plus sur le chemin de `analyze_unit`.
+
 ## Feuille de route
 
 Issue parente : #68 (une sous-issue par étape, une case = une PR).
