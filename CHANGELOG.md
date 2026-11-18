@@ -7,6 +7,12 @@ browser extension and attaches it to the GitHub release.
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped the `model` dependency to `v0.2.0`. Its breaking GraphQL refactor
+  does not affect Structure, which only uses the SCIP reader/linker and the
+  index pipeline.
+
 ## [0.2.0] - 2026-11-17
 
 Re-architecture for stability (#68): languages, layers, views and highlight

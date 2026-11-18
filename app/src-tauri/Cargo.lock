@@ -1942,10 +1942,11 @@ dependencies = [
 
 [[package]]
 name = "model"
-version = "0.1.1"
-source = "git+https://github.com/badetitou/Model?tag=v0.1.1#d47136aad03cea2fc06bc9e98bdf0fbadde41715"
+version = "0.2.0"
+source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
 dependencies = [
  "anyhow",
+ "model-analysis",
  "model-core",
  "model-detect",
  "model-index",
@@ -1955,17 +1956,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "model-analysis"
+version = "0.2.0"
+source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
+dependencies = [
+ "anyhow",
+ "model-core",
+ "serde",
+]
+
+[[package]]
 name = "model-core"
-version = "0.1.1"
-source = "git+https://github.com/badetitou/Model?tag=v0.1.1#d47136aad03cea2fc06bc9e98bdf0fbadde41715"
+version = "0.2.0"
+source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "model-detect"
-version = "0.1.1"
-source = "git+https://github.com/badetitou/Model?tag=v0.1.1#d47136aad03cea2fc06bc9e98bdf0fbadde41715"
+version = "0.2.0"
+source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
 dependencies = [
  "anyhow",
  "ignore",
@@ -1974,8 +1985,8 @@ dependencies = [
 
 [[package]]
 name = "model-index"
-version = "0.1.1"
-source = "git+https://github.com/badetitou/Model?tag=v0.1.1#d47136aad03cea2fc06bc9e98bdf0fbadde41715"
+version = "0.2.0"
+source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
 dependencies = [
  "anyhow",
  "ignore",
@@ -1985,8 +1996,8 @@ dependencies = [
 
 [[package]]
 name = "model-link"
-version = "0.1.1"
-source = "git+https://github.com/badetitou/Model?tag=v0.1.1#d47136aad03cea2fc06bc9e98bdf0fbadde41715"
+version = "0.2.0"
+source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
 dependencies = [
  "model-core",
  "model-detect",
@@ -1996,8 +2007,8 @@ dependencies = [
 
 [[package]]
 name = "model-scip"
-version = "0.1.1"
-source = "git+https://github.com/badetitou/Model?tag=v0.1.1#d47136aad03cea2fc06bc9e98bdf0fbadde41715"
+version = "0.2.0"
+source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
 dependencies = [
  "anyhow",
  "model-core",
@@ -2008,8 +2019,8 @@ dependencies = [
 
 [[package]]
 name = "model-treesitter"
-version = "0.1.1"
-source = "git+https://github.com/badetitou/Model?tag=v0.1.1#d47136aad03cea2fc06bc9e98bdf0fbadde41715"
+version = "0.2.0"
+source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
 dependencies = [
  "anyhow",
  "ignore",

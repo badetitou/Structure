@@ -200,7 +200,7 @@ struct Highlight { source, symbols: [{id, role, distance}], cells: [{id, role, d
 ## 6. Modèle externe (Model)
 
 Structure est le premier client de
-[`model`](https://github.com/badetitou/Model) (`tag = "v0.1.1"`). Migration
+[`model`](https://github.com/badetitou/Model) (`tag = "v0.2.0"`). Migration
 hybride : les frontends Structure restent la source des symboles (ids
 pointillés, annotations, supertypes, ports HTTP/GWT, Pharo), mais la lecture
 `index.scip` et le lien SCIP sont délégués à `model-scip` / `model-link`.
