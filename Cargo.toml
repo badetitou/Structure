@@ -19,14 +19,15 @@ exclude = ["app"]
 [workspace.package]
 version = "0.2.0"
 edition = "2024"
+rust-version = "1.100"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
-toml = "0.8"
+toml = "1"
 clap = { version = "4", features = ["derive"] }
-scip = "0.5"
+scip = "0.10"
 protobuf = "3"
 tree-sitter = "0.27"
 tree-sitter-java = "0.23.5"

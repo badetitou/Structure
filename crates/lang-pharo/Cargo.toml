@@ -2,6 +2,7 @@
 name = "structure-lang-pharo"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 structure-ir = { path = "../ir" }
