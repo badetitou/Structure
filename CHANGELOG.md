@@ -7,6 +7,8 @@ browser extension and attaches it to the GitHub release.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-19
+
 ### Changed
 
 - Switched Model to the crates.io release `0.3`: Structure now depends on
@@ -136,7 +138,8 @@ First public release: a proof of concept, local only.
   GitHub release and, when the store secrets are set, submits it to Firefox
   Add-ons and the Chrome Web Store.
 
-[Unreleased]: https://github.com/badetitou/Structure/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/badetitou/Structure/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/badetitou/Structure/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/badetitou/Structure/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/badetitou/Structure/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/badetitou/Structure/compare/v0.1.1...v0.1.2

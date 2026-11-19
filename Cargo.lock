@@ -517,7 +517,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "structure-classify"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "rayon",
@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "structure-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -541,7 +541,7 @@ dependencies = [
 
 [[package]]
 name = "structure-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "ignore",
@@ -565,7 +565,7 @@ dependencies = [
 
 [[package]]
 name = "structure-git"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "structure-highlight",
@@ -574,7 +574,7 @@ dependencies = [
 
 [[package]]
 name = "structure-highlight"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde_json",
  "structure-ir",
@@ -582,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "structure-ir"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "structure-lang"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "structure-ir",
@@ -603,7 +603,7 @@ dependencies = [
 
 [[package]]
 name = "structure-lang-java"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "ignore",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "structure-lang-pharo"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "ignore",
@@ -624,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "structure-lang-ts"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "ignore",
@@ -636,7 +636,7 @@ dependencies = [
 
 [[package]]
 name = "structure-scip"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "libc",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "structure-wasm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "serde",
