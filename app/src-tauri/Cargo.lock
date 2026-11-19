@@ -1941,42 +1941,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "model"
-version = "0.2.0"
-source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
-dependencies = [
- "anyhow",
- "model-analysis",
- "model-core",
- "model-detect",
- "model-index",
- "model-link",
- "model-scip",
- "model-treesitter",
-]
-
-[[package]]
-name = "model-analysis"
-version = "0.2.0"
-source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
-dependencies = [
- "anyhow",
- "model-core",
- "serde",
-]
-
-[[package]]
 name = "model-core"
-version = "0.2.0"
-source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe07152b8a8b42beb0c5bd722be5841e54af6f182210788040f7747cc7530023"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "model-detect"
-version = "0.2.0"
-source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8cd2b9c6708b7a4077616c829dc8a1e8afc210f4fa22bf95ef14045406a65b92"
 dependencies = [
  "anyhow",
  "ignore",
@@ -1984,20 +1961,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "model-index"
-version = "0.2.0"
-source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
-dependencies = [
- "anyhow",
- "ignore",
- "model-detect",
- "model-scip",
-]
-
-[[package]]
 name = "model-link"
-version = "0.2.0"
-source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1babb978a83647b1e0989eb1ef12f7f4083495438813ddbbbf5575061c389f87"
 dependencies = [
  "model-core",
  "model-detect",
@@ -2007,29 +1974,15 @@ dependencies = [
 
 [[package]]
 name = "model-scip"
-version = "0.2.0"
-source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff3c02b492bfe8dd0fb55d15703f26b44a08ab5a866800ce60c120d12adc8e52"
 dependencies = [
  "anyhow",
  "model-core",
  "protobuf",
  "rayon",
  "scip",
-]
-
-[[package]]
-name = "model-treesitter"
-version = "0.2.0"
-source = "git+https://github.com/badetitou/Model?tag=v0.2.0#de21bfe5de63d692e502c2f8f6c5a381f0f93445"
-dependencies = [
- "anyhow",
- "ignore",
- "model-core",
- "rayon",
- "tree-sitter",
- "tree-sitter-java",
- "tree-sitter-python",
- "tree-sitter-typescript",
 ]
 
 [[package]]
@@ -3358,7 +3311,9 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "ignore",
- "model",
+ "model-core",
+ "model-link",
+ "model-scip",
  "structure-classify",
  "structure-git",
  "structure-highlight",
@@ -4186,16 +4141,6 @@ name = "tree-sitter-language"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0af592be68c579aa78a16846bd19422978c3c52e438523d45ff5d1bff1f9d4a"
-
-[[package]]
-name = "tree-sitter-python"
-version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bf85fd39652e740bf60f46f4cda9492c3a9ad75880575bf14960f775cb74a1c"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
 
 [[package]]
 name = "tree-sitter-typescript"

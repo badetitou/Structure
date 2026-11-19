@@ -200,10 +200,12 @@ struct Highlight { source, symbols: [{id, role, distance}], cells: [{id, role, d
 ## 6. Modèle externe (Model)
 
 Structure est le premier client de
-[`model`](https://github.com/badetitou/Model) (`tag = "v0.2.0"`). Migration
-hybride : les frontends Structure restent la source des symboles (ids
-pointillés, annotations, supertypes, ports HTTP/GWT, Pharo), mais la lecture
-`index.scip` et le lien SCIP sont délégués à `model-scip` / `model-link`.
+[`model`](https://github.com/badetitou/Model) (`0.3`, depuis crates.io) : elle
+dépend directement de `model-core`, `model-scip` et `model-link`, sans passer
+par le crate façade `model`. Migration hybride : les frontends Structure
+restent la source des symboles (ids pointillés, annotations, supertypes, ports
+HTTP/GWT, Pharo), mais la lecture `index.scip` et le lien SCIP sont délégués à
+`model-scip` / `model-link`.
 
 `crates/core/src/bridge.rs` sème les symboles du `Graph` dans un
 `ModelBuilder` (fichier, portée, langue, parent), lance `model_link::link` en

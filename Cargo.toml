@@ -37,4 +37,6 @@ libc = "0.2"
 ignore = "0.4"
 wasm-bindgen = "0.2"
 ts-rs = "12"
-model = { git = "https://github.com/badetitou/Model", tag = "v0.2.0" }
+model-core = "0.3"
+model-scip = "0.3"
+model-link = "0.3"

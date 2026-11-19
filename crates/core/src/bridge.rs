@@ -1,4 +1,5 @@
-//! Pont entre le modèle construit par `model` et le graphe IR de Structure.
+//! Pont entre le modèle construit par les crates Model (`model-core`,
+//! `model-scip`, `model-link`) et le graphe IR de Structure.
 //!
 //! Structure garde ses frontends (ids pointillés, annotations, ports HTTP/GWT)
 //! et confie à Model la lecture SCIP et le lien. Concrètement, les symboles du
@@ -10,10 +11,11 @@
 
 use std::collections::{HashMap, HashSet};
 
-use model::RelationKind;
-use model::core::{EntityId, EntityKind, LanguageId, ModelBuilder, Range as ModelRange};
-use model::link::{LinkOptions, Unmapped};
-use model::scip::ScipIndex;
+use model_core::{
+    EntityId, EntityKind, LanguageId, ModelBuilder, Range as ModelRange, RelationKind,
+};
+use model_link::{LinkOptions, Unmapped};
+use model_scip::ScipIndex;
 
 use structure_ir::ir::{Edge, EdgeKind, Graph, Language, Range as IrRange, SymbolKind};
 
@@ -118,7 +120,7 @@ pub fn link(graph: Graph, index: &ScipIndex, lang: Language) -> (Graph, LinkStat
         unmapped: Unmapped::Lift,
         language: None,
     };
-    let stats = model::link::link(&mut b, index, &opts);
+    let stats = model_link::link(&mut b, index, &opts);
 
     // 1. Traduction des relations Model en arêtes IR.
     let model = b.build();

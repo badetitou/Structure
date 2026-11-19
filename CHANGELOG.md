@@ -9,9 +9,10 @@ browser extension and attaches it to the GitHub release.
 
 ### Changed
 
-- Bumped the `model` dependency to `v0.2.0`. Its breaking GraphQL refactor
-  does not affect Structure, which only uses the SCIP reader/linker and the
-  index pipeline.
+- Switched Model to the crates.io release `0.3`: Structure now depends on
+  `model-core`, `model-scip` and `model-link` directly, instead of the git
+  `model` facade. Its breaking GraphQL refactor does not affect Structure,
+  which only uses the SCIP reader/linker and the index pipeline.
 
 ## [0.2.0] - 2026-11-17
 

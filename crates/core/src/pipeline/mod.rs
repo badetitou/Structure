@@ -38,7 +38,7 @@ use crate::link::LinkStats;
 use crate::matrix;
 use crate::metrics::Metrics;
 use crate::model::{Classification, Matrix, Progress};
-use model::scip;
+use model_scip as scip;
 
 pub const DEFAULT_INDEXER_TIMEOUT_SECS: u64 = 600;
 
