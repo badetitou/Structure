@@ -74,6 +74,12 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      # rust-toolchain.toml pins 1.100, which overrides the default `stable`:
+      # the target above is installed for `stable`, not for the toolchain cargo
+      # actually uses in this checkout. Add it to the active (pinned) one too.
+      - name: Add wasm target to the pinned toolchain
+        run: rustup target add wasm32-unknown-unknown
+
       - uses: Swatinem/rust-cache@v2
 
       - uses: taiki-e/install-action@v2
