@@ -17,7 +17,7 @@ members = [
 exclude = ["app"]
 
 [workspace.package]
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 rust-version = "1.100"
 
@@ -37,6 +37,6 @@ libc = "0.2"
 ignore = "0.4"
 wasm-bindgen = "0.2"
 ts-rs = "12"
-model-core = "0.5"
-model-scip = "0.5"
-model-link = "0.5"
+model-core = "0.7"
+model-scip = "0.7"
+model-link = "0.7"

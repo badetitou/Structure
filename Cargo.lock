@@ -277,18 +277,18 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "model-core"
-version = "0.5.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c14ee12e2f1dab1aeb993cb873352edfb5e61634a916e40b11a0d903fd4d013"
+checksum = "169fd3f331eccc51dc863f3e23996fb5a96ea253403f5493947ef1cc56149747"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "model-detect"
-version = "0.5.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a92c2d5f1bca4ac1f8f8d2a53f43874a07cdafab2dd6d6de4971c0da2cb3e6f"
+checksum = "36542953e644c00e9ee51f8c4f737eb885030b531fb3b4f04688d0dbf21298f8"
 dependencies = [
  "anyhow",
  "ignore",
@@ -297,9 +297,9 @@ dependencies = [
 
 [[package]]
 name = "model-link"
-version = "0.5.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53adde1e0bac90cc8aab29d510027763f4f7af23048360b2dce65741d6393bc9"
+checksum = "e7198e99ee68c6f9ecf1ae1fd7db002cf7e866a6ecec29cfd818382165272fa4"
 dependencies = [
  "model-core",
  "model-detect",
@@ -309,9 +309,9 @@ dependencies = [
 
 [[package]]
 name = "model-scip"
-version = "0.5.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff3447ec469ea1d18010085962353c9a898e09afd006dbbb340d0e8768f10355"
+checksum = "7a92c750aae8686a527160f07d6d8fe32b879cdf529adc6f1a694e073b669307"
 dependencies = [
  "anyhow",
  "model-core",
@@ -517,7 +517,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "structure-classify"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "rayon",
@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "structure-cli"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -541,7 +541,7 @@ dependencies = [
 
 [[package]]
 name = "structure-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "ignore",
@@ -565,7 +565,7 @@ dependencies = [
 
 [[package]]
 name = "structure-git"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "structure-highlight",
@@ -574,7 +574,7 @@ dependencies = [
 
 [[package]]
 name = "structure-highlight"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "serde_json",
  "structure-ir",
@@ -582,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "structure-ir"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "structure-lang"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "structure-ir",
@@ -603,7 +603,7 @@ dependencies = [
 
 [[package]]
 name = "structure-lang-java"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "ignore",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "structure-lang-pharo"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "ignore",
@@ -624,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "structure-lang-ts"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "ignore",
@@ -636,7 +636,7 @@ dependencies = [
 
 [[package]]
 name = "structure-scip"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "libc",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "structure-wasm"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "serde",
