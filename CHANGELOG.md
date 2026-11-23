@@ -7,6 +7,16 @@ browser extension and attaches it to the GitHub release.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-23
+
+### Changed
+
+- Updated Model to the crates.io release `0.5.0`: `model-core`, `model-scip`
+  and `model-link` move from `0.3` to `0.5`. Model 0.4 adds relation kinds
+  (`DeclaredType`, `Accesses`, `Throws`, `Overrides`) and new crates; Structure
+  uses none of the breaking GraphQL or index-API changes, and its build and
+  tests pass unchanged.
+
 ## [0.2.1] - 2026-11-19
 
 ### Changed
@@ -138,7 +148,8 @@ First public release: a proof of concept, local only.
   GitHub release and, when the store secrets are set, submits it to Firefox
   Add-ons and the Chrome Web Store.
 
-[Unreleased]: https://github.com/badetitou/Structure/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/badetitou/Structure/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/badetitou/Structure/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/badetitou/Structure/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/badetitou/Structure/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/badetitou/Structure/compare/v0.1.2...v0.1.3
